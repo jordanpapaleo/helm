@@ -18,18 +18,27 @@ interface TagNodeItemProps {
   showCount: boolean;
 }
 
-function TagNodeItem({ tag, fullPath, node, depth = 0, onSelectTag, activeTag, showCount }: TagNodeItemProps) {
+function TagNodeItem({
+  tag,
+  fullPath,
+  node,
+  depth = 0,
+  onSelectTag,
+  activeTag,
+  showCount,
+}: TagNodeItemProps) {
   const [expanded, setExpanded] = useState(false);
   const hasChildren = Object.keys(node.children).length > 0;
   const isActive = activeTag === fullPath;
-  const totalCount = node.notes.length +
-    Object.values(node.children).reduce((s, c) => s + c.notes.length, 0);
+  const totalCount =
+    node.notes.length + Object.values(node.children).reduce((s, c) => s + c.notes.length, 0);
 
   return (
     <div style={{ paddingLeft: `${depth * 12}px` }}>
       <div className="flex items-center">
         {hasChildren ? (
           <button
+            type="button"
             onClick={() => setExpanded((v) => !v)}
             className="p-1 text-[var(--color-text-muted)] opacity-50 hover:opacity-100"
           >
@@ -39,6 +48,7 @@ function TagNodeItem({ tag, fullPath, node, depth = 0, onSelectTag, activeTag, s
           <span className="w-6 shrink-0" />
         )}
         <button
+          type="button"
           onClick={() => onSelectTag(fullPath)}
           className={`flex flex-1 items-center gap-1 rounded px-2 py-1 text-sm transition-colors ${
             isActive

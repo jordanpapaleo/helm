@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildTree, getAllFolderPaths } from "../lib/file-tree";
 import type { Note } from "../types/note";
 

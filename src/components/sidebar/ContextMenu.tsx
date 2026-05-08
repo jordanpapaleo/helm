@@ -30,7 +30,9 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
   const [submenuFlipped, setSubmenuFlipped] = useState(false);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
@@ -60,13 +62,23 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
     <div ref={ref} role="menu" className={menuCls} style={{ left: pos.x, top: pos.y }}>
       {items.map((item, i) => {
         if (item.kind === "separator") {
-          return <div key={i} className="my-1 border-t border-[var(--color-border)]" />;
+          const prev = items[i - 1];
+          const next = items[i + 1];
+          const prevLabel = prev && prev.kind !== "separator" ? prev.label : "";
+          const nextLabel = next && next.kind !== "separator" ? next.label : "";
+          return (
+            <div
+              key={`separator-${prevLabel}-${nextLabel}`}
+              className="my-1 border-t border-[var(--color-border)]"
+            />
+          );
         }
         if (item.kind === "submenu") {
           const submenuPositionCls = submenuFlipped ? "right-full" : "left-full";
           return (
             <div
-              key={i}
+              key={item.label}
+              role="none"
               className="relative"
               onMouseEnter={() => setOpenSubmenu(i)}
               onMouseLeave={() => setOpenSubmenu(null)}
@@ -90,13 +102,16 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
               </button>
               {openSubmenu === i && (
                 <div role="menu" className={`${submenuCls} ${submenuPositionCls} top-0`}>
-                  {item.items.map((sub, j) => (
+                  {item.items.map((sub) => (
                     <button
-                      key={j}
+                      key={sub.label}
                       type="button"
                       role="menuitem"
                       className={itemCls}
-                      onClick={() => { sub.onClick(); onClose(); }}
+                      onClick={() => {
+                        sub.onClick();
+                        onClose();
+                      }}
                     >
                       {sub.label}
                     </button>
@@ -108,11 +123,14 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
         }
         return (
           <button
-            key={i}
+            key={item.label}
             type="button"
             role="menuitem"
             className={`${itemCls} ${item.danger ? "text-red-400" : ""}`}
-            onClick={() => { item.onClick(); onClose(); }}
+            onClick={() => {
+              item.onClick();
+              onClose();
+            }}
           >
             {item.label}
           </button>

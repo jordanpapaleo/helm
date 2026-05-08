@@ -1,7 +1,7 @@
 import { ulid } from "ulid";
-import { useNoteStore } from "../../store/notes";
 import { noteFilePath, serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
+import { useNoteStore } from "../../store/notes";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
 
@@ -52,6 +52,7 @@ export function NewNoteButton() {
 
   return (
     <button
+      type="button"
       onClick={handleCreate}
       disabled={!vault}
       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:cursor-not-allowed"

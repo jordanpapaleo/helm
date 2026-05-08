@@ -1,13 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { buildIndex, searchNotes } from "./search";
+import { describe, expect, it } from "vitest";
 import type { Note } from "../types/note";
+import { buildIndex, searchNotes } from "./search";
 
-function makeNote(
-  id: string,
-  title: string,
-  content: string,
-  tags: string[] = []
-): Note {
+function makeNote(id: string, title: string, content: string, tags: string[] = []): Note {
   return {
     id,
     filePath: `/notes/${id}.md`,
@@ -29,24 +24,12 @@ function makeNote(
 }
 
 const notes = [
-  makeNote(
-    "01",
-    "Rule Builder",
-    "Build composite membership rules for portfolios",
-    ["Code", "CE"]
-  ),
-  makeNote(
-    "02",
-    "CE Tooling Updates",
-    "Document tooling upgrade for CE projects",
-    ["Influence", "CE"]
-  ),
-  makeNote(
-    "03",
-    "RL Tailwind",
-    "Implement Tailwind CSS in RL codebase",
-    ["Code", "RL"]
-  ),
+  makeNote("01", "Rule Builder", "Build composite membership rules for portfolios", ["Code", "CE"]),
+  makeNote("02", "CE Tooling Updates", "Document tooling upgrade for CE projects", [
+    "Influence",
+    "CE",
+  ]),
+  makeNote("03", "RL Tailwind", "Implement Tailwind CSS in RL codebase", ["Code", "RL"]),
 ];
 
 describe("buildIndex + searchNotes", () => {

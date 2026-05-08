@@ -4,23 +4,22 @@
  * charts, and a filterable note list. Clicking a chip filters all content to that subset.
  */
 import { useState } from "react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { NOTE_STATES } from "../lib/constants";
 import { useNoteStore } from "../store/notes";
 import { useUIStore } from "../store/ui";
-import { NOTE_STATES } from "../lib/constants";
-import { getQuadrant } from "../types/note";
 import type { Note } from "../types/note";
+import { getQuadrant } from "../types/note";
 
 const CHART_COLORS = [
-  "#0a84ff", "#30d158", "#ff453a", "#ff9f0a",
-  "#bf5af2", "#64d2ff", "#ffd60a", "#ff6961",
+  "#0a84ff",
+  "#30d158",
+  "#ff453a",
+  "#ff9f0a",
+  "#bf5af2",
+  "#64d2ff",
+  "#ffd60a",
+  "#ff6961",
 ];
 
 /** Dashboard filter type — an Eisenhower quadrant, blocked notes, or all notes */
@@ -32,12 +31,18 @@ type Filter = "urgent" | "schedule" | "delegate" | "eliminate" | "blocked" | "al
  */
 function filterNotes(notes: Note[], filter: Filter): Note[] {
   switch (filter) {
-    case "urgent":    return notes.filter((n) => getQuadrant(n) === "do");
-    case "schedule":  return notes.filter((n) => getQuadrant(n) === "schedule");
-    case "delegate":  return notes.filter((n) => getQuadrant(n) === "delegate");
-    case "eliminate": return notes.filter((n) => getQuadrant(n) === "eliminate");
-    case "blocked":   return notes.filter((n) => n.frontmatter.blocked);
-    default:          return notes;
+    case "urgent":
+      return notes.filter((n) => getQuadrant(n) === "do");
+    case "schedule":
+      return notes.filter((n) => getQuadrant(n) === "schedule");
+    case "delegate":
+      return notes.filter((n) => getQuadrant(n) === "delegate");
+    case "eliminate":
+      return notes.filter((n) => getQuadrant(n) === "eliminate");
+    case "blocked":
+      return notes.filter((n) => n.frontmatter.blocked);
+    default:
+      return notes;
   }
 }
 
@@ -65,6 +70,7 @@ interface ChipProps {
 function SummaryChip({ value, label, color, active, onClick }: ChipProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`rounded-xl border px-4 py-3 text-left transition-all min-w-[88px] ${color} ${
         active ? "ring-2 ring-white/30 scale-105" : "opacity-80 hover:opacity-100"
@@ -131,7 +137,7 @@ export function DashboardView() {
 
   // Same color assignment as the chart (index into CHART_COLORS by stateData order)
   const stateColorMap = Object.fromEntries(
-    stateData.map((d, i) => [d.name, CHART_COLORS[i % CHART_COLORS.length]])
+    stateData.map((d, i) => [d.name, CHART_COLORS[i % CHART_COLORS.length]]),
   );
 
   function handleChipClick(filter: Filter) {
@@ -155,9 +161,7 @@ export function DashboardView() {
   return (
     <div className="h-full overflow-y-auto p-6">
       <h2 className="mb-2 text-xl font-bold text-[var(--color-text)]">Dashboard</h2>
-      <p className="mb-6 text-sm text-[var(--color-text-muted)]">
-        {notes.length} notes in vault
-      </p>
+      <p className="mb-6 text-sm text-[var(--color-text-muted)]">{notes.length} notes in vault</p>
 
       {/* Summary chips */}
       <div className="mb-8 flex flex-wrap gap-3">
@@ -213,15 +217,33 @@ export function DashboardView() {
             {tagData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={tagData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
-                    {tagData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  <Pie
+                    data={tagData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    dataKey="value"
+                    paddingAngle={2}
+                  >
+                    {tagData.map((entry, i) => (
+                      <Cell key={entry.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
                   </Pie>
                   <Tooltip contentStyle={tooltipStyle as React.CSSProperties} />
-                  <Legend formatter={(v) => <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>{v}</span>} />
+                  <Legend
+                    formatter={(v) => (
+                      <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>
+                        {v}
+                      </span>
+                    )}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">No tags in selection</p>
+              <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
+                No tags in selection
+              </p>
             )}
           </div>
 
@@ -229,11 +251,25 @@ export function DashboardView() {
             <p className="mb-4 font-semibold text-[var(--color-text)]">State Distribution</p>
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie data={stateData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
-                  {stateData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                <Pie
+                  data={stateData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={85}
+                  dataKey="value"
+                  paddingAngle={2}
+                >
+                  {stateData.map((entry, i) => (
+                    <Cell key={entry.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
                 </Pie>
                 <Tooltip contentStyle={tooltipStyle as React.CSSProperties} />
-                <Legend formatter={(v) => <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>{v}</span>} />
+                <Legend
+                  formatter={(v) => (
+                    <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>{v}</span>
+                  )}
+                />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -243,11 +279,27 @@ export function DashboardView() {
               <p className="mb-4 font-semibold text-[var(--color-text)]">Team Distribution</p>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={teamData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
-                    {teamData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  <Pie
+                    data={teamData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    dataKey="value"
+                    paddingAngle={2}
+                  >
+                    {teamData.map((entry, i) => (
+                      <Cell key={entry.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
                   </Pie>
                   <Tooltip contentStyle={tooltipStyle as React.CSSProperties} />
-                  <Legend formatter={(v) => <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>{v}</span>} />
+                  <Legend
+                    formatter={(v) => (
+                      <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>
+                        {v}
+                      </span>
+                    )}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -266,11 +318,14 @@ export function DashboardView() {
           <span className="text-xs text-[var(--color-text-muted)]">{subset.length} notes</span>
         </div>
         {subset.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No notes in this category.</p>
+          <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">
+            No notes in this category.
+          </p>
         ) : (
           <div className="divide-y divide-[var(--color-border)]">
             {subset.map((note) => (
               <button
+                type="button"
                 key={note.id}
                 onClick={() => handleNoteClick(note)}
                 className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-[var(--color-border)]/20 transition-colors"
@@ -299,7 +354,9 @@ export function DashboardView() {
                     <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-red-400">urgent</span>
                   )}
                   {note.frontmatter.blocked && (
-                    <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-yellow-400">blocked</span>
+                    <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-yellow-400">
+                      blocked
+                    </span>
                   )}
                 </div>
               </button>

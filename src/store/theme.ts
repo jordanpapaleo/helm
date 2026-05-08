@@ -3,7 +3,7 @@
  * Loads theme from localStorage on startup and applies it immediately.
  */
 import { create } from "zustand";
-import { THEMES, applyTheme, type Theme } from "../lib/themes";
+import { applyTheme, THEMES, type Theme } from "../lib/themes";
 
 const STORAGE_KEY = "helm-theme";
 

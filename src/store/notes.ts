@@ -4,8 +4,8 @@
  * full-text search index for note discovery.
  */
 import { create } from "zustand";
+import { buildIndex, type NoteIndex, searchNotes } from "../lib/search";
 import type { Note, VaultConfig } from "../types/note";
-import { buildIndex, searchNotes, type NoteIndex } from "../lib/search";
 
 /**
  * A node in the hierarchical tag tree structure.

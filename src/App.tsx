@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useVault } from "./hooks/useVault";
+import { useEffect, useState } from "react";
 import { AppShell } from "./components/layout/AppShell";
 import { McpSetupModal } from "./components/McpSetupModal";
+import { useVault } from "./hooks/useVault";
 
 export default function App() {
   const { loading, error } = useVault();

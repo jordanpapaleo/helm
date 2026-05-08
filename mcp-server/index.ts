@@ -2,15 +2,15 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import fs from "fs";
-import path from "path";
 import matter from "gray-matter";
+import path from "path";
 
 // ── Vault resolution ──────────────────────────────────────────────────────────
 // Supports multiple vaults via HELM_VAULTS (comma-separated paths) or HELM_VAULT (single path)
@@ -18,10 +18,14 @@ import matter from "gray-matter";
 function resolveVaults(): { name: string; path: string }[] {
   const multi = process.env.HELM_VAULTS;
   if (multi) {
-    return multi.split(",").map((p) => p.trim()).filter(Boolean).map((p) => ({
-      name: path.basename(p),
-      path: p,
-    }));
+    return multi
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => ({
+        name: path.basename(p),
+        path: p,
+      }));
   }
   const single = process.env.HELM_VAULT ?? `${process.env.HOME}/notes`;
   return [{ name: path.basename(single), path: single }];
@@ -85,9 +89,7 @@ function listAllNotes(): Note[] {
 }
 
 function writeNote(filePath: string, frontmatter: NoteData, content: string): void {
-  const data = Object.fromEntries(
-    Object.entries(frontmatter).filter(([, v]) => v !== undefined)
-  );
+  const data = Object.fromEntries(Object.entries(frontmatter).filter(([, v]) => v !== undefined));
   fs.writeFileSync(filePath, matter.stringify(content, data));
 }
 
@@ -212,7 +214,7 @@ PROTECTED FIELDS
 
 const server = new Server(
   { name: "helm", version: "2.0.0" },
-  { capabilities: { tools: {}, resources: {}, prompts: {} } }
+  { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
@@ -234,7 +236,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         properties: {
           tag: {
             type: "string",
-            description: "Filter by tag. Hierarchical: 'work' matches 'work', 'work/project', 'work/project/alpha', etc.",
+            description:
+              "Filter by tag. Hierarchical: 'work' matches 'work', 'work/project', 'work/project/alpha', etc.",
           },
           state: {
             type: "string",
@@ -257,11 +260,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           quadrant: {
             type: "string",
             enum: ["do", "schedule", "delegate", "eliminate"],
-            description: "Eisenhower quadrant shorthand. 'do'=urgent+important, 'schedule'=!urgent+important, 'delegate'=urgent+!important, 'eliminate'=!urgent+!important.",
+            description:
+              "Eisenhower quadrant shorthand. 'do'=urgent+important, 'schedule'=!urgent+important, 'delegate'=urgent+!important, 'eliminate'=!urgent+!important.",
           },
           vault: {
             type: "string",
-            description: "Filter to a specific vault by name (only relevant if multiple vaults are configured).",
+            description:
+              "Filter to a specific vault by name (only relevant if multiple vaults are configured).",
           },
         },
       },
@@ -292,7 +297,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "search_notes",
-      description: "Search notes by keyword across title, content, and tags. Returns ranked results.",
+      description:
+        "Search notes by keyword across title, content, and tags. Returns ranked results.",
       inputSchema: {
         type: "object",
         properties: {
@@ -347,7 +353,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           tags: {
             type: "array",
             items: { type: "string" },
-            description: "Tag array, e.g. ['work', 'work/project']. Hierarchical — use '/' as separator.",
+            description:
+              "Tag array, e.g. ['work', 'work/project']. Hierarchical — use '/' as separator.",
           },
           links: {
             type: "array",
@@ -361,8 +368,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ["Prepare", "Doing", "Maintain", "Done"],
             default: "Prepare",
           },
-          blocked: { type: "boolean", default: false, description: "Is this note currently blocked?" },
-          pinned: { type: "boolean", default: false, description: "Pin this note to the top of lists." },
+          blocked: {
+            type: "boolean",
+            default: false,
+            description: "Is this note currently blocked?",
+          },
+          pinned: {
+            type: "boolean",
+            default: false,
+            description: "Pin this note to the top of lists.",
+          },
           deadline: { type: "string", description: "Due date in YYYY-MM-DD format." },
           team: {
             type: "array",
@@ -371,11 +386,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           created: {
             type: "string",
-            description: "Creation date in YYYY-MM-DD. Defaults to today. Set this when bulk-importing historical notes.",
+            description:
+              "Creation date in YYYY-MM-DD. Defaults to today. Set this when bulk-importing historical notes.",
           },
           vault: {
             type: "string",
-            description: "Vault name to create the note in. Defaults to the first configured vault.",
+            description:
+              "Vault name to create the note in. Defaults to the first configured vault.",
           },
         },
         required: ["title"],
@@ -438,10 +455,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "get_rules") {
     const vaultList = VAULTS.map((v) => `  • ${v.name}: ${v.path}`).join("\n");
     return {
-      content: [{
-        type: "text",
-        text: `${RULES}\n\nCONFIGURED VAULTS:\n${vaultList}`,
-      }],
+      content: [
+        {
+          type: "text",
+          text: `${RULES}\n\nCONFIGURED VAULTS:\n${vaultList}`,
+        },
+      ],
     };
   }
 
@@ -455,33 +474,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (args?.tag) {
       const tag = String(args.tag);
       filtered = filtered.filter((n) =>
-        (n.frontmatter.tags ?? []).some((t) => t === tag || t.startsWith(tag + "/"))
+        (n.frontmatter.tags ?? []).some((t) => t === tag || t.startsWith(tag + "/")),
       );
     }
     if (args?.quadrant) {
       const q = args.quadrant as Quadrant;
       filtered = filtered.filter((n) => getQuadrant(n.frontmatter) === q);
     } else {
-      if (args?.urgent !== undefined) filtered = filtered.filter((n) => n.frontmatter.urgent === args.urgent);
-      if (args?.important !== undefined) filtered = filtered.filter((n) => n.frontmatter.important === args.important);
+      if (args?.urgent !== undefined)
+        filtered = filtered.filter((n) => n.frontmatter.urgent === args.urgent);
+      if (args?.important !== undefined)
+        filtered = filtered.filter((n) => n.frontmatter.important === args.important);
     }
     if (args?.state) filtered = filtered.filter((n) => n.frontmatter.state === args.state);
-    if (args?.blocked !== undefined) filtered = filtered.filter((n) => Boolean(n.frontmatter.blocked) === args.blocked);
-    if (args?.pinned !== undefined) filtered = filtered.filter((n) => Boolean(n.frontmatter.pinned) === args.pinned);
-    if (args?.locked !== undefined) filtered = filtered.filter((n) => Boolean(n.frontmatter.locked) === args.locked);
+    if (args?.blocked !== undefined)
+      filtered = filtered.filter((n) => Boolean(n.frontmatter.blocked) === args.blocked);
+    if (args?.pinned !== undefined)
+      filtered = filtered.filter((n) => Boolean(n.frontmatter.pinned) === args.pinned);
+    if (args?.locked !== undefined)
+      filtered = filtered.filter((n) => Boolean(n.frontmatter.locked) === args.locked);
     if (args?.overdue) filtered = filtered.filter((n) => isOverdue(n.frontmatter.deadline));
     if (args?.team_member) {
       const member = String(args.team_member).toLowerCase();
       filtered = filtered.filter((n) =>
-        (n.frontmatter.team ?? []).some((m) => m.toLowerCase().includes(member))
+        (n.frontmatter.team ?? []).some((m) => m.toLowerCase().includes(member)),
       );
     }
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(filtered.map(noteSummary), null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(filtered.map(noteSummary), null, 2),
+        },
+      ],
     };
   }
 
@@ -495,51 +521,60 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const inlineTags = extractInlineTags(note.content);
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({
-          frontmatter: note.frontmatter,
-          content: note.content,
-          vault: note.vaultName,
-          derived: {
-            wikiLinks,
-            inlineTags,
-            quadrant: getQuadrant(note.frontmatter),
-            overdue: isOverdue(note.frontmatter.deadline),
-          },
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              frontmatter: note.frontmatter,
+              content: note.content,
+              vault: note.vaultName,
+              derived: {
+                wikiLinks,
+                inlineTags,
+                quadrant: getQuadrant(note.frontmatter),
+                overdue: isOverdue(note.frontmatter.deadline),
+              },
+            },
+            null,
+            2,
+          ),
+        },
+      ],
     };
   }
 
   // ── resolve_note ───────────────────────────────────────────────────────────
   if (name === "resolve_note") {
     const query = String(args?.title ?? "").toLowerCase();
-    const matches = notes.filter((n) =>
-      n.frontmatter.title?.toLowerCase().includes(query)
-    );
+    const matches = notes.filter((n) => n.frontmatter.title?.toLowerCase().includes(query));
     if (matches.length === 0) {
       return { content: [{ type: "text", text: `No note found matching: "${args?.title}"` }] };
     }
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(
-          matches.map((n) => ({
-            id: n.frontmatter.id,
-            title: n.frontmatter.title,
-            tags: n.frontmatter.tags,
-            vault: n.vaultName,
-          })),
-          null, 2
-        ),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            matches.map((n) => ({
+              id: n.frontmatter.id,
+              title: n.frontmatter.title,
+              tags: n.frontmatter.tags,
+              vault: n.vaultName,
+            })),
+            null,
+            2,
+          ),
+        },
+      ],
     };
   }
 
   // ── search_notes ───────────────────────────────────────────────────────────
   if (name === "search_notes") {
-    const query = String(args?.query ?? "").toLowerCase().trim();
+    const query = String(args?.query ?? "")
+      .toLowerCase()
+      .trim();
     if (!query) return { content: [{ type: "text", text: "[]" }] };
 
     const terms = query.split(/\s+/);
@@ -564,29 +599,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       .map((s) => noteSummary(s.note));
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(results, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(results, null, 2),
+        },
+      ],
     };
   }
 
   // ── get_eisenhower ─────────────────────────────────────────────────────────
   if (name === "get_eisenhower") {
     const active = notes.filter(
-      (n) => n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing"
+      (n) => n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing",
     );
     const quadrants: Record<Quadrant, ReturnType<typeof noteSummary>[]> = {
-      do: [], schedule: [], delegate: [], eliminate: [],
+      do: [],
+      schedule: [],
+      delegate: [],
+      eliminate: [],
     };
     for (const n of active) {
       quadrants[getQuadrant(n.frontmatter)].push(noteSummary(n));
     }
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(quadrants, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(quadrants, null, 2),
+        },
+      ],
     };
   }
 
@@ -603,10 +645,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (state in columns) columns[state].push(noteSummary(n));
     }
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(columns, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(columns, null, 2),
+        },
+      ],
     };
   }
 
@@ -624,7 +668,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       .filter((n) => {
         const linksToId = (n.frontmatter.links ?? []).includes(id);
         const wikiLinksToTitle = extractWikiLinks(n.content).some(
-          (link) => link.toLowerCase() === targetTitle
+          (link) => link.toLowerCase() === targetTitle,
         );
         return linksToId || wikiLinksToTitle;
       })
@@ -638,14 +682,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }));
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({
-          target: { id, title: target.frontmatter.title },
-          backlinks,
-          count: backlinks.length,
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              target: { id, title: target.frontmatter.title },
+              backlinks,
+              count: backlinks.length,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
     };
   }
 
@@ -678,10 +728,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(tree, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(tree, null, 2),
+        },
+      ],
     };
   }
 
@@ -693,12 +745,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Resolve target vault
     const vaultName = args?.vault ? String(args.vault) : undefined;
-    const vault = vaultName
-      ? VAULTS.find((v) => v.name === vaultName) ?? VAULTS[0]
-      : VAULTS[0];
+    const vault = vaultName ? (VAULTS.find((v) => v.name === vaultName) ?? VAULTS[0]) : VAULTS[0];
 
     if (!vault) {
-      return { content: [{ type: "text", text: "No vault configured. Set HELM_VAULT or HELM_VAULTS." }] };
+      return {
+        content: [{ type: "text", text: "No vault configured. Set HELM_VAULT or HELM_VAULTS." }],
+      };
     }
 
     if (!fs.existsSync(vault.path)) {
@@ -734,10 +786,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     writeNote(filePath, frontmatter, content);
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({ id, title, filePath, vault: vault.name }, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ id, title, filePath, vault: vault.name }, null, 2),
+        },
+      ],
     };
   }
 
@@ -749,7 +803,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (note.frontmatter.locked) {
       return {
-        content: [{ type: "text", text: `Refused: "${note.frontmatter.title}" is locked. Unlock it in Helm first.` }],
+        content: [
+          {
+            type: "text",
+            text: `Refused: "${note.frontmatter.title}" is locked. Unlock it in Helm first.`,
+          },
+        ],
       };
     }
 
@@ -777,8 +836,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ...incoming,
       tags: updatedTags,
       links: updatedLinks,
-      id: note.frontmatter.id,           // never overwrite
-      locked: note.frontmatter.locked,   // never overwrite
+      id: note.frontmatter.id, // never overwrite
+      locked: note.frontmatter.locked, // never overwrite
       updated: new Date().toISOString().split("T")[0],
     };
 
@@ -786,10 +845,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     writeNote(note.filePath, updatedFrontmatter, content);
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({ id, title: updatedFrontmatter.title, updated: updatedFrontmatter.updated }, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { id, title: updatedFrontmatter.title, updated: updatedFrontmatter.updated },
+            null,
+            2,
+          ),
+        },
+      ],
     };
   }
 
@@ -801,17 +866,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (note.frontmatter.locked) {
       return {
-        content: [{ type: "text", text: `Refused: "${note.frontmatter.title}" is locked. Unlock it in Helm first.` }],
+        content: [
+          {
+            type: "text",
+            text: `Refused: "${note.frontmatter.title}" is locked. Unlock it in Helm first.`,
+          },
+        ],
       };
     }
 
     fs.unlinkSync(note.filePath);
 
     return {
-      content: [{
-        type: "text",
-        text: `Deleted: "${note.frontmatter.title}" (${id})`,
-      }],
+      content: [
+        {
+          type: "text",
+          text: `Deleted: "${note.frontmatter.title}" (${id})`,
+        },
+      ],
     };
   }
 
@@ -845,11 +917,13 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   // Return the raw markdown file (frontmatter + content)
   const raw = fs.readFileSync(note.filePath, "utf-8");
   return {
-    contents: [{
-      uri,
-      mimeType: "text/markdown",
-      text: raw,
-    }],
+    contents: [
+      {
+        uri,
+        mimeType: "text/markdown",
+        text: raw,
+      },
+    ],
   };
 });
 
@@ -872,15 +946,14 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     },
     {
       name: "weekly_review",
-      description: "Run a weekly review: surface overdue items, blocked notes, and notes ready to move states.",
+      description:
+        "Run a weekly review: surface overdue items, blocked notes, and notes ready to move states.",
       arguments: [],
     },
     {
       name: "project_brief",
       description: "Summarize all notes under a specific tag as a project status brief.",
-      arguments: [
-        { name: "tag", description: "The project tag to summarize", required: true },
-      ],
+      arguments: [{ name: "tag", description: "The project tag to summarize", required: true }],
     },
   ],
 }));
@@ -892,11 +965,12 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
     const idea = args?.idea ?? "";
     const tags = args?.tags ?? "";
     return {
-      messages: [{
-        role: "user",
-        content: {
-          type: "text",
-          text: `Please capture the following into my Helm vault as a new note:
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Please capture the following into my Helm vault as a new note:
 
 "${idea}"
 
@@ -907,18 +981,20 @@ Steps:
 2. Determine the right title, tags, state (Prepare for tasks, Doing if it's active), urgent/important flags.
 3. Call create_note with the structured data.
 4. Confirm what was created.`,
+          },
         },
-      }],
+      ],
     };
   }
 
   if (name === "daily_standup") {
     return {
-      messages: [{
-        role: "user",
-        content: {
-          type: "text",
-          text: `Generate my daily standup from my Helm vault.
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Generate my daily standup from my Helm vault.
 
 Steps:
 1. Call list_notes with state="Doing" to get everything I'm currently working on.
@@ -929,18 +1005,20 @@ Steps:
    - **Blockers**: any blocked notes
    - **Overdue**: any past-deadline items
    - **Suggested next**: pick the highest-priority Prepare note based on urgent+important flags`,
+          },
         },
-      }],
+      ],
     };
   }
 
   if (name === "weekly_review") {
     return {
-      messages: [{
-        role: "user",
-        content: {
-          type: "text",
-          text: `Run a weekly review of my Helm vault.
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Run a weekly review of my Helm vault.
 
 Steps:
 1. Call get_eisenhower to see everything in the "do" and "schedule" quadrants.
@@ -954,19 +1032,21 @@ Steps:
    - **Blocked — Needs Resolution**
    - **Completed Recently** (celebrate wins)
    - **Recommended Actions**: suggest state changes, archive candidates, or new notes to create`,
+          },
         },
-      }],
+      ],
     };
   }
 
   if (name === "project_brief") {
     const tag = args?.tag ?? "";
     return {
-      messages: [{
-        role: "user",
-        content: {
-          type: "text",
-          text: `Generate a project status brief for the "${tag}" tag in my Helm vault.
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Generate a project status brief for the "${tag}" tag in my Helm vault.
 
 Steps:
 1. Call list_notes with tag="${tag}" to get all notes in this project.
@@ -978,8 +1058,9 @@ Steps:
    - **Upcoming**: Prepare notes, sorted by urgency
    - **Dependencies**: any cross-linked notes or team members involved
    - **Risks**: overdue items, blocked notes, notes with no state progress`,
+          },
         },
-      }],
+      ],
     };
   }
 

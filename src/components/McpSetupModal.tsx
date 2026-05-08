@@ -48,9 +48,11 @@ ${envBlock}
   }
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop captures clicks outside the dialog
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
     >
       <div className="relative flex flex-col w-[680px] max-h-[85vh] overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] shadow-2xl">
         {/* Header */}

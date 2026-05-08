@@ -1,17 +1,17 @@
-import { useRef } from "react";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import { useUIStore } from "../../store/ui";
+import { useRef } from "react";
+import { extractInlineTags, extractWikiLinks, serializeNote } from "../../lib/note-parser";
+import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
+import { useUIStore } from "../../store/ui";
+import type { NoteFrontmatter } from "../../types/note";
+import { DashboardView } from "../../views/DashboardView";
+import { EisenhowerView } from "../../views/EisenhowerView";
+import { GraphView } from "../../views/GraphView";
+import { KanbanView } from "../../views/KanbanView";
+import { BacklinksPanel } from "../editor/BacklinksPanel";
 import { NoteEditor, type NoteEditorHandle } from "../editor/NoteEditor";
 import { PropertyPanel } from "../editor/PropertyPanel";
-import { BacklinksPanel } from "../editor/BacklinksPanel";
-import { serializeNote, extractInlineTags, extractWikiLinks } from "../../lib/note-parser";
-import { tauriCommands } from "../../lib/tauri-commands";
-import type { NoteFrontmatter } from "../../types/note";
-import { EisenhowerView } from "../../views/EisenhowerView";
-import { KanbanView } from "../../views/KanbanView";
-import { DashboardView } from "../../views/DashboardView";
-import { GraphView } from "../../views/GraphView";
 
 // Extract absolute file paths from asset:// URLs embedded in markdown image tags.
 // http://asset.localhost/Users/foo/notes/assets/img.png → /Users/foo/notes/assets/img.png
@@ -24,7 +24,9 @@ function extractAssetPaths(content: string): Set<string> {
       if (url.hostname === "asset.localhost") {
         paths.add(decodeURIComponent(url.pathname));
       }
-    } catch { /* not a URL, skip */ }
+    } catch {
+      /* not a URL, skip */
+    }
   }
   return paths;
 }
@@ -40,8 +42,8 @@ export function MainPanel() {
     const inlineTags = extractInlineTags(content);
     const wikiTitles = extractWikiLinks(content);
     const linkedIds = wikiTitles
-      .map((title) =>
-        notes.find((n) => n.frontmatter.title.toLowerCase() === title.toLowerCase())?.id
+      .map(
+        (title) => notes.find((n) => n.frontmatter.title.toLowerCase() === title.toLowerCase())?.id,
       )
       .filter((id): id is string => id !== undefined && id !== selectedNote.id);
 
@@ -67,7 +69,9 @@ export function MainPanel() {
     const newPaths = extractAssetPaths(content);
     for (const path of oldPaths) {
       if (!newPaths.has(path)) {
-        tauriCommands.deleteNote(path).catch(() => { /* already gone, ignore */ });
+        tauriCommands.deleteNote(path).catch(() => {
+          /* already gone, ignore */
+        });
       }
     }
   }
@@ -92,7 +96,10 @@ export function MainPanel() {
 
   async function handleDelete() {
     if (!selectedNote) return;
-    const confirmed = await confirm(`Delete "${selectedNote.frontmatter.title || "Untitled"}"? This cannot be undone.`, { title: "Delete Note", kind: "warning" });
+    const confirmed = await confirm(
+      `Delete "${selectedNote.frontmatter.title || "Untitled"}"? This cannot be undone.`,
+      { title: "Delete Note", kind: "warning" },
+    );
     if (!confirmed) return;
     selectNote(null);
     removeNote(selectedNote.id);
@@ -116,7 +123,12 @@ export function MainPanel() {
                 onTitleTab={() => editorRef.current?.focus()}
                 onDelete={handleDelete}
               />
-              <NoteEditor ref={editorRef} note={selectedNote} onSave={handleSave} locked={selectedNote.frontmatter.locked} />
+              <NoteEditor
+                ref={editorRef}
+                note={selectedNote}
+                onSave={handleSave}
+                locked={selectedNote.frontmatter.locked}
+              />
               <BacklinksPanel note={selectedNote} />
             </div>
           ) : (

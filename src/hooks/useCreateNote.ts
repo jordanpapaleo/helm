@@ -1,7 +1,7 @@
 import { ulid } from "ulid";
-import { useNoteStore } from "../store/notes";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
+import { useNoteStore } from "../store/notes";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
 

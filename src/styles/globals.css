@@ -185,7 +185,9 @@ ul[data-type="taskList"] li > label input[type="checkbox"] {
   position: relative;
   display: grid;
   place-items: center;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 ul[data-type="taskList"] li > label input[type="checkbox"]:checked {
   background: #0a84ff;
@@ -236,25 +238,50 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
 
 /* ── Lowlight / highlight.js token colours (One Dark) ──────── */
 .hljs-comment,
-.hljs-quote        { color: #5c6370; font-style: italic; }
+.hljs-quote {
+  color: #5c6370;
+  font-style: italic;
+}
 .hljs-keyword,
-.hljs-selector-tag { color: #c678dd; }
+.hljs-selector-tag {
+  color: #c678dd;
+}
 .hljs-number,
-.hljs-literal      { color: #d19a66; }
+.hljs-literal {
+  color: #d19a66;
+}
 .hljs-string,
-.hljs-doctag       { color: #98c379; }
+.hljs-doctag {
+  color: #98c379;
+}
 .hljs-title,
 .hljs-section,
-.hljs-type         { color: #61afef; }
+.hljs-type {
+  color: #61afef;
+}
 .hljs-variable,
 .hljs-template-variable,
-.hljs-attr         { color: #e06c75; }
+.hljs-attr {
+  color: #e06c75;
+}
 .hljs-built_in,
-.hljs-builtin-name { color: #56b6c2; }
-.hljs-tag          { color: #e06c75; }
-.hljs-name         { color: #e06c75; }
-.hljs-attribute    { color: #d19a66; }
+.hljs-builtin-name {
+  color: #56b6c2;
+}
+.hljs-tag {
+  color: #e06c75;
+}
+.hljs-name {
+  color: #e06c75;
+}
+.hljs-attribute {
+  color: #d19a66;
+}
 .hljs-symbol,
 .hljs-bullet,
-.hljs-link         { color: #98c379; }
-.hljs-meta         { color: #5c6370; }
+.hljs-link {
+  color: #98c379;
+}
+.hljs-meta {
+  color: #5c6370;
+}

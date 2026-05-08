@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useEffect, useState } from "react";
 import { ulid } from "ulid";
-import { tauriCommands } from "../lib/tauri-commands";
 import { parseNote, serializeNote } from "../lib/note-parser";
+import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
-import type { VaultConfig, Note } from "../types/note";
+import type { Note, VaultConfig } from "../types/note";
 
 // Track which vault paths already have a Rust watcher running.
 // Module-level so it survives React StrictMode double-invocation and prevents
@@ -35,9 +35,7 @@ async function repairVaultFrontmatter(vaultPath: string): Promise<void> {
     }
     if (!fm.title) {
       const base = f.path.split("/").pop()?.replace(/\.md$/i, "") ?? "Untitled";
-      fm.title = base
-        .replace(/[-_]/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+      fm.title = base.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
       dirty = true;
     }
     if (!fm.created) {
@@ -91,7 +89,7 @@ async function loadVault(vault: VaultConfig): Promise<void> {
  */
 async function refreshFolders(vaults: VaultConfig[]): Promise<void> {
   const results = await Promise.all(
-    vaults.map((v) => tauriCommands.listFolders(v.path).catch(() => [] as string[]))
+    vaults.map((v) => tauriCommands.listFolders(v.path).catch(() => [] as string[])),
   );
   const allPaths = results.flat();
   useNoteStore.getState().setKnownFolderPaths(allPaths);

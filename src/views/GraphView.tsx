@@ -3,11 +3,11 @@
  * Shows all notes as nodes and wiki links as edges. Click any node to
  * open that note. Node size indicates number of outgoing links.
  */
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
+import { extractWikiLinks } from "../lib/note-parser";
 import { useNoteStore } from "../store/notes";
 import { useUIStore } from "../store/ui";
-import { extractWikiLinks } from "../lib/note-parser";
 
 /**
  * Graph view component.
@@ -53,10 +53,11 @@ export function GraphView() {
 
       const contentLinks = extractWikiLinks(n.content)
         .map((title) => titleToId.get(title.toLowerCase()))
-        .filter((targetId): targetId is string =>
-          targetId !== undefined &&
-          targetId !== n.id &&
-          !savedLinks.some((l) => l.target === targetId)
+        .filter(
+          (targetId): targetId is string =>
+            targetId !== undefined &&
+            targetId !== n.id &&
+            !savedLinks.some((l) => l.target === targetId),
         )
         .map((targetId) => ({ source: n.id, target: targetId }));
 
@@ -71,7 +72,7 @@ export function GraphView() {
         setView("notes");
       }
     },
-    [selectNote, setView]
+    [selectNote, setView],
   );
 
   return (
@@ -88,7 +89,9 @@ export function GraphView() {
           backgroundColor="var(--color-surface)"
           nodeLabel="label"
           linkColor={() =>
-            getComputedStyle(document.documentElement).getPropertyValue("--color-text-muted").trim() || "#6e6e73"
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--color-text-muted")
+              .trim() || "#6e6e73"
           }
           linkWidth={1.5}
           nodeRelSize={5}
@@ -96,7 +99,7 @@ export function GraphView() {
           nodeCanvasObject={(
             node: { x?: number; y?: number; label?: string },
             ctx: CanvasRenderingContext2D,
-            globalScale: number
+            globalScale: number,
           ) => {
             const { x = 0, y = 0, label = "" } = node;
             const fontSize = 12 / globalScale;

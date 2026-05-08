@@ -13,17 +13,17 @@
     <script>
       if (typeof Buffer === 'undefined') {
         globalThis.Buffer = {
-          isBuffer: function () { return false; },
-          from: function (data) {
+          isBuffer: () => false,
+          from: (data) => {
             var bytes = new TextEncoder().encode(String(data));
             bytes.toString = function (enc) { return new TextDecoder(enc || 'utf-8').decode(this); };
             return bytes;
           },
-          concat: function (list) {
-            var total = list.reduce(function (acc, b) { return acc + b.length; }, 0);
+          concat: (list) => {
+            var total = list.reduce((acc, b) => acc + b.length, 0);
             var result = new Uint8Array(total);
             var offset = 0;
-            list.forEach(function (b) { result.set(b, offset); offset += b.length; });
+            list.forEach((b) => { result.set(b, offset); offset += b.length; });
             result.toString = function (enc) { return new TextDecoder(enc || 'utf-8').decode(this); };
             return result;
           }

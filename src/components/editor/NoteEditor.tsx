@@ -1,14 +1,14 @@
-import { useEditor, EditorContent, Extension, InputRule } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Placeholder from "@tiptap/extension-placeholder";
-import Highlight from "@tiptap/extension-highlight";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
+import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
+import Placeholder from "@tiptap/extension-placeholder";
+import TaskItem from "@tiptap/extension-task-item";
+import TaskList from "@tiptap/extension-task-list";
+import { EditorContent, Extension, InputRule, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
-import { Markdown } from "tiptap-markdown";
 import taskListPlugin from "markdown-it-task-lists";
+import { Markdown } from "tiptap-markdown";
 
 // tiptap-markdown calls parse.setup(md) on every parse() call (initial load, paste, setContent).
 // We use this to register markdown-it-task-lists once on the md instance.
@@ -32,7 +32,10 @@ const TaskListMarkdown = TaskList.extend({
           // Only fire when inside a bulletList listItem
           let listItemDepth = -1;
           for (let d = $from.depth; d >= 0; d--) {
-            if ($from.node(d).type === listItemType) { listItemDepth = d; break; }
+            if ($from.node(d).type === listItemType) {
+              listItemDepth = d;
+              break;
+            }
           }
           if (listItemDepth < 0) return;
 
@@ -127,20 +130,14 @@ const ClearMarksOnEnter = Extension.create({
     };
   },
 });
+
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { WikiLinkExtension } from "./WikiLink";
-import {
-  useEffect,
-  useCallback,
-  forwardRef,
-  useImperativeHandle,
-  useState,
-  useRef,
-} from "react";
-import type { Note } from "../../types/note";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
+import type { Note } from "../../types/note";
+import { WikiLinkExtension } from "./WikiLink";
 
 const lowlight = createLowlight(common);
 
@@ -199,39 +196,61 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           suggestion: {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             items: ({ query }: any) =>
-              !autocompleteRef.current ? [] :
-              notesRef.current
-                .filter(
-                  (n) =>
-                    n.id !== noteIdRef.current &&
-                    n.frontmatter.title.toLowerCase().includes(query.toLowerCase())
-                )
-                .slice(0, 8),
+              !autocompleteRef.current
+                ? []
+                : notesRef.current
+                    .filter(
+                      (n) =>
+                        n.id !== noteIdRef.current &&
+                        n.frontmatter.title.toLowerCase().includes(query.toLowerCase()),
+                    )
+                    .slice(0, 8),
             render: () => ({
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               onStart(props: any) {
                 const rect = props.clientRect?.();
                 if (!rect) return;
-                setPopupRef.current({ items: props.items, selectedIndex: 0, rect, command: props.command });
+                setPopupRef.current({
+                  items: props.items,
+                  selectedIndex: 0,
+                  rect,
+                  command: props.command,
+                });
               },
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               onUpdate(props: any) {
                 const rect = props.clientRect?.();
                 setPopupRef.current((prev) =>
-                  prev ? { ...prev, items: props.items, rect: rect ?? prev.rect, command: props.command } : null
+                  prev
+                    ? {
+                        ...prev,
+                        items: props.items,
+                        rect: rect ?? prev.rect,
+                        command: props.command,
+                      }
+                    : null,
                 );
               },
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               onKeyDown({ event }: any) {
                 const curr = popupRef.current;
                 if (!curr || curr.items.length === 0) return false;
-                if (event.key === "Escape") { setPopupRef.current(null); return true; }
+                if (event.key === "Escape") {
+                  setPopupRef.current(null);
+                  return true;
+                }
                 if (event.key === "ArrowDown") {
-                  setPopupRef.current({ ...curr, selectedIndex: (curr.selectedIndex + 1) % curr.items.length });
+                  setPopupRef.current({
+                    ...curr,
+                    selectedIndex: (curr.selectedIndex + 1) % curr.items.length,
+                  });
                   return true;
                 }
                 if (event.key === "ArrowUp") {
-                  setPopupRef.current({ ...curr, selectedIndex: (curr.selectedIndex - 1 + curr.items.length) % curr.items.length });
+                  setPopupRef.current({
+                    ...curr,
+                    selectedIndex: (curr.selectedIndex - 1 + curr.items.length) % curr.items.length,
+                  });
                   return true;
                 }
                 if (event.key === "Enter") {
@@ -242,7 +261,9 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
                 }
                 return false;
               },
-              onExit() { setPopupRef.current(null); },
+              onExit() {
+                setPopupRef.current(null);
+              },
             }),
           },
         }),
@@ -280,8 +301,8 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
                   const src = convertFileSrc(absPath);
                   view.dispatch(
                     view.state.tr.replaceSelectionWith(
-                      view.state.schema.nodes.image.create({ src, alt: filename })
-                    )
+                      view.state.schema.nodes.image.create({ src, alt: filename }),
+                    ),
                   );
                 } catch (e) {
                   console.error("Failed to save image:", e);
@@ -318,9 +339,13 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       },
     });
 
-    useImperativeHandle(ref, () => ({
-      focus: () => editor?.commands.focus("end"),
-    }), [editor]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => editor?.commands.focus("end"),
+      }),
+      [editor],
+    );
 
     // Reset editor when switching to a different note
     useEffect(() => {
@@ -382,7 +407,11 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     }, [triggerSave]);
 
     return (
-      <div onBlur={locked ? undefined : handleBlur} className={`relative flex-1 overflow-y-auto px-12 py-6 ${locked ? "opacity-75 cursor-not-allowed select-none" : ""}`}>
+      // biome-ignore lint/a11y/noStaticElementInteractions: onBlur bubbles from TipTap's focusable editor content
+      <div
+        onBlur={locked ? undefined : handleBlur}
+        className={`relative flex-1 overflow-y-auto px-12 py-6 ${locked ? "opacity-75 cursor-not-allowed select-none" : ""}`}
+      >
         <EditorContent editor={editor} />
 
         {/* Wiki-link suggestion popup */}
@@ -393,6 +422,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           >
             {popup.items.map((n, i) => (
               <button
+                type="button"
                 key={n.id}
                 className={`flex w-full items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
                   i === popup.selectedIndex
@@ -417,5 +447,5 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         )}
       </div>
     );
-  }
+  },
 );

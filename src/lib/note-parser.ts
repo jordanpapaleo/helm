@@ -53,7 +53,7 @@ export function parseNote(raw: string, filePath: string): Note {
  */
 export function serializeNote(note: Note): string {
   const data = Object.fromEntries(
-    Object.entries(note.frontmatter).filter(([, v]) => v !== undefined)
+    Object.entries(note.frontmatter).filter(([, v]) => v !== undefined),
   );
   return matter.stringify(note.content, data);
 }

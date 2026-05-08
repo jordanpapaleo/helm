@@ -78,9 +78,9 @@ export interface Note {
  * Eisenhower matrix quadrant categories based on urgent/important flags.
  */
 export type EisenhowerQuadrant =
-  | "do"        // urgent + important (top priority)
-  | "schedule"  // not urgent + important (plan for later)
-  | "delegate"  // urgent + not important (pass to someone else)
+  | "do" // urgent + important (top priority)
+  | "schedule" // not urgent + important (plan for later)
+  | "delegate" // urgent + not important (pass to someone else)
   | "eliminate"; // not urgent + not important (skip)
 
 /**

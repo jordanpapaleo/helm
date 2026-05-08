@@ -4,9 +4,9 @@
  * Links are stored as ULIDs in the frontmatter on save.
  */
 import { Extension } from "@tiptap/core";
-import Suggestion, { type SuggestionOptions } from "@tiptap/suggestion";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import Suggestion, { type SuggestionOptions } from "@tiptap/suggestion";
 import type { Note } from "../../types/note";
 
 /**
@@ -52,11 +52,9 @@ export const WikiLinkExtension = Extension.create<WikiLinkOptions>({
               let match;
               while ((match = regex.exec(node.text)) !== null) {
                 decos.push(
-                  Decoration.inline(
-                    pos + match.index,
-                    pos + match.index + match[0].length,
-                    { class: "wikilink-ref" }
-                  )
+                  Decoration.inline(pos + match.index, pos + match.index + match[0].length, {
+                    class: "wikilink-ref",
+                  }),
                 );
               }
             });
@@ -71,12 +69,7 @@ export const WikiLinkExtension = Extension.create<WikiLinkOptions>({
         char: "[[",
         allowSpaces: true,
         command: ({ editor, range, props }) => {
-          editor
-            .chain()
-            .focus()
-            .deleteRange(range)
-            .insertContent(`[[${props.label}]] `)
-            .run();
+          editor.chain().focus().deleteRange(range).insertContent(`[[${props.label}]] `).run();
         },
         ...this.options.suggestion,
       }),

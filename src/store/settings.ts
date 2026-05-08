@@ -3,7 +3,7 @@
  * Persists settings to localStorage and applies them globally on change.
  */
 import { create } from "zustand";
-import { DEFAULT_SETTINGS, applySettings, type Settings } from "../lib/settings";
+import { applySettings, DEFAULT_SETTINGS, type Settings } from "../lib/settings";
 
 const STORAGE_KEY = "helm-settings";
 

@@ -237,9 +237,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   }
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop captures clicks outside the dialog
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={handleOverlayClick}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
     >
       <div
         className="flex flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"

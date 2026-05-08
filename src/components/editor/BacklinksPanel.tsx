@@ -10,7 +10,7 @@ export function BacklinksPanel({ note }: BacklinksPanelProps) {
 
   // Notes that link TO this note (backlinks)
   const backlinks = notes.filter(
-    (n) => n.id !== note.id && (n.frontmatter.links ?? []).includes(note.id)
+    (n) => n.id !== note.id && (n.frontmatter.links ?? []).includes(note.id),
   );
 
   // Notes this note links TO (outgoing)
@@ -32,6 +32,7 @@ export function BacklinksPanel({ note }: BacklinksPanelProps) {
             <div className="flex flex-col gap-1">
               {outgoing.map((n) => (
                 <button
+                  type="button"
                   key={n.id}
                   onClick={() => selectNote(n.id)}
                   className="text-left text-sm text-[var(--color-accent)] hover:opacity-80 truncate"
@@ -54,6 +55,7 @@ export function BacklinksPanel({ note }: BacklinksPanelProps) {
             <div className="flex flex-col gap-1">
               {backlinks.map((n) => (
                 <button
+                  type="button"
                   key={n.id}
                   onClick={() => selectNote(n.id)}
                   className="text-left text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] truncate"

@@ -1,21 +1,21 @@
 import {
+  closestCenter,
   DndContext,
-  DragEndEvent,
+  type DragEndEvent,
   DragOverlay,
+  PointerSensor,
   useDraggable,
   useDroppable,
-  closestCenter,
-  PointerSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import { useState } from "react";
 import { ulid } from "ulid";
-import { useNoteStore } from "../store/notes";
-import { useUIStore } from "../store/ui";
+import { NOTE_STATES } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
-import { NOTE_STATES } from "../lib/constants";
+import { useNoteStore } from "../store/notes";
+import { useUIStore } from "../store/ui";
 import type { Note, NoteState } from "../types/note";
 
 function KanbanCard({ note }: { note: Note }) {
@@ -24,6 +24,8 @@ function KanbanCard({ note }: { note: Note }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: note.id });
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {...listeners}
+    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handler provided by dnd-kit {...listeners}
     <div
       ref={setNodeRef}
       {...listeners}
@@ -39,9 +41,7 @@ function KanbanCard({ note }: { note: Note }) {
       <p className="text-sm font-medium text-[var(--color-text)]">
         {note.frontmatter.title || "Untitled"}
       </p>
-      {note.frontmatter.blocked && (
-        <p className="mt-0.5 text-xs text-red-400">⊘ Blocked</p>
-      )}
+      {note.frontmatter.blocked && <p className="mt-0.5 text-xs text-red-400">⊘ Blocked</p>}
       <div className="mt-2 flex flex-wrap gap-1">
         {note.frontmatter.tags.slice(0, 2).map((t) => (
           <span
@@ -82,11 +82,20 @@ function KanbanColumn({
           <span className="text-xs text-[var(--color-text-muted)]">{notes.length}</span>
         </div>
         <button
+          type="button"
           onClick={onCreate}
           title={`New note in ${state}`}
           className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-border)]/50 hover:text-[var(--color-text)] transition-colors"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            aria-hidden="true"
+          >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
@@ -108,9 +117,7 @@ export function KanbanView() {
 
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   async function createNoteInColumn(state: NoteState) {
     if (!vault) return;
@@ -191,9 +198,7 @@ export function KanbanView() {
             />
           ))}
         </div>
-        <DragOverlay>
-          {activeNote ? <KanbanCard note={activeNote} /> : null}
-        </DragOverlay>
+        <DragOverlay>{activeNote ? <KanbanCard note={activeNote} /> : null}</DragOverlay>
       </DndContext>
     </div>
   );

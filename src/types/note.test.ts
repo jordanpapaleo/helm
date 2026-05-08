@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { getQuadrant } from "./note";
+import { describe, expect, it } from "vitest";
 import type { Note } from "./note";
+import { getQuadrant } from "./note";
 
 function makeNote(overrides: Partial<Note["frontmatter"]>): Note {
   return {

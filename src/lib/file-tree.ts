@@ -12,7 +12,7 @@ export type TreeNode =
 export function buildTree(
   notes: Note[],
   vaultPath: string,
-  extraFolderPaths: string[] = []
+  extraFolderPaths: string[] = [],
 ): TreeNode[] {
   const vault = vaultPath.replace(/\/+$/, "");
 
@@ -99,12 +99,10 @@ export function buildTree(
  */
 export function getAllFolderPaths(
   tree: TreeNode[],
-  vaultPath: string
+  vaultPath: string,
 ): Array<{ label: string; path: string }> {
   const vault = vaultPath.replace(/\/+$/, "");
-  const result: Array<{ label: string; path: string }> = [
-    { label: "/ (root)", path: vault },
-  ];
+  const result: Array<{ label: string; path: string }> = [{ label: "/ (root)", path: vault }];
 
   function collect(nodes: TreeNode[]) {
     for (const node of nodes) {

@@ -26,17 +26,13 @@ export function buildIndex(notes: Note[]): NoteIndex {
       title: n.frontmatter.title,
       content: n.content,
       tags: n.frontmatter.tags.join(" "),
-    }))
+    })),
   );
 
   return index;
 }
 
-export function searchNotes(
-  index: NoteIndex,
-  notes: Note[],
-  query: string
-): Note[] {
+export function searchNotes(index: NoteIndex, notes: Note[], query: string): Note[] {
   if (!query.trim()) return [];
   const results = index.search(query);
   return results

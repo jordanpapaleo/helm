@@ -1,22 +1,22 @@
-import React, { useState, useMemo } from "react";
-import { ulid } from "ulid";
 import {
   DndContext,
-  DragEndEvent,
+  type DragEndEvent,
+  PointerSensor,
   useDraggable,
   useDroppable,
-  PointerSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import React, { useMemo, useState } from "react";
+import { ulid } from "ulid";
+import { buildTree, getAllFolderPaths, type TreeNode } from "../../lib/file-tree";
+import { serializeNote, slugify } from "../../lib/note-parser";
+import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useUIStore } from "../../store/ui";
-import { buildTree, getAllFolderPaths, type TreeNode } from "../../lib/file-tree";
-import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
-import { tauriCommands } from "../../lib/tauri-commands";
-import { serializeNote, slugify } from "../../lib/note-parser";
-import { confirm } from "@tauri-apps/plugin-dialog";
 import type { Note, VaultConfig } from "../../types/note";
+import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
 interface Props {
   notes: Note[];
@@ -25,13 +25,25 @@ interface Props {
 
 function NewFolderInput({ onCommit }: { onCommit: (name: string) => void }) {
   const committed = React.useRef(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
   return (
     <div style={{ paddingLeft: 8 }} className="flex items-center gap-1.5 py-1 pr-2">
-      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="h-3.5 w-3.5 shrink-0 opacity-60"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden="true"
+      >
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
       <input
-        autoFocus
+        ref={inputRef}
         placeholder="folder name"
         className="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline outline-1 outline-[var(--color-accent)]"
         onKeyDown={(e) => {
@@ -63,9 +75,14 @@ function RenameInput({
   onCancel: () => void;
 }) {
   const committed = React.useRef(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
   return (
     <input
-      autoFocus
+      ref={inputRef}
       defaultValue={initial}
       className="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline outline-1 outline-[var(--color-accent)]"
       onKeyDown={(e) => {
@@ -113,6 +130,8 @@ function NoteItem({
   });
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {...listeners}
+    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handler provided by dnd-kit {...listeners}
     <div
       ref={setNodeRef}
       {...listeners}
@@ -123,20 +142,42 @@ function NoteItem({
           ? "bg-[var(--color-surface)] text-[var(--color-text)]"
           : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
       }`}
-      onClick={() => { if (!isRenaming) onOpen(); }}
+      onClick={() => {
+        if (!isRenaming) onOpen();
+      }}
       onContextMenu={onContextMenu}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="h-3.5 w-3.5 shrink-0 opacity-50"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden="true"
+      >
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <polyline points="14 2 14 8 20 8" />
       </svg>
       {isRenaming ? (
-        <RenameInput initial={note.frontmatter.title} onCommit={onRenameCommit} onCancel={onRenameCancel} />
+        <RenameInput
+          initial={note.frontmatter.title}
+          onCommit={onRenameCommit}
+          onCancel={onRenameCancel}
+        />
       ) : (
         <span className="flex-1 truncate">{note.frontmatter.title || note.fileName}</span>
       )}
       {note.frontmatter.pinned && !isRenaming && (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 shrink-0 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-3 w-3 shrink-0 opacity-40"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
           <line x1="12" y1="17" x2="12" y2="22" />
           <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
         </svg>
@@ -174,6 +215,8 @@ function FolderItem({
 
   return (
     <div ref={setNodeRef}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: folder row is a nav element; keyboard users use context menu via keyboard shortcut */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: folder toggle is pointer-driven navigation within the file tree */}
       <div
         style={{ paddingLeft: depth * 12 + 8 }}
         className={`group flex items-center gap-1.5 rounded-md py-1 pr-2 text-sm cursor-pointer transition-colors ${
@@ -192,10 +235,19 @@ function FolderItem({
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
+          aria-hidden="true"
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-3.5 w-3.5 shrink-0 opacity-60"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
         {isRenaming ? (
@@ -230,9 +282,7 @@ type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
 export function FileTree({ notes, vault }: Props) {
   const { selectedNoteId, selectNote, knownFolderPaths } = useNoteStore();
   const { setView } = useUIStore();
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState>(null);
@@ -241,12 +291,12 @@ export function FileTree({ notes, vault }: Props) {
   // Only pass folder paths that belong to this vault
   const vaultFolderPaths = useMemo(
     () => knownFolderPaths.filter((fp) => fp.startsWith(vault.path + "/")),
-    [knownFolderPaths, vault.path]
+    [knownFolderPaths, vault.path],
   );
 
   const tree = useMemo(
     () => buildTree(notes, vault.path, vaultFolderPaths),
-    [notes, vault.path, vaultFolderPaths]
+    [notes, vault.path, vaultFolderPaths],
   );
   const allFolders = useMemo(() => getAllFolderPaths(tree, vault.path), [tree, vault.path]);
 
@@ -326,7 +376,7 @@ export function FileTree({ notes, vault }: Props) {
   async function handleDeleteNote(note: Note) {
     const ok = await confirm(
       `Delete "${note.frontmatter.title || "Untitled"}"? This cannot be undone.`,
-      { title: "Delete Note", kind: "warning" }
+      { title: "Delete Note", kind: "warning" },
     );
     if (!ok) return;
     if (note.id === selectedNoteId) selectNote(null);
@@ -339,7 +389,10 @@ export function FileTree({ notes, vault }: Props) {
   }
 
   async function handleRenameFolder(folderPath: string, newName: string) {
-    if (!newName) { setRenamingPath(null); return; }
+    if (!newName) {
+      setRenamingPath(null);
+      return;
+    }
     const parent = folderPath.split("/").slice(0, -1).join("/");
     const newPath = `${parent}/${newName}`;
     try {
@@ -358,7 +411,10 @@ export function FileTree({ notes, vault }: Props) {
       // Update collapsed set: replace old path with new path (preserving collapsed state)
       setCollapsed((prev) => {
         const next = new Set(prev);
-        if (next.has(folderPath)) { next.delete(folderPath); next.add(newPath); }
+        if (next.has(folderPath)) {
+          next.delete(folderPath);
+          next.add(newPath);
+        }
         return next;
       });
     } catch (e) {
@@ -371,7 +427,7 @@ export function FileTree({ notes, vault }: Props) {
     const name = folderPath.split("/").pop();
     const ok = await confirm(
       `Delete folder "${name}" and all its contents? This cannot be undone.`,
-      { title: "Delete Folder", kind: "warning" }
+      { title: "Delete Folder", kind: "warning" },
     );
     if (!ok) return;
     // Remove notes in this folder from store
@@ -465,7 +521,12 @@ export function FileTree({ notes, vault }: Props) {
                 })),
               },
               { kind: "separator" },
-              { kind: "action", label: "Delete", danger: true, onClick: () => handleDeleteNote(note) },
+              {
+                kind: "action",
+                label: "Delete",
+                danger: true,
+                onClick: () => handleDeleteNote(note),
+              },
             ],
           });
         }}
@@ -492,7 +553,11 @@ export function FileTree({ notes, vault }: Props) {
             x: e.clientX,
             y: e.clientY,
             items: [
-              { kind: "action", label: "New Note Here", onClick: () => handleCreateNote(node.path) },
+              {
+                kind: "action",
+                label: "New Note Here",
+                onClick: () => handleCreateNote(node.path),
+              },
               {
                 kind: "action",
                 label: "New Subfolder",
@@ -540,17 +605,9 @@ export function FileTree({ notes, vault }: Props) {
 
   function renderNode(node: TreeNode, depth = 0): React.ReactNode {
     if (node.kind === "folder") {
-      return (
-        <React.Fragment key={node.path}>
-          {renderFolder(node, depth)}
-        </React.Fragment>
-      );
+      return <React.Fragment key={node.path}>{renderFolder(node, depth)}</React.Fragment>;
     }
-    return (
-      <React.Fragment key={node.note.filePath}>
-        {renderNote(node.note, depth)}
-      </React.Fragment>
-    );
+    return <React.Fragment key={node.note.filePath}>{renderNote(node.note, depth)}</React.Fragment>;
   }
 
   return (
@@ -563,6 +620,7 @@ export function FileTree({ notes, vault }: Props) {
           </span>
           <div className="flex gap-2">
             <button
+              type="button"
               title="New Note"
               className="rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors"
               onClick={() => handleCreateNote(vault.path)}
@@ -574,6 +632,7 @@ export function FileTree({ notes, vault }: Props) {
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
+                aria-hidden="true"
               >
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -582,6 +641,7 @@ export function FileTree({ notes, vault }: Props) {
               </svg>
             </button>
             <button
+              type="button"
               title="New Folder"
               className="rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors"
               onClick={() => setNewFolderParent(vault.path)}
@@ -593,6 +653,7 @@ export function FileTree({ notes, vault }: Props) {
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
+                aria-hidden="true"
               >
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 <line x1="12" y1="11" x2="12" y2="17" />
@@ -626,12 +687,7 @@ export function FileTree({ notes, vault }: Props) {
 
         {/* Context Menu — rendered at fixed position within this container */}
         {menu && (
-          <ContextMenu
-            x={menu.x}
-            y={menu.y}
-            items={menu.items}
-            onClose={() => setMenu(null)}
-          />
+          <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
         )}
       </div>
     </DndContext>

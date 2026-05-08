@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type { NoteFrontmatter, NoteState } from "../../types/note";
 import { NOTE_STATES } from "../../lib/constants";
 import { useNoteStore } from "../../store/notes";
+import type { NoteFrontmatter, NoteState } from "../../types/note";
 
 interface PropertyPanelProps {
   frontmatter: NoteFrontmatter;
@@ -13,9 +13,20 @@ interface PropertyPanelProps {
 
 // Fields handled explicitly — excluded from the "extra fields" section
 const KNOWN_FIELDS = new Set([
-  "id", "title", "created", "updated", "tags",
-  "urgent", "important", "state", "blocked", "deadline", "team", "links",
-  "locked", "pinned",
+  "id",
+  "title",
+  "created",
+  "updated",
+  "tags",
+  "urgent",
+  "important",
+  "state",
+  "blocked",
+  "deadline",
+  "team",
+  "links",
+  "locked",
+  "pinned",
 ]);
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -27,7 +38,13 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onDelete }: PropertyPanelProps) {
+export function PropertyPanel({
+  frontmatter,
+  filePath,
+  onChange,
+  onTitleTab,
+  onDelete,
+}: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -41,9 +58,7 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
   const { notes } = useNoteStore();
 
   // Extra unknown fields beyond the known set
-  const extraFields = Object.entries(frontmatter).filter(
-    ([k]) => !KNOWN_FIELDS.has(k)
-  );
+  const extraFields = Object.entries(frontmatter).filter(([k]) => !KNOWN_FIELDS.has(k));
 
   return (
     <div className="border-b border-[var(--color-border)] px-12 py-4 space-y-3">
@@ -63,16 +78,33 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
         />
         {filePath && (
           <button
+            type="button"
             onClick={copyPath}
             title="Copy file path"
             className="shrink-0 rounded p-1.5 text-[var(--color-text-muted)] opacity-60 hover:bg-[var(--color-surface)] hover:opacity-100 transition-all"
           >
             {copied ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4 text-green-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
@@ -81,11 +113,20 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
         )}
         {onDelete && (
           <button
+            type="button"
             onClick={onDelete}
             title="Delete note"
             className="shrink-0 rounded p-1.5 text-[var(--color-text-muted)] opacity-60 hover:bg-red-500/10 hover:text-red-400 hover:opacity-100 transition-all"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6l-1 14H6L5 6" />
               <path d="M10 11v6M14 11v6" />
@@ -105,48 +146,79 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
             onChange={(e) => onChange({ state: e.target.value as NoteState })}
           >
             {NOTE_STATES.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s}>
+                {s}
+              </option>
             ))}
           </select>
         </div>
 
         <label className="flex items-center gap-1.5 cursor-pointer text-[var(--color-text-muted)]">
-          <input type="checkbox" checked={frontmatter.urgent}
-            onChange={(e) => onChange({ urgent: e.target.checked })} className="rounded" />
+          <input
+            type="checkbox"
+            checked={frontmatter.urgent}
+            onChange={(e) => onChange({ urgent: e.target.checked })}
+            className="rounded"
+          />
           Urgent
         </label>
 
         <label className="flex items-center gap-1.5 cursor-pointer text-[var(--color-text-muted)]">
-          <input type="checkbox" checked={frontmatter.important}
-            onChange={(e) => onChange({ important: e.target.checked })} className="rounded" />
+          <input
+            type="checkbox"
+            checked={frontmatter.important}
+            onChange={(e) => onChange({ important: e.target.checked })}
+            className="rounded"
+          />
           Important
         </label>
 
         <label className="flex items-center gap-1.5 cursor-pointer text-[var(--color-text-muted)]">
-          <input type="checkbox" checked={frontmatter.blocked}
-            onChange={(e) => onChange({ blocked: e.target.checked })} className="rounded" />
+          <input
+            type="checkbox"
+            checked={frontmatter.blocked}
+            onChange={(e) => onChange({ blocked: e.target.checked })}
+            className="rounded"
+          />
           Blocked
         </label>
 
         <label className="flex items-center gap-1.5 cursor-pointer text-[var(--color-text-muted)]">
-          <input type="checkbox" checked={frontmatter.pinned ?? false}
-            onChange={(e) => onChange({ pinned: e.target.checked })} className="rounded" />
+          <input
+            type="checkbox"
+            checked={frontmatter.pinned ?? false}
+            onChange={(e) => onChange({ pinned: e.target.checked })}
+            className="rounded"
+          />
           Pinned
         </label>
 
         <label className="flex items-center gap-1.5 cursor-pointer text-[var(--color-text-muted)]">
-          <input type="checkbox" checked={frontmatter.locked ?? false}
-            onChange={(e) => onChange({ locked: e.target.checked })} className="rounded" />
+          <input
+            type="checkbox"
+            checked={frontmatter.locked ?? false}
+            onChange={(e) => onChange({ locked: e.target.checked })}
+            className="rounded"
+          />
           Locked
         </label>
 
         {/* Expand toggle */}
         <button
+          type="button"
           onClick={() => setExpanded((v) => !v)}
           className="ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] transition-colors"
         >
           Properties
-          <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            aria-hidden="true"
+          >
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
@@ -156,7 +228,9 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
       {expanded && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/50 px-4 py-2 text-sm">
           <Row label="ID">
-            <span className="font-mono text-xs text-[var(--color-text-muted)]">{frontmatter.id}</span>
+            <span className="font-mono text-xs text-[var(--color-text-muted)]">
+              {frontmatter.id}
+            </span>
           </Row>
 
           <Row label="Created">
@@ -183,7 +257,10 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
               onChange={(e) =>
                 onChange({
                   team: e.target.value
-                    ? e.target.value.split(",").map((t) => t.trim()).filter(Boolean)
+                    ? e.target.value
+                        .split(",")
+                        .map((t) => t.trim())
+                        .filter(Boolean)
                     : undefined,
                 })
               }
@@ -199,7 +276,10 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
               onChange={(e) =>
                 onChange({
                   tags: e.target.value
-                    ? e.target.value.split(",").map((t) => t.trim().replace(/^#/, "")).filter(Boolean)
+                    ? e.target.value
+                        .split(",")
+                        .map((t) => t.trim().replace(/^#/, ""))
+                        .filter(Boolean)
                     : [],
                 })
               }
@@ -214,14 +294,19 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
                 {frontmatter.links.map((id) => {
                   const title = notes.find((n) => n.id === id)?.frontmatter.title ?? id;
                   return (
-                    <span key={id} className="rounded bg-[var(--color-border)]/50 px-1.5 py-0.5 text-xs text-[var(--color-text-muted)]">
+                    <span
+                      key={id}
+                      className="rounded bg-[var(--color-border)]/50 px-1.5 py-0.5 text-xs text-[var(--color-text-muted)]"
+                    >
                       {title}
                     </span>
                   );
                 })}
               </div>
             ) : (
-              <em className="text-xs text-[var(--color-text-muted)]/50">use [[Note Title]] in body</em>
+              <em className="text-xs text-[var(--color-text-muted)]/50">
+                use [[Note Title]] in body
+              </em>
             )}
           </Row>
 
@@ -243,7 +328,10 @@ export function PropertyPanel({ frontmatter, filePath, onChange, onTitleTab, onD
       {frontmatter.tags.length > 0 && !expanded && (
         <div className="flex flex-wrap gap-1.5">
           {frontmatter.tags.map((tag) => (
-            <span key={tag} className="rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]">
+            <span
+              key={tag}
+              className="rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]"
+            >
               #{tag}
             </span>
           ))}

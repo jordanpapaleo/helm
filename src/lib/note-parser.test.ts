@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parseNote, serializeNote, slugify, noteFilePath } from "./note-parser";
+import { describe, expect, it } from "vitest";
+import { noteFilePath, parseNote, serializeNote, slugify } from "./note-parser";
 
 const RAW_NOTE = `---
 id: 01JPMXYZ123
@@ -68,8 +68,6 @@ describe("slugify", () => {
 
 describe("noteFilePath", () => {
   it("builds full file path from vault and title", () => {
-    expect(noteFilePath("/Users/j/notes", "Rule Builder")).toBe(
-      "/Users/j/notes/rule-builder.md"
-    );
+    expect(noteFilePath("/Users/j/notes", "Rule Builder")).toBe("/Users/j/notes/rule-builder.md");
   });
 });

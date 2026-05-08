@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { useUIStore, type View } from "../../store/ui";
-import { useNoteStore } from "../../store/notes";
-import { FileTree } from "../sidebar/FileTree";
-import { tauriCommands } from "../../lib/tauri-commands";
-import { useThemeStore } from "../../store/theme";
-import { THEMES } from "../../lib/themes";
-import { SettingsModal } from "../settings/SettingsModal";
 import { addVault, removeVault } from "../../hooks/useVault";
+import { tauriCommands } from "../../lib/tauri-commands";
+import { THEMES } from "../../lib/themes";
+import { useNoteStore } from "../../store/notes";
+import { useThemeStore } from "../../store/theme";
+import { useUIStore, type View } from "../../store/ui";
+import { SettingsModal } from "../settings/SettingsModal";
+import { FileTree } from "../sidebar/FileTree";
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -15,13 +15,20 @@ const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: "graph", label: "Graph", icon: "🕸️" },
 ];
 
-
 export function LeftColumn() {
   const [collapsed, setCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { activeView, setView } = useUIStore();
-  const { notes, searchQuery, searchResults, search, vaults, activeVaultId, setActiveVaultId, selectNote } =
-    useNoteStore();
+  const {
+    notes,
+    searchQuery,
+    searchResults,
+    search,
+    vaults,
+    activeVaultId,
+    setActiveVaultId,
+    selectNote,
+  } = useNoteStore();
   const { theme, setTheme } = useThemeStore();
 
   const vaultFilteredNotes = activeVaultId
@@ -45,10 +52,10 @@ export function LeftColumn() {
     e.stopPropagation();
     const { confirm } = await import("@tauri-apps/plugin-dialog");
     const vault = vaults.find((v) => v.id === id);
-    const confirmed = await confirm(
-      `Remove vault "${vault?.name}"? Notes on disk are untouched.`,
-      { title: "Remove Vault", kind: "warning" }
-    );
+    const confirmed = await confirm(`Remove vault "${vault?.name}"? Notes on disk are untouched.`, {
+      title: "Remove Vault",
+      kind: "warning",
+    });
     if (!confirmed) return;
     await removeVault(id);
   }
@@ -57,6 +64,7 @@ export function LeftColumn() {
     return (
       <div className="flex w-10 flex-col justify-end border-r border-[var(--color-border)]">
         <button
+          type="button"
           onClick={() => setCollapsed(false)}
           className="p-3 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
           title="Expand sidebar"
@@ -94,12 +102,19 @@ export function LeftColumn() {
             ) : (
               searchResults.map((n) => (
                 <button
+                  type="button"
                   key={n.id}
-                  onClick={() => { selectNote(n.id); setView("notes"); search(""); }}
+                  onClick={() => {
+                    selectNote(n.id);
+                    setView("notes");
+                    search("");
+                  }}
                   className="flex w-full flex-col px-3 py-2 text-left hover:bg-[var(--color-surface)]"
                 >
                   <span className="text-sm text-[var(--color-text)]">{n.frontmatter.title}</span>
-                  <span className="text-xs text-[var(--color-text-muted)]">{n.frontmatter.tags.join(", ")}</span>
+                  <span className="text-xs text-[var(--color-text-muted)]">
+                    {n.frontmatter.tags.join(", ")}
+                  </span>
                 </button>
               ))
             )}
@@ -112,6 +127,7 @@ export function LeftColumn() {
         <div className="mb-2">
           {VIEWS.map((v) => (
             <button
+              type="button"
               key={v.id}
               onClick={() => setView(v.id)}
               className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
@@ -132,30 +148,41 @@ export function LeftColumn() {
             Vaults
           </p>
           {vaults.map((vault) => (
-            <button
-              key={vault.id}
-              className={vaultNavCls(vault.id)}
-              onClick={() => handleVaultClick(vault.id)}
-            >
-              <span className="shrink-0">📁</span>
-              <span className="flex-1 truncate text-left">{vault.name}</span>
-              <span className="text-xs opacity-40">
-                {notes.filter((n) => n.vaultId === vault.id).length}
-              </span>
-              <span
-                role="button"
+            <div key={vault.id} className={vaultNavCls(vault.id)}>
+              <button
+                type="button"
+                className="flex flex-1 min-w-0 items-center gap-2 text-left"
+                onClick={() => handleVaultClick(vault.id)}
+              >
+                <span className="shrink-0">📁</span>
+                <span className="flex-1 truncate">{vault.name}</span>
+                <span className="text-xs opacity-40">
+                  {notes.filter((n) => n.vaultId === vault.id).length}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={(e) => handleRemoveVault(vault.id, e)}
                 title="Remove vault"
                 className="ml-1 shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
-              </span>
-            </button>
+              </button>
+            </div>
           ))}
           <button
+            type="button"
             onClick={handleAddVault}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
           >
@@ -180,6 +207,7 @@ export function LeftColumn() {
         <div className="flex flex-1 items-center gap-1.5">
           {THEMES.map((t) => (
             <button
+              type="button"
               key={t.id}
               title={t.name}
               onClick={() => setTheme(t.id)}
@@ -195,16 +223,26 @@ export function LeftColumn() {
           ))}
         </div>
         <button
+          type="button"
           onClick={() => setShowSettings(true)}
           title="Settings"
           className="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-3.5 w-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
         <button
+          type="button"
           onClick={() => setCollapsed(true)}
           title="Collapse sidebar"
           className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]"

@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useNoteStore } from "./notes";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { Note } from "../types/note";
+import { useNoteStore } from "./notes";
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {
@@ -66,8 +66,14 @@ describe("useNoteStore", () => {
   });
 
   it("builds tag tree from notes", () => {
-    const note1 = makeNote({ id: "01", frontmatter: { ...makeNote().frontmatter, id: "01", tags: ["rl", "ce"] } });
-    const note2 = makeNote({ id: "02", frontmatter: { ...makeNote().frontmatter, id: "02", tags: ["rl"] } });
+    const note1 = makeNote({
+      id: "01",
+      frontmatter: { ...makeNote().frontmatter, id: "01", tags: ["rl", "ce"] },
+    });
+    const note2 = makeNote({
+      id: "02",
+      frontmatter: { ...makeNote().frontmatter, id: "02", tags: ["rl"] },
+    });
     const { result } = renderHook(() => useNoteStore());
     act(() => result.current.setNotes([note1, note2]));
     const tree = result.current.tagTree;

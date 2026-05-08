@@ -11,7 +11,13 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:types": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format .",
+    "format:fix": "biome format --write .",
+    "fix": "npm run lint:fix && npm run format:fix"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -43,12 +49,8 @@
     "ulid": "^3.0.2",
     "zustand": "^5.0.11"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "devDependencies": {
+    "@biomejs/biome": "2.4.14",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.1",
     "@tauri-apps/cli": "^2",

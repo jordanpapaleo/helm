@@ -31,6 +31,8 @@ npm install
 npm run tauri dev
 ```
 
+> **Note:** This project uses npm. Do not use pnpm or yarn — they will generate incompatible lock files.
+
 This opens a native app window backed by a hot-reloading React frontend. Rust changes require a full recompile; frontend changes hot-reload instantly.
 
 To run just the Vite frontend in a browser (no Tauri APIs):

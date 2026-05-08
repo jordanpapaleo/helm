@@ -13,7 +13,10 @@
       "Bash(~/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh:*)",
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Read(//Users/jordan/Library/pnpm/**)",
+      "Read(//Users/jordan/.local/share/pnpm/**)",
+      "Read(//Users/jordan/**)"
     ]
   }
 }

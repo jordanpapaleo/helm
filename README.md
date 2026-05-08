@@ -28,7 +28,7 @@ cargo --version
 npm install
 
 # Start the Tauri dev window (also starts the Vite dev server)
-npm run tauri dev
+npm start
 ```
 
 > **Note:** This project uses npm. Do not use pnpm or yarn — they will generate incompatible lock files.

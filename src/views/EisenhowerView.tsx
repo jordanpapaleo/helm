@@ -145,17 +145,22 @@ export function EisenhowerView() {
     [notes],
   );
 
-  // Local state for within-quadrant ordering (not persisted — resets on reload)
-  const [quadrantOrder, setQuadrantOrder] = useState<Record<EisenhowerQuadrant, string[]>>(() => ({
-    do: activeNotes.filter((n) => getQuadrant(n) === "do").map((n) => n.id),
-    schedule: activeNotes.filter((n) => getQuadrant(n) === "schedule").map((n) => n.id),
-    delegate: activeNotes.filter((n) => getQuadrant(n) === "delegate").map((n) => n.id),
-    eliminate: activeNotes.filter((n) => getQuadrant(n) === "eliminate").map((n) => n.id),
-  }));
+  // Local state for within-quadrant ordering (persisted via eisenhowerOrder frontmatter field)
+  const [quadrantOrder, setQuadrantOrder] = useState<Record<EisenhowerQuadrant, string[]>>(() => {
+    const sortByOrder = (a: Note, b: Note) =>
+      (a.frontmatter.eisenhowerOrder ?? Infinity) - (b.frontmatter.eisenhowerOrder ?? Infinity);
+    return {
+      do: activeNotes.filter((n) => getQuadrant(n) === "do").sort(sortByOrder).map((n) => n.id),
+      schedule: activeNotes.filter((n) => getQuadrant(n) === "schedule").sort(sortByOrder).map((n) => n.id),
+      delegate: activeNotes.filter((n) => getQuadrant(n) === "delegate").sort(sortByOrder).map((n) => n.id),
+      eliminate: activeNotes.filter((n) => getQuadrant(n) === "eliminate").sort(sortByOrder).map((n) => n.id),
+    };
+  });
 
   // Sync order when notes are added, removed, or reassigned externally
   useEffect(() => {
     setQuadrantOrder((prev) => {
+      const byId = new Map(activeNotes.map((n) => [n.id, n]));
       const byQuadrant: Record<EisenhowerQuadrant, Set<string>> = {
         do: new Set(activeNotes.filter((n) => getQuadrant(n) === "do").map((n) => n.id)),
         schedule: new Set(activeNotes.filter((n) => getQuadrant(n) === "schedule").map((n) => n.id)),
@@ -164,9 +169,14 @@ export function EisenhowerView() {
       };
       const next = { ...prev };
       for (const q of ALL_QUADRANTS) {
-        // Preserve existing order; append newly discovered notes at the end
         const kept = prev[q].filter((id) => byQuadrant[q].has(id));
-        const added = [...byQuadrant[q]].filter((id) => !prev[q].includes(id));
+        const added = [...byQuadrant[q]]
+          .filter((id) => !prev[q].includes(id))
+          .sort((a, b) => {
+            const noteA = byId.get(a);
+            const noteB = byId.get(b);
+            return (noteA?.frontmatter.eisenhowerOrder ?? Infinity) - (noteB?.frontmatter.eisenhowerOrder ?? Infinity);
+          });
         next[q] = [...kept, ...added];
       }
       return next;
@@ -238,55 +248,81 @@ export function EisenhowerView() {
       ? (overId as EisenhowerQuadrant)
       : (ALL_QUADRANTS.find((q) => quadrantOrder[q].includes(overId)) ?? sourceQuadrant);
 
+    const byId = new Map(notes.map((n) => [n.id, n]));
+
+    async function saveNote(note: Note) {
+      updateNote(note);
+      try {
+        await tauriCommands.writeNote(note.filePath, serializeNote(note));
+      } catch (e) {
+        console.error("Failed to save note:", e);
+      }
+    }
+
     if (sourceQuadrant === targetQuadrant) {
       // Same quadrant — reorder in place
-      if (isDropOnQuadrant) return; // dropped on container, nothing to reorder
+      if (isDropOnQuadrant) return;
       const oldIndex = quadrantOrder[sourceQuadrant].indexOf(activeNoteId);
       const newIndex = quadrantOrder[targetQuadrant].indexOf(overId);
-      if (oldIndex !== newIndex && newIndex >= 0) {
-        setQuadrantOrder((prev) => ({
-          ...prev,
-          [sourceQuadrant]: arrayMove(prev[sourceQuadrant], oldIndex, newIndex),
-        }));
+      if (oldIndex === newIndex || newIndex < 0) return;
+
+      const newQuadOrder = arrayMove(quadrantOrder[sourceQuadrant], oldIndex, newIndex);
+      setQuadrantOrder((prev) => ({ ...prev, [sourceQuadrant]: newQuadOrder }));
+
+      // Persist eisenhowerOrder for notes whose position changed
+      for (let i = 0; i < newQuadOrder.length; i++) {
+        const note = byId.get(newQuadOrder[i]);
+        if (!note || note.frontmatter.eisenhowerOrder === i) continue;
+        await saveNote({ ...note, frontmatter: { ...note.frontmatter, eisenhowerOrder: i } });
       }
       return;
     }
 
-    // Cross-quadrant move — update frontmatter and move in order state
+    // Cross-quadrant move — update frontmatter and order
     const q = EISENHOWER_QUADRANTS[targetQuadrant];
-    const note = notes.find((n) => n.id === activeNoteId);
-    if (!note) return;
 
-    setQuadrantOrder((prev) => {
-      const next = { ...prev };
-      next[sourceQuadrant] = prev[sourceQuadrant].filter((id) => id !== activeNoteId);
-      const target = prev[targetQuadrant].filter((id) => id !== activeNoteId);
-      const insertAt = !isDropOnQuadrant ? prev[targetQuadrant].indexOf(overId) + 1 : -1;
-      if (insertAt > 0) {
-        target.splice(insertAt, 0, activeNoteId);
-      } else {
-        target.push(activeNoteId);
+    const newSourceOrder = quadrantOrder[sourceQuadrant].filter((id) => id !== activeNoteId);
+    const newTargetOrder = quadrantOrder[targetQuadrant].filter((id) => id !== activeNoteId);
+    const insertAt = !isDropOnQuadrant ? quadrantOrder[targetQuadrant].indexOf(overId) + 1 : -1;
+    if (insertAt > 0) {
+      newTargetOrder.splice(insertAt, 0, activeNoteId);
+    } else {
+      newTargetOrder.push(activeNoteId);
+    }
+
+    setQuadrantOrder((prev) => ({
+      ...prev,
+      [sourceQuadrant]: newSourceOrder,
+      [targetQuadrant]: newTargetOrder,
+    }));
+
+    // Persist source quadrant order changes
+    for (let i = 0; i < newSourceOrder.length; i++) {
+      const note = byId.get(newSourceOrder[i]);
+      if (!note || note.frontmatter.eisenhowerOrder === i) continue;
+      await saveNote({ ...note, frontmatter: { ...note.frontmatter, eisenhowerOrder: i } });
+    }
+
+    // Persist target quadrant — moved note gets urgent/important + order, others get order only
+    for (let i = 0; i < newTargetOrder.length; i++) {
+      const note = byId.get(newTargetOrder[i]);
+      if (!note) continue;
+      if (note.id === activeNoteId) {
+        if (note.frontmatter.urgent !== q.urgent || note.frontmatter.important !== q.important || note.frontmatter.eisenhowerOrder !== i) {
+          await saveNote({
+            ...note,
+            frontmatter: {
+              ...note.frontmatter,
+              urgent: q.urgent,
+              important: q.important,
+              eisenhowerOrder: i,
+              updated: new Date().toISOString().split("T")[0],
+            },
+          });
+        }
+      } else if (note.frontmatter.eisenhowerOrder !== i) {
+        await saveNote({ ...note, frontmatter: { ...note.frontmatter, eisenhowerOrder: i } });
       }
-      next[targetQuadrant] = target;
-      return next;
-    });
-
-    if (note.frontmatter.urgent === q.urgent && note.frontmatter.important === q.important) return;
-
-    const updated = {
-      ...note,
-      frontmatter: {
-        ...note.frontmatter,
-        urgent: q.urgent,
-        important: q.important,
-        updated: new Date().toISOString().split("T")[0],
-      },
-    };
-    updateNote(updated);
-    try {
-      await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-    } catch (e) {
-      console.error("Failed to save note:", e);
     }
   }
 

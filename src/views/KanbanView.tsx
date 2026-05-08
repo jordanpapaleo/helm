@@ -137,11 +137,14 @@ export function KanbanView() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // Local state for within-column ordering (not persisted — resets on reload)
+  // Local state for within-column ordering (persisted via kanbanOrder frontmatter field)
   const [columnOrder, setColumnOrder] = useState<Record<NoteState, string[]>>(() => {
     const init = {} as Record<NoteState, string[]>;
     for (const s of NOTE_STATES) {
-      init[s as NoteState] = notes.filter((n) => n.frontmatter.state === s).map((n) => n.id);
+      init[s as NoteState] = notes
+        .filter((n) => n.frontmatter.state === s)
+        .sort((a, b) => (a.frontmatter.kanbanOrder ?? Infinity) - (b.frontmatter.kanbanOrder ?? Infinity))
+        .map((n) => n.id);
     }
     return init;
   });
@@ -149,11 +152,18 @@ export function KanbanView() {
   // Sync order when notes are added, removed, or moved externally
   useEffect(() => {
     setColumnOrder((prev) => {
+      const byId = new Map(notes.map((n) => [n.id, n]));
       const next = { ...prev };
       for (const s of NOTE_STATES) {
         const colIds = new Set(notes.filter((n) => n.frontmatter.state === s).map((n) => n.id));
         const kept = (prev[s as NoteState] ?? []).filter((id) => colIds.has(id));
-        const added = [...colIds].filter((id) => !kept.includes(id));
+        const added = [...colIds]
+          .filter((id) => !kept.includes(id))
+          .sort((a, b) => {
+            const noteA = byId.get(a);
+            const noteB = byId.get(b);
+            return (noteA?.frontmatter.kanbanOrder ?? Infinity) - (noteB?.frontmatter.kanbanOrder ?? Infinity);
+          });
         next[s as NoteState] = [...kept, ...added];
       }
       return next;
@@ -227,51 +237,78 @@ export function KanbanView() {
           (columnOrder[s as NoteState] ?? []).includes(overId),
         ) as NoteState | undefined) ?? sourceCol);
 
+    const byId = new Map(notes.map((n) => [n.id, n]));
+
+    async function saveNote(note: Note) {
+      updateNote(note);
+      try {
+        await tauriCommands.writeNote(note.filePath, serializeNote(note));
+      } catch (e) {
+        console.error("Failed to save note:", e);
+      }
+    }
+
     if (sourceCol === targetCol) {
       // Same column — reorder in place
       if (isDropOnColumn) return;
       const oldIndex = columnOrder[sourceCol].indexOf(activeNoteId);
       const newIndex = columnOrder[targetCol].indexOf(overId);
-      if (oldIndex !== newIndex && newIndex >= 0) {
-        setColumnOrder((prev) => ({
-          ...prev,
-          [sourceCol]: arrayMove(prev[sourceCol], oldIndex, newIndex),
-        }));
+      if (oldIndex === newIndex || newIndex < 0) return;
+
+      const newColOrder = arrayMove(columnOrder[sourceCol], oldIndex, newIndex);
+      setColumnOrder((prev) => ({ ...prev, [sourceCol]: newColOrder }));
+
+      // Persist kanbanOrder for notes whose position changed
+      for (let i = 0; i < newColOrder.length; i++) {
+        const note = byId.get(newColOrder[i]);
+        if (!note || note.frontmatter.kanbanOrder === i) continue;
+        await saveNote({ ...note, frontmatter: { ...note.frontmatter, kanbanOrder: i } });
       }
       return;
     }
 
     // Cross-column move — update state and order
-    setColumnOrder((prev) => {
-      const next = { ...prev };
-      next[sourceCol] = prev[sourceCol].filter((id) => id !== activeNoteId);
-      const target = prev[targetCol].filter((id) => id !== activeNoteId);
-      const insertAt = !isDropOnColumn ? prev[targetCol].indexOf(overId) + 1 : -1;
-      if (insertAt > 0) {
-        target.splice(insertAt, 0, activeNoteId);
-      } else {
-        target.push(activeNoteId);
+    const newSourceOrder = columnOrder[sourceCol].filter((id) => id !== activeNoteId);
+    const newTargetOrder = columnOrder[targetCol].filter((id) => id !== activeNoteId);
+    const insertAt = !isDropOnColumn ? columnOrder[targetCol].indexOf(overId) + 1 : -1;
+    if (insertAt > 0) {
+      newTargetOrder.splice(insertAt, 0, activeNoteId);
+    } else {
+      newTargetOrder.push(activeNoteId);
+    }
+
+    setColumnOrder((prev) => ({
+      ...prev,
+      [sourceCol]: newSourceOrder,
+      [targetCol]: newTargetOrder,
+    }));
+
+    // Persist source column order changes
+    for (let i = 0; i < newSourceOrder.length; i++) {
+      const note = byId.get(newSourceOrder[i]);
+      if (!note || note.frontmatter.kanbanOrder === i) continue;
+      await saveNote({ ...note, frontmatter: { ...note.frontmatter, kanbanOrder: i } });
+    }
+
+    // Persist target column — moved note gets state + order, others get order only
+    for (let i = 0; i < newTargetOrder.length; i++) {
+      const note = byId.get(newTargetOrder[i]);
+      if (!note) continue;
+      if (note.id === activeNoteId) {
+        if (note.frontmatter.state !== targetCol || note.frontmatter.kanbanOrder !== i) {
+          await saveNote({
+            ...note,
+            frontmatter: {
+              ...note.frontmatter,
+              state: targetCol,
+              kanbanOrder: i,
+              updated: new Date().toISOString().split("T")[0],
+            },
+          });
+        }
+      } else if (note.frontmatter.kanbanOrder !== i) {
+        await saveNote({ ...note, frontmatter: { ...note.frontmatter, kanbanOrder: i } });
       }
-      next[targetCol] = target;
-      return next;
-    });
-
-    const note = notes.find((n) => n.id === activeNoteId);
-    if (!note || note.frontmatter.state === targetCol) return;
-
-    const updated = {
-      ...note,
-      frontmatter: {
-        ...note.frontmatter,
-        state: targetCol,
-        updated: new Date().toISOString().split("T")[0],
-      },
-    };
-    updateNote(updated);
-    try {
-      await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-    } catch (e) {
-      console.error("Failed to save note:", e);
     }
   }
 

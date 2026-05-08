@@ -103,6 +103,68 @@ describe("buildTree", () => {
   });
 });
 
+describe("buildTree - pinned notes and extra folders", () => {
+  function makePinnedNote(id: string, title: string, filePath: string): Note {
+    return {
+      ...makeNote(id, title, filePath),
+      frontmatter: {
+        ...makeNote(id, title, filePath).frontmatter,
+        pinned: true,
+      },
+    };
+  }
+
+  it("pinned note sorts before unpinned note in the same folder", () => {
+    // "Zebra" is pinned, "Alpha" is unpinned — pinned should win regardless of title order
+    const pinnedNote = makePinnedNote("1", "Zebra", "/vault/zebra.md");
+    const unpinnedNote = makeNote("2", "Alpha", "/vault/alpha.md");
+    const tree = buildTree([pinnedNote, unpinnedNote], vault);
+    // Both are root-level note nodes
+    expect(tree[0].kind).toBe("note");
+    if (tree[0].kind === "note") {
+      expect(tree[0].note.frontmatter.title).toBe("Zebra");
+    }
+    expect(tree[1].kind).toBe("note");
+    if (tree[1].kind === "note") {
+      expect(tree[1].note.frontmatter.title).toBe("Alpha");
+    }
+  });
+
+  it("multiple pinned notes sort alphabetically among themselves", () => {
+    const pinnedZebra = makePinnedNote("1", "Zebra", "/vault/zebra.md");
+    const pinnedAlpha = makePinnedNote("2", "Alpha", "/vault/alpha.md");
+    const tree = buildTree([pinnedZebra, pinnedAlpha], vault);
+    expect(tree[0].kind).toBe("note");
+    if (tree[0].kind === "note") {
+      expect(tree[0].note.frontmatter.title).toBe("Alpha");
+    }
+    expect(tree[1].kind).toBe("note");
+    if (tree[1].kind === "note") {
+      expect(tree[1].note.frontmatter.title).toBe("Zebra");
+    }
+  });
+
+  it("extraFolderPaths creates an empty folder node in the tree", () => {
+    const note = makeNote("1", "Root Note", "/vault/root.md");
+    const tree = buildTree([note], vault, ["/vault/archive"]);
+    const folderNode = tree.find((n) => n.kind === "folder");
+    expect(folderNode).toBeDefined();
+    if (folderNode?.kind === "folder") {
+      expect(folderNode.name).toBe("archive");
+      expect(folderNode.path).toBe("/vault/archive");
+      expect(folderNode.children).toHaveLength(0);
+    }
+  });
+
+  it("extraFolderPaths ignores the vault root itself", () => {
+    const note = makeNote("1", "Root Note", "/vault/root.md");
+    const tree = buildTree([note], vault, ["/vault"]);
+    // Should only contain the one root-level note, no spurious folder node for vault
+    const folderNodes = tree.filter((n) => n.kind === "folder");
+    expect(folderNodes).toHaveLength(0);
+  });
+});
+
 describe("getAllFolderPaths", () => {
   it("returns root as the only entry when there are no folders", () => {
     const note = makeNote("1", "Root", "/vault/root.md");

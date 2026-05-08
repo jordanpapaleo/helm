@@ -65,3 +65,49 @@ describe("buildIndex + searchNotes", () => {
     expect(results).toHaveLength(0);
   });
 });
+
+describe("searchNotes edge cases", () => {
+  it("caps results at 20 even when more notes match", () => {
+    const manyNotes = Array.from({ length: 25 }, (_, i) =>
+      makeNote(String(i + 1).padStart(3, "0"), `Widget ${i + 1}`, "widget content"),
+    );
+    const index = buildIndex(manyNotes);
+    const results = searchNotes(index, manyNotes, "widget");
+    expect(results.length).toBeLessThanOrEqual(20);
+  });
+
+  it("finds a note by prefix match ('Rul' matches 'Rule Builder')", () => {
+    const index = buildIndex(notes);
+    const results = searchNotes(index, notes, "Rul");
+    expect(results.map((r) => r.id)).toContain("01");
+  });
+
+  it("finds a note by fuzzy match ('Ruld' matches 'Rule Builder')", () => {
+    const index = buildIndex(notes);
+    const results = searchNotes(index, notes, "Ruld");
+    expect(results.map((r) => r.id)).toContain("01");
+  });
+
+  it("finds a note case-insensitively ('rule' matches 'Rule Builder')", () => {
+    const index = buildIndex(notes);
+    const results = searchNotes(index, notes, "rule");
+    expect(results.map((r) => r.id)).toContain("01");
+  });
+
+  it("returns empty array for whitespace-only query", () => {
+    const index = buildIndex(notes);
+    const results = searchNotes(index, notes, "   ");
+    expect(results).toHaveLength(0);
+  });
+
+  it("filters out notes not present in the notes array even if they match the index", () => {
+    const noteA = makeNote("A1", "Rule Builder", "composite rules");
+    const noteB = makeNote("B2", "Rule Engine", "engine rules");
+    const index = buildIndex([noteA, noteB]);
+    // Only pass noteA to searchNotes — noteB should be filtered out
+    const results = searchNotes(index, [noteA], "rule");
+    const ids = results.map((r) => r.id);
+    expect(ids).toContain("A1");
+    expect(ids).not.toContain("B2");
+  });
+});

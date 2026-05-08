@@ -36,35 +36,66 @@ const mockTree: Record<string, TagNode> = {
   },
 };
 
+const nestedTree: Record<string, TagNode> = {
+  work: {
+    notes: [],
+    children: {
+      project: {
+        notes: [makeNote("02", "Project Note", ["work/project"])],
+        children: {},
+      },
+    },
+  },
+};
+
 describe("TagTree", () => {
   it("renders top-level tags", () => {
-    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag={null} />);
+    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag={null} showCount={false} />);
     expect(screen.getByText("#rl")).toBeInTheDocument();
     expect(screen.getByText("#ce")).toBeInTheDocument();
   });
 
-  it("does not show notes before tag is expanded", () => {
-    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag={null} />);
+  it("does not render notes — only tags", () => {
+    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag={null} showCount={false} />);
     expect(screen.queryByText("Rule Builder")).not.toBeInTheDocument();
   });
 
-  it("expands a tag to show notes on click", () => {
-    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag={null} />);
-    fireEvent.click(screen.getByText("#rl"));
-    expect(screen.getByText("Rule Builder")).toBeInTheDocument();
-  });
-
-  it("calls onSelectNote when a note is clicked", () => {
+  it("calls onSelectTag with the tag path when a tag is clicked", () => {
     const onSelect = vi.fn();
-    render(<TagTree tree={mockTree} onSelectTag={onSelect} activeTag={null} />);
+    render(<TagTree tree={mockTree} onSelectTag={onSelect} activeTag={null} showCount={false} />);
     fireEvent.click(screen.getByText("#rl"));
-    fireEvent.click(screen.getByText("Rule Builder"));
-    expect(onSelect).toHaveBeenCalledWith("01");
+    expect(onSelect).toHaveBeenCalledWith("rl");
   });
 
   it("highlights the active tag", () => {
-    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag="rl" />);
+    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag="rl" showCount={false} />);
     const tagBtn = screen.getByText("#rl").closest("button");
     expect(tagBtn?.className).toContain("bg-[var(--color-surface)]");
+  });
+
+  it("shows child tags expanded when parent expand button is clicked", () => {
+    render(<TagTree tree={nestedTree} onSelectTag={vi.fn()} activeTag={null} showCount={false} />);
+    expect(screen.queryByText("#project")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("▶"));
+    expect(screen.getByText("#project")).toBeInTheDocument();
+  });
+
+  it("collapses child tags when expand button is clicked again", () => {
+    render(<TagTree tree={nestedTree} onSelectTag={vi.fn()} activeTag={null} showCount={false} />);
+    fireEvent.click(screen.getByText("▶"));
+    expect(screen.getByText("#project")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("▼"));
+    expect(screen.queryByText("#project")).not.toBeInTheDocument();
+  });
+
+  it("shows note count badge when showCount is true", () => {
+    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag={null} showCount={true} />);
+    const counts = screen.getAllByText("1");
+    expect(counts.length).toBeGreaterThan(0);
+  });
+
+  it("hides note count badge when showCount is false", () => {
+    render(<TagTree tree={mockTree} onSelectTag={vi.fn()} activeTag={null} showCount={false} />);
+    expect(screen.queryByText("1")).not.toBeInTheDocument();
   });
 });

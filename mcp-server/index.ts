@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -8,9 +10,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import fs from "fs";
 import matter from "gray-matter";
-import path from "path";
 
 // ── Vault resolution ──────────────────────────────────────────────────────────
 // Supports multiple vaults via HELM_VAULTS (comma-separated paths) or HELM_VAULT (single path)
@@ -474,7 +474,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (args?.tag) {
       const tag = String(args.tag);
       filtered = filtered.filter((n) =>
-        (n.frontmatter.tags ?? []).some((t) => t === tag || t.startsWith(tag + "/")),
+        (n.frontmatter.tags ?? []).some((t) => t === tag || t.startsWith(`${tag}/`)),
       );
     }
     if (args?.quadrant) {

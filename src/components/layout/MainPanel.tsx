@@ -112,32 +112,29 @@ export function MainPanel() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-      {activeView === "notes" && (
-        <>
-          {selectedNote ? (
-            <div className="flex flex-1 flex-col overflow-y-auto">
-              <PropertyPanel
-                frontmatter={selectedNote.frontmatter}
-                filePath={selectedNote.filePath}
-                onChange={handleFrontmatterChange}
-                onTitleTab={() => editorRef.current?.focus()}
-                onDelete={handleDelete}
-              />
-              <NoteEditor
-                ref={editorRef}
-                note={selectedNote}
-                onSave={handleSave}
-                locked={selectedNote.frontmatter.locked}
-              />
-              <BacklinksPanel note={selectedNote} />
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center text-[var(--color-text-muted)]">
-              Select a note to start editing
-            </div>
-          )}
-        </>
-      )}
+      {activeView === "notes" &&
+        (selectedNote ? (
+          <div className="flex flex-1 flex-col overflow-y-auto">
+            <PropertyPanel
+              frontmatter={selectedNote.frontmatter}
+              filePath={selectedNote.filePath}
+              onChange={handleFrontmatterChange}
+              onTitleTab={() => editorRef.current?.focus()}
+              onDelete={handleDelete}
+            />
+            <NoteEditor
+              ref={editorRef}
+              note={selectedNote}
+              onSave={handleSave}
+              locked={selectedNote.frontmatter.locked}
+            />
+            <BacklinksPanel note={selectedNote} />
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-[var(--color-text-muted)]">
+            Select a note to start editing
+          </div>
+        ))}
       {activeView === "graph" && <GraphView />}
       {activeView === "eisenhower" && <EisenhowerView />}
       {activeView === "kanban" && <KanbanView />}

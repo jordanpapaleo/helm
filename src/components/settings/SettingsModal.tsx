@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { THEMES } from "../../lib/themes";
-import { useThemeStore } from "../../store/theme";
 import { useSettingsStore } from "../../store/settings";
+import { useThemeStore } from "../../store/theme";
 
 // ── Tab types ────────────────────────────────────────────────────────────────
 
@@ -18,7 +18,15 @@ interface TabDef {
 
 function TypographyIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <polyline points="4 7 4 4 20 4 20 7" />
       <line x1="9" y1="20" x2="15" y2="20" />
       <line x1="12" y1="4" x2="12" y2="20" />
@@ -28,7 +36,15 @@ function TypographyIcon() {
 
 function PaletteIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
       <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
       <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
@@ -40,7 +56,15 @@ function PaletteIcon() {
 
 function SlidersIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <line x1="4" y1="21" x2="4" y2="14" />
       <line x1="4" y1="10" x2="4" y2="3" />
       <line x1="12" y1="21" x2="12" y2="12" />
@@ -56,8 +80,8 @@ function SlidersIcon() {
 
 const TABS: TabDef[] = [
   { id: "typography", label: "Typography", icon: <TypographyIcon /> },
-  { id: "themes",     label: "Themes",     icon: <PaletteIcon /> },
-  { id: "general",    label: "General",    icon: <SlidersIcon /> },
+  { id: "themes", label: "Themes", icon: <PaletteIcon /> },
+  { id: "general", label: "General", icon: <SlidersIcon /> },
 ];
 
 // ── Slider row ────────────────────────────────────────────────────────────────
@@ -91,7 +115,8 @@ function SliderRow({ label, value, min, max, step, unit, onChange }: SliderRowPr
         className="flex-1"
       />
       <span className="w-16 shrink-0 text-right text-sm tabular-nums text-[var(--color-text)]">
-        {value}{unit}
+        {value}
+        {unit}
       </span>
     </div>
   );
@@ -147,6 +172,7 @@ function TypographyTab() {
 
       <div className="mt-2 border-t border-[var(--color-border)] pt-4">
         <button
+          type="button"
           onClick={resetSettings}
           className="rounded-lg border border-[var(--color-border)] px-4 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-text-muted)] hover:text-[var(--color-text)]"
         >
@@ -166,6 +192,7 @@ function ThemesTab() {
         const isActive = theme.id === t.id;
         return (
           <button
+            type="button"
             key={t.id}
             onClick={() => setTheme(t.id)}
             className="rounded-xl border-2 p-4 text-left transition-all"
@@ -181,10 +208,8 @@ function ThemesTab() {
               {t.name}
             </p>
             <p className="text-xs leading-relaxed" style={{ color: t.textMuted }}>
-              Lorem ipsum{" "}
-              <strong style={{ color: t.text }}>dolor sit amet</strong>, consectetur
-              adipiscing elit. Iaculis{" "}
-              <span style={{ color: t.accent }}>semper</span> pharetra.
+              Lorem ipsum <strong style={{ color: t.text }}>dolor sit amet</strong>, consectetur
+              adipiscing elit. Iaculis <span style={{ color: t.accent }}>semper</span> pharetra.
             </p>
           </button>
         );
@@ -241,7 +266,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={handleOverlayClick}
-      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
     >
       <div
         className="flex flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
@@ -251,11 +278,20 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <div className="relative flex items-center justify-center border-b border-[var(--color-border)] px-6 py-4">
           <h2 className="text-base font-semibold text-[var(--color-text)]">Settings</h2>
           <button
+            type="button"
             onClick={onClose}
             className="absolute right-4 flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)]/50 hover:text-[var(--color-text)]"
             aria-label="Close settings"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              aria-hidden="true"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -266,6 +302,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <div className="flex gap-1 border-b border-[var(--color-border)] px-4 pt-3">
           {TABS.map((tab) => (
             <button
+              type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 rounded-t-md px-4 py-2 text-sm transition-colors ${

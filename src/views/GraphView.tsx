@@ -22,7 +22,7 @@ import { useUIStore } from "../store/ui";
 export function GraphView() {
   const { notes, selectNote } = useNoteStore();
   const { setView } = useUIStore();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: react-force-graph-2d does not export ref instance types
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });

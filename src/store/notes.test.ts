@@ -77,9 +77,9 @@ describe("useNoteStore", () => {
     const { result } = renderHook(() => useNoteStore());
     act(() => result.current.setNotes([note1, note2]));
     const tree = result.current.tagTree;
-    expect(tree["rl"]).toBeDefined();
-    expect(tree["rl"].notes).toHaveLength(2);
-    expect(tree["ce"]).toBeDefined();
-    expect(tree["ce"].notes).toHaveLength(1);
+    expect(tree.rl).toBeDefined();
+    expect(tree.rl.notes).toHaveLength(2);
+    expect(tree.ce).toBeDefined();
+    expect(tree.ce.notes).toHaveLength(1);
   });
 });

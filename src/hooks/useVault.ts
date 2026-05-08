@@ -17,12 +17,8 @@ const watchedVaultPaths = new Set<string>();
  */
 async function repairVaultFrontmatter(vaultPath: string): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
-  let files;
-  try {
-    files = await tauriCommands.listNotes(vaultPath);
-  } catch {
-    return;
-  }
+  const files = await tauriCommands.listNotes(vaultPath).catch(() => null);
+  if (!files) return;
 
   for (const f of files) {
     const note = parseNote(f.content, f.path);

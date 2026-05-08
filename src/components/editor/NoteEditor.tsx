@@ -55,17 +55,18 @@ const TaskListMarkdown = TaskList.extend({
   addStorage() {
     return {
       markdown: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown serializer types are not exported
         serialize(state: any, node: any) {
           state.renderList(node, "  ", () => "- ");
         },
         parse: {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          // biome-ignore lint/suspicious/noExplicitAny: markdown-it instance type not exported by tiptap-markdown
           setup(md: any) {
             if (!md.__taskListsAdded) {
               // Normalize escaped task list brackets \[ \] → [ ] before task list plugin runs.
               // This fixes content that was previously serialized without task list support
               // (tiptap-markdown escapes [ and ] in plain text, producing \[ \]).
+              // biome-ignore lint/suspicious/noExplicitAny: markdown-it core ruler state not exported
               md.core.ruler.before("block", "unescape-task-list", (state: any) => {
                 state.src = state.src.replace(/^([-*+])\s+\\\[([xX ]?)\\\]/gm, "$1 [$2]");
               });
@@ -89,7 +90,7 @@ const TaskItemMarkdown = TaskItem.extend({
   addStorage() {
     return {
       markdown: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown serializer types are not exported
         serialize(state: any, node: any) {
           state.write(node.attrs.checked ? "[x] " : "[ ] ");
           state.renderContent(node);
@@ -132,6 +133,7 @@ const ClearMarksOnEnter = Extension.create({
 });
 
 import { convertFileSrc } from "@tauri-apps/api/core";
+import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
@@ -194,8 +196,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         Image.configure({ inline: false, allowBase64: false }),
         WikiLinkExtension.configure({
           suggestion: {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            items: ({ query }: any) =>
+            items: ({ query }: { query: string }) =>
               !autocompleteRef.current
                 ? []
                 : notesRef.current
@@ -206,8 +207,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
                     )
                     .slice(0, 8),
             render: () => ({
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onStart(props: any) {
+              onStart(props: SuggestionProps<Note>) {
                 const rect = props.clientRect?.();
                 if (!rect) return;
                 setPopupRef.current({
@@ -217,8 +217,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
                   command: props.command,
                 });
               },
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onUpdate(props: any) {
+              onUpdate(props: SuggestionProps<Note>) {
                 const rect = props.clientRect?.();
                 setPopupRef.current((prev) =>
                   prev
@@ -231,8 +230,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
                     : null,
                 );
               },
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onKeyDown({ event }: any) {
+              onKeyDown({ event }: SuggestionKeyDownProps) {
                 const curr = popupRef.current;
                 if (!curr || curr.items.length === 0) return false;
                 if (event.key === "Escape") {
@@ -319,8 +317,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
             event.preventDefault();
             let handled = false;
             view.someProp("clipboardTextParser", (f) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              // biome-ignore lint/suspicious/noExplicitAny: accessing ProseMirror internal clipboard API not exposed in types
               const slice = (f as any)(text, (view.state as any).$from, false, view);
               if (slice) {
                 view.dispatch(view.state.tr.replaceSelection(slice));
@@ -348,15 +345,17 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     );
 
     // Reset editor when switching to a different note
+    // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
       if (editor) {
         editor.commands.setContent(note.content);
         lastSavedContentRef.current = note.content;
       }
-    }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [note.id]);
 
     // Reload editor when the file is updated externally (e.g. by Claude Code or MCP).
     // We distinguish external changes from our own saves by tracking lastSavedContentRef.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
       if (!editor) return;
       if (note.content === lastSavedContentRef.current) return;
@@ -367,7 +366,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       }
       editor.commands.setContent(note.content);
       lastSavedContentRef.current = note.content;
-    }, [note.content]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [note.content]);
 
     useEffect(() => {
       if (editor) editor.setEditable(!locked);
@@ -377,8 +376,10 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
 
     const triggerSave = useCallback(() => {
       if (!editor) return;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const md = (editor.storage as any).markdown?.getMarkdown?.() ?? editor.getText();
+      const md =
+        (
+          editor.storage as { markdown?: { getMarkdown?: () => string } }
+        ).markdown?.getMarkdown?.() ?? editor.getText();
       lastSavedContentRef.current = md; // mark as our own save so the file watcher doesn't reload
       onSave(md);
     }, [editor, onSave]);

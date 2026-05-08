@@ -21,7 +21,7 @@ function makeNote(id: string, title: string, filePath: string): Note {
     },
     content: "",
     filePath,
-    fileName: filePath.split("/").pop()!,
+    fileName: filePath.split("/").at(-1) ?? "",
     vaultId: "v1",
   };
 }

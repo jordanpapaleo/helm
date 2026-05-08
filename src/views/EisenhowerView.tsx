@@ -129,7 +129,7 @@ export function EisenhowerView() {
     const note: Note = {
       id,
       filePath,
-      fileName: filePath.split("/").pop()!,
+      fileName: filePath.split("/").at(-1) ?? "",
       content: "",
       vaultId: vault.id,
       frontmatter: {

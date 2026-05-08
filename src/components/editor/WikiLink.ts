@@ -49,13 +49,14 @@ export const WikiLinkExtension = Extension.create<WikiLinkOptions>({
             state.doc.descendants((node, pos) => {
               if (!node.isText || !node.text) return;
               const regex = /\[\[([^\]]+)\]\]/g;
-              let match;
-              while ((match = regex.exec(node.text)) !== null) {
+              let match = regex.exec(node.text);
+              while (match !== null) {
                 decos.push(
                   Decoration.inline(pos + match.index, pos + match.index + match[0].length, {
                     class: "wikilink-ref",
                   }),
                 );
+                match = regex.exec(node.text);
               }
             });
             return DecorationSet.create(state.doc, decos);

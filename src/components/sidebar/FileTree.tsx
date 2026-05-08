@@ -290,7 +290,7 @@ export function FileTree({ notes, vault }: Props) {
 
   // Only pass folder paths that belong to this vault
   const vaultFolderPaths = useMemo(
-    () => knownFolderPaths.filter((fp) => fp.startsWith(vault.path + "/")),
+    () => knownFolderPaths.filter((fp) => fp.startsWith(`${vault.path}/`)),
     [knownFolderPaths, vault.path],
   );
 
@@ -400,7 +400,7 @@ export function FileTree({ notes, vault }: Props) {
       // Update filePaths of all affected notes in the store
       const { notes: allNotes } = useNoteStore.getState();
       for (const n of allNotes) {
-        if (n.filePath.startsWith(folderPath + "/")) {
+        if (n.filePath.startsWith(`${folderPath}/`)) {
           const updatedNote = {
             ...n,
             filePath: newPath + n.filePath.slice(folderPath.length),
@@ -433,7 +433,7 @@ export function FileTree({ notes, vault }: Props) {
     // Remove notes in this folder from store
     const { notes: allNotes } = useNoteStore.getState();
     for (const n of allNotes) {
-      if (n.filePath.startsWith(folderPath + "/")) {
+      if (n.filePath.startsWith(`${folderPath}/`)) {
         if (n.id === selectedNoteId) selectNote(null);
         useNoteStore.getState().removeNote(n.id);
       }

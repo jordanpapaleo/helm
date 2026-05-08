@@ -1,15 +1,21 @@
 import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   closestCenter,
   DndContext,
   type DragEndEvent,
   DragOverlay,
   PointerSensor,
-  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ulid } from "ulid";
 import { EISENHOWER_QUADRANTS } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
@@ -19,6 +25,8 @@ import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
 import { type EisenhowerQuadrant, getQuadrant } from "../types/note";
 
+const ALL_QUADRANTS: EisenhowerQuadrant[] = ["do", "schedule", "delegate", "eliminate"];
+
 interface NoteCardProps {
   note: Note;
 }
@@ -26,13 +34,21 @@ interface NoteCardProps {
 function NoteCard({ note }: NoteCardProps) {
   const { selectNote } = useNoteStore();
   const { setView } = useUIStore();
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: note.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: note.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {...listeners}
     // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handler provided by dnd-kit {...listeners}
     <div
       ref={setNodeRef}
+      style={style}
       {...listeners}
       {...attributes}
       onClick={() => {
@@ -61,10 +77,11 @@ function NoteCard({ note }: NoteCardProps) {
 interface QuadrantProps {
   id: EisenhowerQuadrant;
   notes: Note[];
+  noteIds: string[];
   onCreate: () => void;
 }
 
-function Quadrant({ id, notes, onCreate }: QuadrantProps) {
+function Quadrant({ id, notes, noteIds, onCreate }: QuadrantProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const q = EISENHOWER_QUADRANTS[id];
 
@@ -102,11 +119,13 @@ function Quadrant({ id, notes, onCreate }: QuadrantProps) {
           </svg>
         </button>
       </div>
-      <div className="flex flex-col gap-2">
-        {notes.map((n) => (
-          <NoteCard key={n.id} note={n} />
-        ))}
-      </div>
+      <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-col gap-2">
+          {notes.map((n) => (
+            <NoteCard key={n.id} note={n} />
+          ))}
+        </div>
+      </SortableContext>
       {notes.length === 0 && (
         <p className="text-xs text-[var(--color-text-muted)] opacity-50 mt-auto">Drop here</p>
       )}
@@ -120,6 +139,49 @@ export function EisenhowerView() {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
+
+  const activeNotes = useMemo(
+    () => notes.filter((n) => n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing"),
+    [notes],
+  );
+
+  // Local state for within-quadrant ordering (not persisted — resets on reload)
+  const [quadrantOrder, setQuadrantOrder] = useState<Record<EisenhowerQuadrant, string[]>>(() => ({
+    do: activeNotes.filter((n) => getQuadrant(n) === "do").map((n) => n.id),
+    schedule: activeNotes.filter((n) => getQuadrant(n) === "schedule").map((n) => n.id),
+    delegate: activeNotes.filter((n) => getQuadrant(n) === "delegate").map((n) => n.id),
+    eliminate: activeNotes.filter((n) => getQuadrant(n) === "eliminate").map((n) => n.id),
+  }));
+
+  // Sync order when notes are added, removed, or reassigned externally
+  useEffect(() => {
+    setQuadrantOrder((prev) => {
+      const byQuadrant: Record<EisenhowerQuadrant, Set<string>> = {
+        do: new Set(activeNotes.filter((n) => getQuadrant(n) === "do").map((n) => n.id)),
+        schedule: new Set(activeNotes.filter((n) => getQuadrant(n) === "schedule").map((n) => n.id)),
+        delegate: new Set(activeNotes.filter((n) => getQuadrant(n) === "delegate").map((n) => n.id)),
+        eliminate: new Set(activeNotes.filter((n) => getQuadrant(n) === "eliminate").map((n) => n.id)),
+      };
+      const next = { ...prev };
+      for (const q of ALL_QUADRANTS) {
+        // Preserve existing order; append newly discovered notes at the end
+        const kept = prev[q].filter((id) => byQuadrant[q].has(id));
+        const added = [...byQuadrant[q]].filter((id) => !prev[q].includes(id));
+        next[q] = [...kept, ...added];
+      }
+      return next;
+    });
+  }, [activeNotes]);
+
+  // Derive ordered note arrays from quadrantOrder (order state is source of truth for display)
+  const quadrantNotes = useMemo(() => {
+    const byId = new Map(notes.map((n) => [n.id, n]));
+    const result = {} as Record<EisenhowerQuadrant, Note[]>;
+    for (const q of ALL_QUADRANTS) {
+      result[q] = quadrantOrder[q].map((id) => byId.get(id)).filter((n): n is Note => !!n);
+    }
+    return result;
+  }, [notes, quadrantOrder]);
 
   async function createNoteInQuadrant(quadrant: EisenhowerQuadrant) {
     if (!vault) return;
@@ -158,26 +220,56 @@ export function EisenhowerView() {
   // Require 5px movement before drag starts so clicks still register
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const activeNotes = notes.filter(
-    (n) => n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing",
-  );
-
-  const quadrantNotes: Record<EisenhowerQuadrant, Note[]> = {
-    do: activeNotes.filter((n) => getQuadrant(n) === "do"),
-    schedule: activeNotes.filter((n) => getQuadrant(n) === "schedule"),
-    delegate: activeNotes.filter((n) => getQuadrant(n) === "delegate"),
-    eliminate: activeNotes.filter((n) => getQuadrant(n) === "eliminate"),
-  };
-
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveId(null);
     if (!over) return;
 
-    const quadrant = over.id as EisenhowerQuadrant;
-    const q = EISENHOWER_QUADRANTS[quadrant];
-    const note = notes.find((n) => n.id === String(active.id));
+    const activeNoteId = String(active.id);
+    const overId = String(over.id);
+
+    // Determine which quadrant the dragged note came from
+    const sourceQuadrant = ALL_QUADRANTS.find((q) => quadrantOrder[q].includes(activeNoteId));
+    if (!sourceQuadrant) return;
+
+    // over.id is either a quadrant id (dropped on empty container) or a note id
+    const isDropOnQuadrant = (ALL_QUADRANTS as string[]).includes(overId);
+    const targetQuadrant: EisenhowerQuadrant = isDropOnQuadrant
+      ? (overId as EisenhowerQuadrant)
+      : (ALL_QUADRANTS.find((q) => quadrantOrder[q].includes(overId)) ?? sourceQuadrant);
+
+    if (sourceQuadrant === targetQuadrant) {
+      // Same quadrant — reorder in place
+      if (isDropOnQuadrant) return; // dropped on container, nothing to reorder
+      const oldIndex = quadrantOrder[sourceQuadrant].indexOf(activeNoteId);
+      const newIndex = quadrantOrder[targetQuadrant].indexOf(overId);
+      if (oldIndex !== newIndex && newIndex >= 0) {
+        setQuadrantOrder((prev) => ({
+          ...prev,
+          [sourceQuadrant]: arrayMove(prev[sourceQuadrant], oldIndex, newIndex),
+        }));
+      }
+      return;
+    }
+
+    // Cross-quadrant move — update frontmatter and move in order state
+    const q = EISENHOWER_QUADRANTS[targetQuadrant];
+    const note = notes.find((n) => n.id === activeNoteId);
     if (!note) return;
+
+    setQuadrantOrder((prev) => {
+      const next = { ...prev };
+      next[sourceQuadrant] = prev[sourceQuadrant].filter((id) => id !== activeNoteId);
+      const target = prev[targetQuadrant].filter((id) => id !== activeNoteId);
+      const insertAt = !isDropOnQuadrant ? prev[targetQuadrant].indexOf(overId) + 1 : -1;
+      if (insertAt > 0) {
+        target.splice(insertAt, 0, activeNoteId);
+      } else {
+        target.push(activeNoteId);
+      }
+      next[targetQuadrant] = target;
+      return next;
+    });
 
     if (note.frontmatter.urgent === q.urgent && note.frontmatter.important === q.important) return;
 
@@ -210,20 +302,28 @@ export function EisenhowerView() {
         onDragEnd={handleDragEnd}
       >
         <div className="grid grid-cols-2 grid-rows-2 gap-4 flex-1 min-h-0">
-          <Quadrant id="do" notes={quadrantNotes.do} onCreate={() => createNoteInQuadrant("do")} />
+          <Quadrant
+            id="do"
+            notes={quadrantNotes.do}
+            noteIds={quadrantOrder.do}
+            onCreate={() => createNoteInQuadrant("do")}
+          />
           <Quadrant
             id="schedule"
             notes={quadrantNotes.schedule}
+            noteIds={quadrantOrder.schedule}
             onCreate={() => createNoteInQuadrant("schedule")}
           />
           <Quadrant
             id="delegate"
             notes={quadrantNotes.delegate}
+            noteIds={quadrantOrder.delegate}
             onCreate={() => createNoteInQuadrant("delegate")}
           />
           <Quadrant
             id="eliminate"
             notes={quadrantNotes.eliminate}
+            noteIds={quadrantOrder.eliminate}
             onCreate={() => createNoteInQuadrant("eliminate")}
           />
         </div>

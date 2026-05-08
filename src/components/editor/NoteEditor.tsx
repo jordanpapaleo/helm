@@ -1,14 +1,54 @@
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
+import Paragraph from "@tiptap/extension-paragraph";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
+import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, Extension, InputRule, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import taskListPlugin from "markdown-it-task-lists";
 import { Markdown } from "tiptap-markdown";
+
+// Extends Paragraph to preserve blank lines (empty paragraphs) through markdown round-trips.
+// Empty paragraphs are serialized as a single NBSP character so markdown-it doesn't collapse
+// them, and a preprocessor restores them when parsing content that has extra blank lines.
+const ParagraphMarkdown = Paragraph.extend({
+  addStorage() {
+    return {
+      markdown: {
+        // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown serializer types are not exported
+        serialize(state: any, node: any) {
+          if (node.childCount === 0 || node.textContent === "\u00A0") {
+            state.write("\u00A0"); // NBSP placeholder — survives markdown round-trip
+          } else {
+            state.renderInline(node);
+          }
+          state.closeBlock(node);
+        },
+        parse: {
+          // biome-ignore lint/suspicious/noExplicitAny: markdown-it instance type not exported by tiptap-markdown
+          setup(md: any) {
+            if (!md.__blankLinesAdded) {
+              // Convert runs of 3+ newlines (extra blank lines) into NBSP placeholder paragraphs
+              // so they survive the markdown-it block parser which collapses multiple blank lines.
+              // biome-ignore lint/suspicious/noExplicitAny: markdown-it core ruler state not exported
+              md.core.ruler.before("block", "preserve-blank-lines", (state: any) => {
+                state.src = state.src.replace(/\n{3,}/g, (match: string) => {
+                  const extraBlanks = match.length - 2;
+                  return "\n\n" + "\u00A0\n\n".repeat(extraBlanks);
+                });
+              });
+              md.__blankLinesAdded = true;
+            }
+          },
+        },
+      },
+    };
+  },
+});
 
 // tiptap-markdown calls parse.setup(md) on every parse() call (initial load, paste, setContent).
 // We use this to register markdown-it-task-lists once on the md instance.
@@ -47,6 +87,9 @@ const TaskListMarkdown = TaskList.extend({
           const taskItem = taskItemType.create({ checked }, paragraph ?? undefined);
           const taskList = taskListType.create(null, taskItem);
           tr.replaceWith(bulletListStart, bulletListEnd, taskList);
+          // Place cursor inside the new task item's paragraph:
+          // taskList(+1) > taskItem(+1) > paragraph(+1) = +3 from bulletListStart
+          tr.setSelection(TextSelection.create(tr.doc, bulletListStart + 3));
         },
       }),
     ];
@@ -134,7 +177,7 @@ const ClearMarksOnEnter = Extension.create({
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
@@ -184,9 +227,25 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // saves from external file changes (e.g. from Claude Code or MCP server).
     const lastSavedContentRef = useRef(note.content);
 
-    const editor = useEditor({
-      extensions: [
-        StarterKit.configure({ codeBlock: false }),
+    // vaultPath is needed inside handlePaste but must not be captured in the memoized
+    // extensions array — keep it in a ref so handlePaste always reads the current value.
+    const vaultPathRef = useRef(vaultPath);
+    vaultPathRef.current = vaultPath;
+
+    // Captures the content at first render for TipTap initialization.
+    // Never updated — we pass this to useEditor so the `content` option is stable
+    // across renders (preventing TipTap from calling setOptions on every re-render).
+    // Actual content loading after mount / note switches is handled by the note.id effect.
+    const initialContentRef = useRef(note.content);
+
+    // Memoize extensions so TipTap sees stable references across renders.
+    // Every dynamic value (notes list, settings, popup state) is read via a ref,
+    // so it is safe to create this array once on mount.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally empty deps — all dynamic values accessed via stable refs
+    const extensions = useMemo(
+      () => [
+        StarterKit.configure({ codeBlock: false, paragraph: false }),
+        ParagraphMarkdown,
         Placeholder.configure({ placeholder: "Start writing…" }),
         Highlight.configure({ multicolor: false }),
         CodeBlockLowlight.configure({ lowlight }),
@@ -271,8 +330,15 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           transformCopiedText: true,
         }),
       ],
-      content: note.content,
-      editorProps: {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [],
+    );
+
+    // Memoize editorProps so TipTap's compareOptions sees a stable reference each render.
+    // All dynamic values (vaultPath) are read through refs, so the empty dep array is safe.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally empty deps — dynamic values accessed via stable refs
+    const editorProps = useMemo(
+      () => ({
         attributes: {
           class: "prose max-w-none w-full outline-none min-h-[300px] text-[var(--color-text)]",
           style: [
@@ -280,11 +346,12 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
             "line-height: var(--editor-line-height)",
           ].join("; "),
         },
-        handlePaste(view, event) {
+        // biome-ignore lint/suspicious/noExplicitAny: ProseMirror EditorView type not re-exported by tiptap
+        handlePaste(view: any, event: ClipboardEvent) {
           const items = event.clipboardData?.items;
 
           // Handle image paste
-          if (items && vaultPath) {
+          if (items && vaultPathRef.current) {
             for (const item of Array.from(items)) {
               if (!item.type.startsWith("image/")) continue;
               event.preventDefault();
@@ -295,7 +362,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
               file.arrayBuffer().then(async (buf) => {
                 const data = Array.from(new Uint8Array(buf));
                 try {
-                  const absPath = await tauriCommands.writeAsset(vaultPath, filename, data);
+                  const absPath = await tauriCommands.writeAsset(vaultPathRef.current!, filename, data);
                   const src = convertFileSrc(absPath);
                   view.dispatch(
                     view.state.tr.replaceSelectionWith(
@@ -316,7 +383,8 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           if (text) {
             event.preventDefault();
             let handled = false;
-            view.someProp("clipboardTextParser", (f) => {
+            // biome-ignore lint/suspicious/noExplicitAny: ProseMirror someProp callback is untyped
+            view.someProp("clipboardTextParser", (f: any) => {
               // biome-ignore lint/suspicious/noExplicitAny: accessing ProseMirror internal clipboard API not exposed in types
               const slice = (f as any)(text, (view.state as any).$from, false, view);
               if (slice) {
@@ -333,7 +401,17 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
 
           return false;
         },
-      },
+      }),
+      [],
+    );
+
+    // initialContentRef.current never changes after mount, so TipTap's compareOptions
+    // sees a stable `content` value on every render and never calls setOptions.
+    // The note.id effect below handles loading content when switching notes.
+    const editor = useEditor({
+      extensions,
+      editorProps,
+      content: initialContentRef.current,
     });
 
     useImperativeHandle(
@@ -355,10 +433,13 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
 
     // Reload editor when the file is updated externally (e.g. by Claude Code or MCP).
     // We distinguish external changes from our own saves by tracking lastSavedContentRef.
+    // gray-matter inserts a leading \n when parsing file content back; strip it before
+    // comparing so our own save→file-watcher cycle doesn't trigger spurious reloads.
     // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
       if (!editor) return;
-      if (note.content === lastSavedContentRef.current) return;
+      const strip = (s: string) => s.replace(/^\n+|\n+$/g, "");
+      if (strip(note.content) === strip(lastSavedContentRef.current)) return;
       // Cancel any pending auto-save so it doesn't overwrite the external change
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);

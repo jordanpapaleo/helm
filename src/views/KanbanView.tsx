@@ -1,15 +1,21 @@
 import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   closestCenter,
   DndContext,
   type DragEndEvent,
   DragOverlay,
   PointerSensor,
-  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ulid } from "ulid";
 import { NOTE_STATES } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
@@ -21,13 +27,21 @@ import type { Note, NoteState } from "../types/note";
 function KanbanCard({ note }: { note: Note }) {
   const { selectNote } = useNoteStore();
   const { setView } = useUIStore();
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: note.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: note.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {...listeners}
+    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {@listeners}
     // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handler provided by dnd-kit {...listeners}
     <div
       ref={setNodeRef}
+      style={style}
       {...listeners}
       {...attributes}
       onClick={() => {
@@ -59,10 +73,12 @@ function KanbanCard({ note }: { note: Note }) {
 function KanbanColumn({
   state,
   notes,
+  noteIds,
   onCreate,
 }: {
   state: string;
   notes: Note[];
+  noteIds: string[];
   onCreate: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: state });
@@ -101,11 +117,13 @@ function KanbanColumn({
           </svg>
         </button>
       </div>
-      <div className="flex flex-col gap-2">
-        {notes.map((n) => (
-          <KanbanCard key={n.id} note={n} />
-        ))}
-      </div>
+      <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-col gap-2">
+          {notes.map((n) => (
+            <KanbanCard key={n.id} note={n} />
+          ))}
+        </div>
+      </SortableContext>
     </div>
   );
 }
@@ -118,6 +136,41 @@ export function KanbanView() {
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Local state for within-column ordering (not persisted — resets on reload)
+  const [columnOrder, setColumnOrder] = useState<Record<NoteState, string[]>>(() => {
+    const init = {} as Record<NoteState, string[]>;
+    for (const s of NOTE_STATES) {
+      init[s as NoteState] = notes.filter((n) => n.frontmatter.state === s).map((n) => n.id);
+    }
+    return init;
+  });
+
+  // Sync order when notes are added, removed, or moved externally
+  useEffect(() => {
+    setColumnOrder((prev) => {
+      const next = { ...prev };
+      for (const s of NOTE_STATES) {
+        const colIds = new Set(notes.filter((n) => n.frontmatter.state === s).map((n) => n.id));
+        const kept = (prev[s as NoteState] ?? []).filter((id) => colIds.has(id));
+        const added = [...colIds].filter((id) => !kept.includes(id));
+        next[s as NoteState] = [...kept, ...added];
+      }
+      return next;
+    });
+  }, [notes]);
+
+  // Derive ordered note arrays from columnOrder
+  const columnNotes = useMemo(() => {
+    const byId = new Map(notes.map((n) => [n.id, n]));
+    const result = {} as Record<NoteState, Note[]>;
+    for (const s of NOTE_STATES) {
+      result[s as NoteState] = (columnOrder[s as NoteState] ?? [])
+        .map((id) => byId.get(id))
+        .filter((n): n is Note => !!n);
+    }
+    return result;
+  }, [notes, columnOrder]);
 
   async function createNoteInColumn(state: NoteState) {
     if (!vault) return;
@@ -157,15 +210,60 @@ export function KanbanView() {
     setActiveId(null);
     if (!over) return;
 
-    const newState = over.id as NoteState;
-    const note = notes.find((n) => n.id === String(active.id));
-    if (!note || note.frontmatter.state === newState) return;
+    const activeNoteId = String(active.id);
+    const overId = String(over.id);
+
+    // Find which column the dragged card came from
+    const sourceCol = NOTE_STATES.find((s) =>
+      (columnOrder[s as NoteState] ?? []).includes(activeNoteId),
+    ) as NoteState | undefined;
+    if (!sourceCol) return;
+
+    // over.id is either a column state name or a note id
+    const isDropOnColumn = (NOTE_STATES as string[]).includes(overId);
+    const targetCol: NoteState = isDropOnColumn
+      ? (overId as NoteState)
+      : ((NOTE_STATES.find((s) =>
+          (columnOrder[s as NoteState] ?? []).includes(overId),
+        ) as NoteState | undefined) ?? sourceCol);
+
+    if (sourceCol === targetCol) {
+      // Same column — reorder in place
+      if (isDropOnColumn) return;
+      const oldIndex = columnOrder[sourceCol].indexOf(activeNoteId);
+      const newIndex = columnOrder[targetCol].indexOf(overId);
+      if (oldIndex !== newIndex && newIndex >= 0) {
+        setColumnOrder((prev) => ({
+          ...prev,
+          [sourceCol]: arrayMove(prev[sourceCol], oldIndex, newIndex),
+        }));
+      }
+      return;
+    }
+
+    // Cross-column move — update state and order
+    setColumnOrder((prev) => {
+      const next = { ...prev };
+      next[sourceCol] = prev[sourceCol].filter((id) => id !== activeNoteId);
+      const target = prev[targetCol].filter((id) => id !== activeNoteId);
+      const insertAt = !isDropOnColumn ? prev[targetCol].indexOf(overId) + 1 : -1;
+      if (insertAt > 0) {
+        target.splice(insertAt, 0, activeNoteId);
+      } else {
+        target.push(activeNoteId);
+      }
+      next[targetCol] = target;
+      return next;
+    });
+
+    const note = notes.find((n) => n.id === activeNoteId);
+    if (!note || note.frontmatter.state === targetCol) return;
 
     const updated = {
       ...note,
       frontmatter: {
         ...note.frontmatter,
-        state: newState,
+        state: targetCol,
         updated: new Date().toISOString().split("T")[0],
       },
     };
@@ -193,7 +291,8 @@ export function KanbanView() {
             <KanbanColumn
               key={state}
               state={state}
-              notes={notes.filter((n) => n.frontmatter.state === state)}
+              notes={columnNotes[state as NoteState] ?? []}
+              noteIds={columnOrder[state as NoteState] ?? []}
               onCreate={() => createNoteInColumn(state as NoteState)}
             />
           ))}

@@ -38,8 +38,8 @@ describe("useThemeStore", () => {
       result.current.setTheme("light");
     });
     expect(
-      document.documentElement.style.getPropertyValue("--color-bg")
-    ).toBe(lightTheme.bg);
+      document.documentElement.style.getPropertyValue("--color-base-100")
+    ).toBe(lightTheme.base100);
   });
 
   it("setTheme - unknown id falls back to THEMES[0]", () => {

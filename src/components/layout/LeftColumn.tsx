@@ -29,7 +29,6 @@ export function LeftColumn() {
     selectNote,
   } = useNoteStore();
 
-
   const vaultFilteredNotes = activeVaultId
     ? notes.filter((n) => n.vaultId === activeVaultId)
     : notes;
@@ -178,7 +177,11 @@ export function LeftColumn() {
                 className="flex flex-1 min-w-0 items-center gap-2 text-left"
                 onClick={() => handleVaultClick(vault.id)}
               >
-                <Icon icon="uil:folder" className="h-4 w-4 shrink-0 opacity-70" aria-hidden="true" />
+                <Icon
+                  icon="uil:folder"
+                  className="h-4 w-4 shrink-0 opacity-70"
+                  aria-hidden="true"
+                />
                 <span className="flex-1 truncate">{vault.name}</span>
                 <span className="text-xs opacity-40">
                   {notes.filter((n) => n.vaultId === vault.id).length}

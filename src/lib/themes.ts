@@ -473,7 +473,7 @@ export function injectThemeStyles(): void {
   --color-warning-content: ${t.warningContent};
   --color-error: ${t.error};
   --color-error-content: ${t.errorContent};
-}`
+}`,
   ).join("\n");
 
   let el = document.getElementById("helm-themes") as HTMLStyleElement | null;

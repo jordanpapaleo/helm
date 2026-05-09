@@ -1,10 +1,10 @@
+import type { DragEndEvent } from "@dnd-kit/dom";
+import { KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
+import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
 import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import React, { useMemo, useState } from "react";
 import { ulid } from "ulid";
-import { KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
-import type { DragEndEvent } from "@dnd-kit/dom";
-import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
 import { buildTree, getAllFolderPaths, type TreeNode } from "../../lib/file-tree";
 import { serializeNote, slugify } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";

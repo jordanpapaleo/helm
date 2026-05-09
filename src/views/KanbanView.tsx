@@ -1,10 +1,15 @@
+import { CollisionPriority } from "@dnd-kit/abstract";
+import {
+  Feedback,
+  KeyboardSensor,
+  PointerActivationConstraints,
+  PointerSensor,
+} from "@dnd-kit/dom";
+import { move } from "@dnd-kit/helpers";
+import { type DragDropEventHandlers, DragDropProvider, useDroppable } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ulid } from "ulid";
-import { CollisionPriority } from "@dnd-kit/abstract";
-import { Feedback, KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
-import { DragDropProvider, type DragDropEventHandlers, useDroppable } from "@dnd-kit/react";
-import { useSortable } from "@dnd-kit/react/sortable";
-import { move } from "@dnd-kit/helpers";
 import { NOTE_STATES } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
@@ -24,15 +29,7 @@ const sensors = [
   KeyboardSensor,
 ];
 
-function KanbanCard({
-  note,
-  index,
-  column,
-}: {
-  note: Note;
-  index: number;
-  column: NoteState;
-}) {
+function KanbanCard({ note, index, column }: { note: Note; index: number; column: NoteState }) {
   const { selectNote } = useNoteStore();
   const { setView } = useUIStore();
   const { ref, isDragSource } = useSortable({
@@ -193,9 +190,7 @@ export function KanbanView() {
     const byId = new Map(notes.map((n) => [n.id, n]));
     const result: Record<string, Note[]> = {};
     for (const s of NOTE_STATES) {
-      result[s] = (items[s] ?? [])
-        .map((id) => byId.get(id))
-        .filter((n): n is Note => !!n);
+      result[s] = (items[s] ?? []).map((id) => byId.get(id)).filter((n): n is Note => !!n);
     }
     return result;
   }, [notes, items]);
@@ -208,6 +203,7 @@ export function KanbanView() {
     setItems((current) => move(current, event));
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: persistDrop is a stable inner function; all its reactive deps (notes) are already listed
   const handleDragEnd = useCallback<DragDropEventHandlers["onDragEnd"]>(
     async (event) => {
       if (event.canceled) {

@@ -1,17 +1,22 @@
+import { CollisionPriority } from "@dnd-kit/abstract";
+import {
+  Feedback,
+  KeyboardSensor,
+  PointerActivationConstraints,
+  PointerSensor,
+} from "@dnd-kit/dom";
+import { move } from "@dnd-kit/helpers";
+import { type DragDropEventHandlers, DragDropProvider, useDroppable } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ulid } from "ulid";
-import { CollisionPriority } from "@dnd-kit/abstract";
-import { Feedback, KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
-import { DragDropProvider, type DragDropEventHandlers, useDroppable } from "@dnd-kit/react";
-import { useSortable } from "@dnd-kit/react/sortable";
-import { move } from "@dnd-kit/helpers";
 import { EISENHOWER_QUADRANTS } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
 import { useUIStore } from "../store/ui";
-import { type EisenhowerQuadrant, getQuadrant } from "../types/note";
 import type { Note } from "../types/note";
+import { type EisenhowerQuadrant, getQuadrant } from "../types/note";
 
 const ALL_QUADRANTS: EisenhowerQuadrant[] = ["do", "schedule", "delegate", "eliminate"];
 
@@ -27,7 +32,15 @@ const sensors = [
   KeyboardSensor,
 ];
 
-function NoteCard({ note, index, quadrant }: { note: Note; index: number; quadrant: EisenhowerQuadrant }) {
+function NoteCard({
+  note,
+  index,
+  quadrant,
+}: {
+  note: Note;
+  index: number;
+  quadrant: EisenhowerQuadrant;
+}) {
   const { selectNote } = useNoteStore();
   const { setView } = useUIStore();
   const { ref, isDragSource } = useSortable({
@@ -36,7 +49,6 @@ function NoteCard({ note, index, quadrant }: { note: Note; index: number; quadra
     group: quadrant,
     type: "card",
     accept: "card",
-    plugins: [Feedback.configure({ feedback: "clone" })],
     plugins: [Feedback.configure({ feedback: "clone" })],
   });
 
@@ -194,9 +206,7 @@ export function EisenhowerView() {
     const byId = new Map(notes.map((n) => [n.id, n]));
     const result: Record<string, Note[]> = {};
     for (const q of ALL_QUADRANTS) {
-      result[q] = (items[q] ?? [])
-        .map((id) => byId.get(id))
-        .filter((n): n is Note => !!n);
+      result[q] = (items[q] ?? []).map((id) => byId.get(id)).filter((n): n is Note => !!n);
     }
     return result;
   }, [notes, items]);
@@ -209,6 +219,7 @@ export function EisenhowerView() {
     setItems((current) => move(current, event));
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: persistDrop is a stable inner function; all its reactive deps (notes) are already listed
   const handleDragEnd = useCallback<DragDropEventHandlers["onDragEnd"]>(
     async (event) => {
       if (event.canceled) {

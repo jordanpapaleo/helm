@@ -277,8 +277,8 @@ export function DashboardView() {
                   outerRadius={85}
                   dataKey="value"
                   paddingAngle={2}
-                    stroke={strokeColor}
-                    strokeWidth={2}
+                  stroke={strokeColor}
+                  strokeWidth={2}
                 >
                   {stateData.map((entry, i) => (
                     <Cell key={entry.name} fill={colors[i % colors.length]} />

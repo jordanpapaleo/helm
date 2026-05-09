@@ -38,7 +38,7 @@ const ParagraphMarkdown = Paragraph.extend({
               md.core.ruler.before("block", "preserve-blank-lines", (state: any) => {
                 state.src = state.src.replace(/\n{3,}/g, (match: string) => {
                   const extraBlanks = match.length - 2;
-                  return "\n\n" + "\u00A0\n\n".repeat(extraBlanks);
+                  return `\n\n${"\u00A0\n\n".repeat(extraBlanks)}`;
                 });
               });
               md.__blankLinesAdded = true;
@@ -195,7 +195,15 @@ const ClearMarksOnEnter = Extension.create({
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
@@ -259,7 +267,6 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // Memoize extensions so TipTap sees stable references across renders.
     // Every dynamic value (notes list, settings, popup state) is read via a ref,
     // so it is safe to create this array once on mount.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally empty deps — all dynamic values accessed via stable refs
     const extensions = useMemo(
       () => [
         StarterKit.configure({ codeBlock: false, paragraph: false }),
@@ -354,7 +361,6 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
 
     // Memoize editorProps so TipTap's compareOptions sees a stable reference each render.
     // All dynamic values (vaultPath) are read through refs, so the empty dep array is safe.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally empty deps — dynamic values accessed via stable refs
     const editorProps = useMemo(
       () => ({
         attributes: {
@@ -378,9 +384,14 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
               const ext = item.type.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
               const filename = `${Date.now()}.${ext}`;
               file.arrayBuffer().then(async (buf) => {
+                if (!vaultPathRef.current) return;
                 const data = Array.from(new Uint8Array(buf));
                 try {
-                  const absPath = await tauriCommands.writeAsset(vaultPathRef.current!, filename, data);
+                  const absPath = await tauriCommands.writeAsset(
+                    vaultPathRef.current,
+                    filename,
+                    data,
+                  );
                   const src = convertFileSrc(absPath);
                   view.dispatch(
                     view.state.tr.replaceSelectionWith(

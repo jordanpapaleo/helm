@@ -18,14 +18,38 @@
   /* readable on both light (dark base-content) and dark (light base-content) */
   /* Tweak --syntax-blend to control vibrancy: higher = more color, lower = safer contrast */
   --syntax-blend: 70%;
-  --color-syntax-comment:  var(--color-text-muted);
-  --color-syntax-keyword:  color-mix(in oklch, var(--color-primary)   var(--syntax-blend), var(--color-base-content));
-  --color-syntax-number:   color-mix(in oklch, var(--color-warning)   var(--syntax-blend), var(--color-base-content));
-  --color-syntax-string:   color-mix(in oklch, var(--color-success)   var(--syntax-blend), var(--color-base-content));
-  --color-syntax-function: color-mix(in oklch, var(--color-accent)    var(--syntax-blend), var(--color-base-content));
-  --color-syntax-variable: color-mix(in oklch, var(--color-secondary) var(--syntax-blend), var(--color-base-content));
-  --color-syntax-builtin:  color-mix(in oklch, var(--color-info)      var(--syntax-blend), var(--color-base-content));
-  --color-syntax-meta:     var(--color-text-muted);
+  --color-syntax-comment: var(--color-text-muted);
+  --color-syntax-keyword: color-mix(
+    in oklch,
+    var(--color-primary) var(--syntax-blend),
+    var(--color-base-content)
+  );
+  --color-syntax-number: color-mix(
+    in oklch,
+    var(--color-warning) var(--syntax-blend),
+    var(--color-base-content)
+  );
+  --color-syntax-string: color-mix(
+    in oklch,
+    var(--color-success) var(--syntax-blend),
+    var(--color-base-content)
+  );
+  --color-syntax-function: color-mix(
+    in oklch,
+    var(--color-accent) var(--syntax-blend),
+    var(--color-base-content)
+  );
+  --color-syntax-variable: color-mix(
+    in oklch,
+    var(--color-secondary) var(--syntax-blend),
+    var(--color-base-content)
+  );
+  --color-syntax-builtin: color-mix(
+    in oklch,
+    var(--color-info) var(--syntax-blend),
+    var(--color-base-content)
+  );
+  --color-syntax-meta: var(--color-text-muted);
 
   /* ── Editor typography — overridden at runtime by applySettings() */
   --editor-font-size: 16px;

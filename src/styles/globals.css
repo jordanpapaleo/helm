@@ -4,53 +4,28 @@
 :root {
   --sidebar-width: 260px;
 
-  /* ── DaisyUI semantic color tokens (Midnight defaults) ───────── */
-
-  /* Base surfaces (Midnight defaults) */
-  --color-base-100: oklch(22.7% 0.004 286);   /* page background */
-  --color-base-200: oklch(29.4% 0.004 286);   /* panels, cards */
-  --color-base-300: oklch(17.9% 0.004 285.9); /* deeper surfaces */
-  --color-base-content: oklch(96.3% 0.007 286); /* primary text */
-
-  /* Neutral */
-  --color-neutral: oklch(34.9% 0.003 286);
-  --color-neutral-content: oklch(64.8% 0.007 286);
-
-  /* Primary */
-  --color-primary: oklch(62.4% 0.206 255.5);
-  --color-primary-content: oklch(100% 0 0);
-
-  /* Accent */
-  --color-accent: oklch(62.4% 0.206 255.5);
-  --color-accent-content: oklch(100% 0 0);
-
-  /* Status */
-  --color-info: oklch(62.4% 0.206 255.5);
-  --color-info-content: oklch(100% 0 0);
-  --color-success: oklch(75.6% 0.208 147);
-  --color-success-content: oklch(0% 0 0);
-  --color-warning: oklch(78.2% 0.171 67.2);
-  --color-warning-content: oklch(0% 0 0);
-  --color-error: oklch(66.3% 0.224 28.3);
-  --color-error-content: oklch(100% 0 0);
-
   /* ── Derived / alias vars — used by component files ─────────── */
-  /* Border derives from content color per DaisyUI convention */
+  /* Theme color vars come exclusively from [data-theme="x"] blocks (injected by injectThemeStyles()) */
   --color-border: color-mix(in oklab, var(--color-base-content) 10%, transparent);
   --color-bg: var(--color-base-100);
   --color-surface: var(--color-base-200);
   --color-text: var(--color-base-content);
-  --color-text-muted: var(--color-neutral-content);
+  /* Muted text = base-content at 60% — correct on any base background */
+  --color-text-muted: color-mix(in oklab, var(--color-base-content) 60%, transparent);
 
-  /* ── Syntax highlighting tokens (static — not theme-driven) ──── */
-  --color-syntax-comment: #5c6370;
-  --color-syntax-keyword: #c678dd;
-  --color-syntax-number: #d19a66;
-  --color-syntax-string: #98c379;
-  --color-syntax-function: #61afef;
-  --color-syntax-variable: #e06c75;
-  --color-syntax-builtin: #56b6c2;
-  --color-syntax-meta: #5c6370;
+  /* ── Syntax highlighting — semantic palette blended toward base-content   ── */
+  /* color-mix pushes each color toward the theme's text color so it stays  */
+  /* readable on both light (dark base-content) and dark (light base-content) */
+  /* Tweak --syntax-blend to control vibrancy: higher = more color, lower = safer contrast */
+  --syntax-blend: 70%;
+  --color-syntax-comment:  var(--color-text-muted);
+  --color-syntax-keyword:  color-mix(in oklch, var(--color-primary)   var(--syntax-blend), var(--color-base-content));
+  --color-syntax-number:   color-mix(in oklch, var(--color-warning)   var(--syntax-blend), var(--color-base-content));
+  --color-syntax-string:   color-mix(in oklch, var(--color-success)   var(--syntax-blend), var(--color-base-content));
+  --color-syntax-function: color-mix(in oklch, var(--color-accent)    var(--syntax-blend), var(--color-base-content));
+  --color-syntax-variable: color-mix(in oklch, var(--color-secondary) var(--syntax-blend), var(--color-base-content));
+  --color-syntax-builtin:  color-mix(in oklch, var(--color-info)      var(--syntax-blend), var(--color-base-content));
+  --color-syntax-meta:     var(--color-text-muted);
 
   /* ── Editor typography — overridden at runtime by applySettings() */
   --editor-font-size: 16px;
@@ -59,6 +34,10 @@
 
   /* Single spacing unit used for all block-level bottom spacing */
   --spacing-block: 0.75em;
+
+  /* ── Font families ───────────────────────────────────────────── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
 }
 
 input[type="range"] {
@@ -66,16 +45,16 @@ input[type="range"] {
 }
 
 .code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
-  background: var(--color-base-200);
+  background: var(--color-base-100);
   border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 1px 5px;
 }
 
 .kbd {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   background: var(--color-base-200);
   border: 1px solid var(--color-border);
@@ -87,7 +66,7 @@ input[type="range"] {
 body {
   background-color: var(--color-base-100);
   color: var(--color-base-content);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-family: var(--font-sans);
   margin: 0;
 }
 
@@ -136,7 +115,7 @@ body {
   border-radius: 4px;
   padding: 0.1em 0.35em;
   font-size: 0.88em;
-  font-family: "SF Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   color: var(--color-syntax-string);
 }
 .prose :where(code):not(pre code)::before,
@@ -146,12 +125,12 @@ body {
 
 /* ── TipTap code block (lowlight) ───────────────────────────── */
 .prose pre {
-  background: var(--color-base-300);
+  background: var(--color-base-200);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 1rem 1.25rem;
   overflow-x: auto;
-  font-family: "SF Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.875rem;
   line-height: 1.6;
 }
@@ -219,7 +198,7 @@ ul[data-type="taskList"] li > label input[type="checkbox"] {
   -webkit-appearance: none;
   width: 1rem;
   height: 1rem;
-  border: 1.5px solid var(--color-neutral-content);
+  border: 2px solid var(--color-accent);
   margin-top: 0.5em;
   border-radius: 4px;
   background: transparent;
@@ -249,8 +228,9 @@ ul[data-type="taskList"] li > div {
   flex: 1;
 }
 ul[data-type="taskList"] li[data-checked="true"] > div {
-  color: var(--color-neutral-content);
+  color: var(--color-text-muted);
   text-decoration: line-through;
+  text-decoration-color: var(--color-text-muted);
 }
 /* nested task lists */
 ul[data-type="taskList"] ul[data-type="taskList"] {

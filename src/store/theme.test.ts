@@ -9,9 +9,9 @@ beforeEach(() => {
 });
 
 describe("useThemeStore", () => {
-  it("initial theme is midnight (THEMES[0])", () => {
+  it("initial theme is light (THEMES[0])", () => {
     const { result } = renderHook(() => useThemeStore());
-    expect(result.current.theme.id).toBe("midnight");
+    expect(result.current.theme.id).toBe("light");
   });
 
   it("setTheme - switches to named theme", () => {
@@ -26,20 +26,17 @@ describe("useThemeStore", () => {
   it("setTheme - persists to localStorage", () => {
     const { result } = renderHook(() => useThemeStore());
     act(() => {
-      result.current.setTheme("dracula");
+      result.current.setTheme("light");
     });
-    expect(localStorage.getItem("helm-theme")).toBe("dracula");
+    expect(localStorage.getItem("helm-theme")).toBe("light");
   });
 
-  it("setTheme - applies CSS vars", () => {
+  it("setTheme - sets data-theme attribute", () => {
     const { result } = renderHook(() => useThemeStore());
-    const lightTheme = THEMES.find((t) => t.id === "light")!;
     act(() => {
       result.current.setTheme("light");
     });
-    expect(
-      document.documentElement.style.getPropertyValue("--color-base-100")
-    ).toBe(lightTheme.base100);
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   });
 
   it("setTheme - unknown id falls back to THEMES[0]", () => {
@@ -47,10 +44,10 @@ describe("useThemeStore", () => {
     act(() => {
       result.current.setTheme("nonexistent");
     });
-    expect(result.current.theme.id).toBe("midnight");
+    expect(result.current.theme.id).toBe("light");
   });
 
-  it("setTheme - all 6 theme IDs work", () => {
+  it("setTheme - all theme IDs work", () => {
     const { result } = renderHook(() => useThemeStore());
     for (const theme of THEMES) {
       act(() => {

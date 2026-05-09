@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { addVault, removeVault } from "../../hooks/useVault";
 import { tauriCommands } from "../../lib/tauri-commands";
-import { THEMES } from "../../lib/themes";
 import { useNoteStore } from "../../store/notes";
-import { useThemeStore } from "../../store/theme";
 import { useUIStore, type View } from "../../store/ui";
 import { SettingsModal } from "../settings/SettingsModal";
 import { FileTree } from "../sidebar/FileTree";
@@ -29,7 +27,7 @@ export function LeftColumn() {
     setActiveVaultId,
     selectNote,
   } = useNoteStore();
-  const { theme, setTheme } = useThemeStore();
+
 
   const vaultFilteredNotes = activeVaultId
     ? notes.filter((n) => n.vaultId === activeVaultId)
@@ -202,26 +200,9 @@ export function LeftColumn() {
         </div>
       </div>
 
-      {/* Footer: theme picker + settings + collapse */}
+      {/* Footer: settings + collapse */}
       <div className="border-t border-[var(--color-border)] px-3 py-2 flex items-center gap-2">
-        <div className="flex flex-1 items-center gap-1.5">
-          {THEMES.map((t) => (
-            <button
-              type="button"
-              key={t.id}
-              title={t.name}
-              onClick={() => setTheme(t.id)}
-              className="rounded-full transition-transform hover:scale-110"
-              style={{
-                width: 14,
-                height: 14,
-                background: t.swatch,
-                outline: theme.id === t.id ? `2px solid ${t.swatch}` : "none",
-                outlineOffset: 2,
-              }}
-            />
-          ))}
-        </div>
+        <div className="flex-1" />
         <button
           type="button"
           onClick={() => setShowSettings(true)}

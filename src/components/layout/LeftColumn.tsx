@@ -1,3 +1,4 @@
+import { Icon } from "@iconify/react";
 import { useState } from "react";
 import { addVault, removeVault } from "../../hooks/useVault";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -7,10 +8,10 @@ import { SettingsModal } from "../settings/SettingsModal";
 import { FileTree } from "../sidebar/FileTree";
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: "📊" },
-  { id: "eisenhower", label: "Eisenhower", icon: "🎯" },
-  { id: "kanban", label: "Kanban", icon: "📋" },
-  { id: "graph", label: "Graph", icon: "🕸️" },
+  { id: "dashboard", label: "Dashboard", icon: "uil:dashboard" },
+  { id: "eisenhower", label: "Eisenhower", icon: "uil:apps" },
+  { id: "kanban", label: "Kanban", icon: "uil:columns" },
+  { id: "graph", label: "Link", icon: "uil:link" },
 ];
 
 export function LeftColumn() {
@@ -60,15 +61,40 @@ export function LeftColumn() {
 
   if (collapsed) {
     return (
-      <div className="flex w-10 flex-col justify-end border-r border-[var(--color-border)]">
+      <div className="flex w-10 flex-col items-center border-r border-[var(--color-border)] py-2">
+        {VIEWS.map((v) => (
+          <button
+            type="button"
+            key={v.id}
+            onClick={() => setView(v.id)}
+            title={v.label}
+            className={`mb-1 rounded p-2 transition-colors ${
+              activeView === v.id
+                ? "bg-[var(--color-surface)] text-[var(--color-text)]"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            }`}
+          >
+            <Icon icon={v.icon} className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ))}
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+          className="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+        >
+          <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="p-3 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+          className="rounded p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
           title="Expand sidebar"
         >
-          →
+          <Icon icon="uil:arrow-right" className="h-4 w-4" aria-hidden="true" />
         </button>
+        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       </div>
     );
   }
@@ -134,7 +160,7 @@ export function LeftColumn() {
                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
               }`}
             >
-              <span>{v.icon}</span>
+              <Icon icon={v.icon} className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{v.label}</span>
             </button>
           ))}
@@ -152,7 +178,7 @@ export function LeftColumn() {
                 className="flex flex-1 min-w-0 items-center gap-2 text-left"
                 onClick={() => handleVaultClick(vault.id)}
               >
-                <span className="shrink-0">📁</span>
+                <Icon icon="uil:folder" className="h-4 w-4 shrink-0 opacity-70" aria-hidden="true" />
                 <span className="flex-1 truncate">{vault.name}</span>
                 <span className="text-xs opacity-40">
                   {notes.filter((n) => n.vaultId === vault.id).length}
@@ -164,18 +190,7 @@ export function LeftColumn() {
                 title="Remove vault"
                 className="ml-1 shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                <Icon icon="uil:times" className="h-3 w-3" aria-hidden="true" />
               </button>
             </div>
           ))}
@@ -209,26 +224,15 @@ export function LeftColumn() {
           title="Settings"
           className="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-3.5 w-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+          <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
         <button
           type="button"
           onClick={() => setCollapsed(true)}
           title="Collapse sidebar"
-          className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+          className="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
         >
-          ←
+          <Icon icon="uil:arrow-left" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </div>
 

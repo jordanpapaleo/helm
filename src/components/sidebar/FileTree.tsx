@@ -7,6 +7,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import React, { useMemo, useState } from "react";
 import { ulid } from "ulid";
@@ -31,17 +32,7 @@ function NewFolderInput({ onCommit }: { onCommit: (name: string) => void }) {
   }, []);
   return (
     <div style={{ paddingLeft: 8 }} className="flex items-center gap-1.5 py-1 pr-2">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-3.5 w-3.5 shrink-0 opacity-60"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        aria-hidden="true"
-      >
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-      </svg>
+      <Icon icon="uil:folder" className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
       <input
         ref={inputRef}
         placeholder="folder name"
@@ -147,18 +138,7 @@ function NoteItem({
       }}
       onContextMenu={onContextMenu}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-3.5 w-3.5 shrink-0 opacity-50"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        aria-hidden="true"
-      >
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-      </svg>
+      <Icon icon="uil:file" className="h-3.5 w-3.5 shrink-0 opacity-50" aria-hidden="true" />
       {isRenaming ? (
         <RenameInput
           initial={note.frontmatter.title}
@@ -169,18 +149,7 @@ function NoteItem({
         <span className="flex-1 truncate">{note.frontmatter.title || note.fileName}</span>
       )}
       {note.frontmatter.pinned && !isRenaming && (
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-3 w-3 shrink-0 opacity-40"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <line x1="12" y1="17" x2="12" y2="22" />
-          <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-        </svg>
+        <Icon icon="uil:map-pin" className="h-3 w-3 shrink-0 opacity-40" aria-hidden="true" />
       )}
     </div>
   );
@@ -228,28 +197,12 @@ function FolderItem({
         onContextMenu={onContextMenu}
       >
         {/* Chevron rotates 90° when the folder is open */}
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
+        <Icon
+          icon="uil:angle-right"
           className={`h-3 w-3 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
           aria-hidden="true"
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-3.5 w-3.5 shrink-0 opacity-60"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
+        />
+        <Icon icon="uil:folder" className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
         {isRenaming ? (
           <RenameInput initial={node.name} onCommit={onRenameCommit} onCancel={onRenameCancel} />
         ) : (
@@ -625,20 +578,7 @@ export function FileTree({ notes, vault }: Props) {
               className="rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors"
               onClick={() => handleCreateNote(vault.path)}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="12" y1="18" x2="12" y2="12" />
-                <line x1="9" y1="15" x2="15" y2="15" />
-              </svg>
+              <Icon icon="uil:file-medical" className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -646,19 +586,7 @@ export function FileTree({ notes, vault }: Props) {
               className="rounded p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors"
               onClick={() => setNewFolderParent(vault.path)}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                <line x1="12" y1="11" x2="12" y2="17" />
-                <line x1="9" y1="14" x2="15" y2="14" />
-              </svg>
+              <Icon icon="uil:folder-plus" className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>

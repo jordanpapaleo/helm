@@ -169,6 +169,24 @@ const ClearMarksOnEnter = Extension.create({
         ) {
           return false;
         }
+        // When the line is a code fence (``` or ```lang), explicitly convert the
+        // current paragraph to a code block. Input rules only fire on text insertion,
+        // not on Enter, so we must handle this ourselves.
+        const { $from } = editor.state.selection;
+        const fenceMatch = /^```([a-z]*)$/.exec($from.parent.textContent.trim());
+        if (fenceMatch) {
+          const language = fenceMatch[1];
+          return editor
+            .chain()
+            .command(({ tr, state }) => {
+              // Clear the fence text (e.g. "```css") before converting the node
+              const { $from } = state.selection;
+              tr.delete($from.start(), $from.end());
+              return true;
+            })
+            .setCodeBlock({ language })
+            .run();
+        }
         return editor.chain().splitBlock().unsetAllMarks().run();
       },
     };

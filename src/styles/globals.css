@@ -6,33 +6,33 @@
 
   /* ── DaisyUI semantic color tokens (Midnight defaults) ───────── */
 
-  /* Base surfaces */
-  --color-base-100: #1c1c1e;       /* page background */
-  --color-base-200: #2c2c2e;       /* panels, cards */
-  --color-base-300: #111113;       /* deeper surfaces */
-  --color-base-content: #f2f2f7;  /* primary text */
+  /* Base surfaces (Midnight defaults) */
+  --color-base-100: oklch(22.7% 0.004 286);   /* page background */
+  --color-base-200: oklch(29.4% 0.004 286);   /* panels, cards */
+  --color-base-300: oklch(17.9% 0.004 285.9); /* deeper surfaces */
+  --color-base-content: oklch(96.3% 0.007 286); /* primary text */
 
-  /* Neutral — borders, dividers, secondary UI */
-  --color-neutral: #3a3a3c;
-  --color-neutral-content: #8e8e93;
+  /* Neutral */
+  --color-neutral: oklch(34.9% 0.003 286);
+  --color-neutral-content: oklch(64.8% 0.007 286);
 
-  /* Primary brand color */
-  --color-primary: #0a84ff;
-  --color-primary-content: #ffffff;
+  /* Primary */
+  --color-primary: oklch(62.4% 0.206 255.5);
+  --color-primary-content: oklch(100% 0 0);
 
-  /* Accent color */
-  --color-accent: #0a84ff;
-  --color-accent-content: #ffffff;
+  /* Accent */
+  --color-accent: oklch(62.4% 0.206 255.5);
+  --color-accent-content: oklch(100% 0 0);
 
   /* Status */
-  --color-info: #0a84ff;
-  --color-info-content: #ffffff;
-  --color-success: #30d158;
-  --color-success-content: #000000;
-  --color-warning: #ff9f0a;
-  --color-warning-content: #000000;
-  --color-error: #ff453a;
-  --color-error-content: #ffffff;
+  --color-info: oklch(62.4% 0.206 255.5);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(75.6% 0.208 147);
+  --color-success-content: oklch(0% 0 0);
+  --color-warning: oklch(78.2% 0.171 67.2);
+  --color-warning-content: oklch(0% 0 0);
+  --color-error: oklch(66.3% 0.224 28.3);
+  --color-error-content: oklch(100% 0 0);
 
   /* ── Derived / alias vars — used by component files ─────────── */
   /* Border derives from content color per DaisyUI convention */

@@ -1,62 +1,56 @@
-import {
-  SortableContext,
-  arrayMove,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import {
-  closestCenter,
-  DndContext,
-  type DragEndEvent,
-  DragOverlay,
-  PointerSensor,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ulid } from "ulid";
+import { CollisionPriority } from "@dnd-kit/abstract";
+import { Feedback, KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
+import { DragDropProvider, type DragDropEventHandlers, useDroppable } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { move } from "@dnd-kit/helpers";
 import { EISENHOWER_QUADRANTS } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
 import { useUIStore } from "../store/ui";
-import type { Note } from "../types/note";
 import { type EisenhowerQuadrant, getQuadrant } from "../types/note";
+import type { Note } from "../types/note";
 
 const ALL_QUADRANTS: EisenhowerQuadrant[] = ["do", "schedule", "delegate", "eliminate"];
 
-interface NoteCardProps {
-  note: Note;
-}
+const sensors = [
+  PointerSensor.configure({
+    activationConstraints(event) {
+      if (event.pointerType === "touch") {
+        return [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })];
+      }
+      return [new PointerActivationConstraints.Distance({ value: 5 })];
+    },
+  }),
+  KeyboardSensor,
+];
 
-function NoteCard({ note }: NoteCardProps) {
+function NoteCard({ note, index, quadrant }: { note: Note; index: number; quadrant: EisenhowerQuadrant }) {
   const { selectNote } = useNoteStore();
   const { setView } = useUIStore();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { ref, isDragSource } = useSortable({
     id: note.id,
+    index,
+    group: quadrant,
+    type: "card",
+    accept: "card",
+    plugins: [Feedback.configure({ feedback: "clone" })],
+    plugins: [Feedback.configure({ feedback: "clone" })],
   });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {...listeners}
-    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handler provided by dnd-kit {...listeners}
+    // biome-ignore lint/a11y/useKeyWithClickEvents: drag-and-drop element managed by dnd-kit
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop element managed by dnd-kit
     <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
+      ref={ref}
       onClick={() => {
         selectNote(note.id);
         setView("notes");
       }}
       className={`rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-3 cursor-pointer select-none transition-opacity ${
-        isDragging ? "opacity-40" : "hover:border-[var(--color-accent)]/50"
+        isDragSource ? "opacity-40" : "hover:border-[var(--color-accent)]/50"
       }`}
     >
       <p className="truncate text-sm font-medium text-[var(--color-text)]">
@@ -74,22 +68,28 @@ function NoteCard({ note }: NoteCardProps) {
   );
 }
 
-interface QuadrantProps {
+function Quadrant({
+  id,
+  notes,
+  onCreate,
+}: {
   id: EisenhowerQuadrant;
   notes: Note[];
-  noteIds: string[];
   onCreate: () => void;
-}
-
-function Quadrant({ id, notes, noteIds, onCreate }: QuadrantProps) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+}) {
+  const { ref, isDropTarget } = useDroppable({
+    id,
+    type: "quadrant",
+    accept: "card",
+    collisionPriority: CollisionPriority.Low,
+  });
   const q = EISENHOWER_QUADRANTS[id];
 
   return (
     <div
-      ref={setNodeRef}
+      ref={ref}
       className={`flex flex-col rounded-xl border p-4 gap-2 transition-colors overflow-y-auto min-h-0 ${
-        isOver
+        isDropTarget
           ? "border-[var(--color-accent)] bg-blue-500/5"
           : "border-[var(--color-border)] bg-[var(--color-surface)]"
       }`}
@@ -119,13 +119,11 @@ function Quadrant({ id, notes, noteIds, onCreate }: QuadrantProps) {
           </svg>
         </button>
       </div>
-      <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
-        <div className="flex flex-col gap-2">
-          {notes.map((n) => (
-            <NoteCard key={n.id} note={n} />
-          ))}
-        </div>
-      </SortableContext>
+      <div className="flex flex-col gap-2">
+        {notes.map((n, index) => (
+          <NoteCard key={n.id} note={n} index={index} quadrant={id} />
+        ))}
+      </div>
       {notes.length === 0 && (
         <p className="text-xs text-[var(--color-text-muted)] opacity-50 mt-auto">Drop here</p>
       )}
@@ -136,8 +134,6 @@ function Quadrant({ id, notes, noteIds, onCreate }: QuadrantProps) {
 export function EisenhowerView() {
   const { notes, updateNote, addNote, selectNote, vaults, activeVaultId } = useNoteStore();
   const { setView } = useUIStore();
-  const [activeId, setActiveId] = useState<string | null>(null);
-
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const activeNotes = useMemo(
@@ -145,53 +141,118 @@ export function EisenhowerView() {
     [notes],
   );
 
-  // Local state for within-quadrant ordering (persisted via eisenhowerOrder frontmatter field)
-  const [quadrantOrder, setQuadrantOrder] = useState<Record<EisenhowerQuadrant, string[]>>(() => {
+  const [items, setItems] = useState<Record<string, string[]>>(() => {
     const sortByOrder = (a: Note, b: Note) =>
       (a.frontmatter.eisenhowerOrder ?? Infinity) - (b.frontmatter.eisenhowerOrder ?? Infinity);
-    return {
-      do: activeNotes.filter((n) => getQuadrant(n) === "do").sort(sortByOrder).map((n) => n.id),
-      schedule: activeNotes.filter((n) => getQuadrant(n) === "schedule").sort(sortByOrder).map((n) => n.id),
-      delegate: activeNotes.filter((n) => getQuadrant(n) === "delegate").sort(sortByOrder).map((n) => n.id),
-      eliminate: activeNotes.filter((n) => getQuadrant(n) === "eliminate").sort(sortByOrder).map((n) => n.id),
-    };
+    const init: Record<string, string[]> = {};
+    for (const q of ALL_QUADRANTS) {
+      init[q] = activeNotes
+        .filter((n) => getQuadrant(n) === q)
+        .sort(sortByOrder)
+        .map((n) => n.id);
+    }
+    return init;
   });
 
-  // Sync order when notes are added, removed, or reassigned externally
+  // Always-current ref — safe to read in callbacks without stale closures
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  const snapshot = useRef<Record<string, string[]>>(structuredClone(items));
+
+  // Sync when notes are added, removed, or reassigned externally
   useEffect(() => {
-    setQuadrantOrder((prev) => {
+    setItems((prev) => {
       const byId = new Map(activeNotes.map((n) => [n.id, n]));
-      const byQuadrant: Record<EisenhowerQuadrant, Set<string>> = {
-        do: new Set(activeNotes.filter((n) => getQuadrant(n) === "do").map((n) => n.id)),
-        schedule: new Set(activeNotes.filter((n) => getQuadrant(n) === "schedule").map((n) => n.id)),
-        delegate: new Set(activeNotes.filter((n) => getQuadrant(n) === "delegate").map((n) => n.id)),
-        eliminate: new Set(activeNotes.filter((n) => getQuadrant(n) === "eliminate").map((n) => n.id)),
-      };
+      let changed = false;
       const next = { ...prev };
       for (const q of ALL_QUADRANTS) {
-        const kept = prev[q].filter((id) => byQuadrant[q].has(id));
-        const added = [...byQuadrant[q]]
-          .filter((id) => !prev[q].includes(id))
+        const colIds = new Set(activeNotes.filter((n) => getQuadrant(n) === q).map((n) => n.id));
+        const kept = (prev[q] ?? []).filter((id) => colIds.has(id));
+        const added = [...colIds]
+          .filter((id) => !kept.includes(id))
           .sort((a, b) => {
             const noteA = byId.get(a);
             const noteB = byId.get(b);
-            return (noteA?.frontmatter.eisenhowerOrder ?? Infinity) - (noteB?.frontmatter.eisenhowerOrder ?? Infinity);
+            return (
+              (noteA?.frontmatter.eisenhowerOrder ?? Infinity) -
+              (noteB?.frontmatter.eisenhowerOrder ?? Infinity)
+            );
           });
-        next[q] = [...kept, ...added];
+        const newCol = [...kept, ...added];
+        const prevCol = prev[q] ?? [];
+        if (newCol.length !== prevCol.length || newCol.some((id, i) => id !== prevCol[i])) {
+          next[q] = newCol;
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : prev;
     });
   }, [activeNotes]);
 
-  // Derive ordered note arrays from quadrantOrder (order state is source of truth for display)
   const quadrantNotes = useMemo(() => {
     const byId = new Map(notes.map((n) => [n.id, n]));
-    const result = {} as Record<EisenhowerQuadrant, Note[]>;
+    const result: Record<string, Note[]> = {};
     for (const q of ALL_QUADRANTS) {
-      result[q] = quadrantOrder[q].map((id) => byId.get(id)).filter((n): n is Note => !!n);
+      result[q] = (items[q] ?? [])
+        .map((id) => byId.get(id))
+        .filter((n): n is Note => !!n);
     }
     return result;
-  }, [notes, quadrantOrder]);
+  }, [notes, items]);
+
+  const handleDragStart = useCallback<DragDropEventHandlers["onDragStart"]>(() => {
+    snapshot.current = structuredClone(itemsRef.current);
+  }, []);
+
+  const handleDragOver = useCallback<DragDropEventHandlers["onDragOver"]>((event) => {
+    setItems((current) => move(current, event));
+  }, []);
+
+  const handleDragEnd = useCallback<DragDropEventHandlers["onDragEnd"]>(
+    async (event) => {
+      if (event.canceled) {
+        setItems(snapshot.current);
+        return;
+      }
+      await persistDrop(itemsRef.current, notes);
+    },
+    [notes],
+  );
+
+  async function persistDrop(currentItems: Record<string, string[]>, currentNotes: Note[]) {
+    const byId = new Map(currentNotes.map((n) => [n.id, n]));
+    const today = new Date().toISOString().split("T")[0];
+    for (const q of ALL_QUADRANTS) {
+      const qConfig = EISENHOWER_QUADRANTS[q];
+      const order = currentItems[q] ?? [];
+      for (let i = 0; i < order.length; i++) {
+        const note = byId.get(order[i]);
+        if (!note) continue;
+        const quadrantChanged =
+          note.frontmatter.urgent !== qConfig.urgent ||
+          note.frontmatter.important !== qConfig.important;
+        const orderChanged = note.frontmatter.eisenhowerOrder !== i;
+        if (!quadrantChanged && !orderChanged) continue;
+        const updated: Note = {
+          ...note,
+          frontmatter: {
+            ...note.frontmatter,
+            urgent: qConfig.urgent,
+            important: qConfig.important,
+            eisenhowerOrder: i,
+            ...(quadrantChanged ? { updated: today } : {}),
+          },
+        };
+        updateNote(updated);
+        try {
+          await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
+        } catch (e) {
+          console.error("Failed to save note:", e);
+        }
+      }
+    }
+  }
 
   async function createNoteInQuadrant(quadrant: EisenhowerQuadrant) {
     if (!vault) return;
@@ -227,144 +288,26 @@ export function EisenhowerView() {
     }
   }
 
-  // Require 5px movement before drag starts so clicks still register
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-
-  async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    setActiveId(null);
-    if (!over) return;
-
-    const activeNoteId = String(active.id);
-    const overId = String(over.id);
-
-    // Determine which quadrant the dragged note came from
-    const sourceQuadrant = ALL_QUADRANTS.find((q) => quadrantOrder[q].includes(activeNoteId));
-    if (!sourceQuadrant) return;
-
-    // over.id is either a quadrant id (dropped on empty container) or a note id
-    const isDropOnQuadrant = (ALL_QUADRANTS as string[]).includes(overId);
-    const targetQuadrant: EisenhowerQuadrant = isDropOnQuadrant
-      ? (overId as EisenhowerQuadrant)
-      : (ALL_QUADRANTS.find((q) => quadrantOrder[q].includes(overId)) ?? sourceQuadrant);
-
-    const byId = new Map(notes.map((n) => [n.id, n]));
-
-    async function saveNote(note: Note) {
-      updateNote(note);
-      try {
-        await tauriCommands.writeNote(note.filePath, serializeNote(note));
-      } catch (e) {
-        console.error("Failed to save note:", e);
-      }
-    }
-
-    if (sourceQuadrant === targetQuadrant) {
-      // Same quadrant — reorder in place
-      if (isDropOnQuadrant) return;
-      const oldIndex = quadrantOrder[sourceQuadrant].indexOf(activeNoteId);
-      const newIndex = quadrantOrder[targetQuadrant].indexOf(overId);
-      if (oldIndex === newIndex || newIndex < 0) return;
-
-      const newQuadOrder = arrayMove(quadrantOrder[sourceQuadrant], oldIndex, newIndex);
-      setQuadrantOrder((prev) => ({ ...prev, [sourceQuadrant]: newQuadOrder }));
-
-      // Persist eisenhowerOrder for notes whose position changed
-      for (let i = 0; i < newQuadOrder.length; i++) {
-        const note = byId.get(newQuadOrder[i]);
-        if (!note || note.frontmatter.eisenhowerOrder === i) continue;
-        await saveNote({ ...note, frontmatter: { ...note.frontmatter, eisenhowerOrder: i } });
-      }
-      return;
-    }
-
-    // Cross-quadrant move — update frontmatter and order
-    const q = EISENHOWER_QUADRANTS[targetQuadrant];
-
-    const newSourceOrder = quadrantOrder[sourceQuadrant].filter((id) => id !== activeNoteId);
-    const newTargetOrder = quadrantOrder[targetQuadrant].filter((id) => id !== activeNoteId);
-    const insertAt = !isDropOnQuadrant ? quadrantOrder[targetQuadrant].indexOf(overId) + 1 : -1;
-    if (insertAt > 0) {
-      newTargetOrder.splice(insertAt, 0, activeNoteId);
-    } else {
-      newTargetOrder.push(activeNoteId);
-    }
-
-    setQuadrantOrder((prev) => ({
-      ...prev,
-      [sourceQuadrant]: newSourceOrder,
-      [targetQuadrant]: newTargetOrder,
-    }));
-
-    // Persist source quadrant order changes
-    for (let i = 0; i < newSourceOrder.length; i++) {
-      const note = byId.get(newSourceOrder[i]);
-      if (!note || note.frontmatter.eisenhowerOrder === i) continue;
-      await saveNote({ ...note, frontmatter: { ...note.frontmatter, eisenhowerOrder: i } });
-    }
-
-    // Persist target quadrant — moved note gets urgent/important + order, others get order only
-    for (let i = 0; i < newTargetOrder.length; i++) {
-      const note = byId.get(newTargetOrder[i]);
-      if (!note) continue;
-      if (note.id === activeNoteId) {
-        if (note.frontmatter.urgent !== q.urgent || note.frontmatter.important !== q.important || note.frontmatter.eisenhowerOrder !== i) {
-          await saveNote({
-            ...note,
-            frontmatter: {
-              ...note.frontmatter,
-              urgent: q.urgent,
-              important: q.important,
-              eisenhowerOrder: i,
-              updated: new Date().toISOString().split("T")[0],
-            },
-          });
-        }
-      } else if (note.frontmatter.eisenhowerOrder !== i) {
-        await saveNote({ ...note, frontmatter: { ...note.frontmatter, eisenhowerOrder: i } });
-      }
-    }
-  }
-
-  const activeNote = activeId ? notes.find((n) => n.id === activeId) : null;
-
   return (
-    <div className="flex flex-col h-full p-6 gap-4 overflow-hidden">
-      <h2 className="shrink-0 text-xl font-bold text-[var(--color-text)]">Eisenhower Matrix</h2>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={(e) => setActiveId(String(e.active.id))}
-        onDragEnd={handleDragEnd}
-      >
+    <DragDropProvider
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex flex-col h-full p-6 gap-4 overflow-hidden">
+        <h2 className="shrink-0 text-xl font-bold text-[var(--color-text)]">Eisenhower Matrix</h2>
         <div className="grid grid-cols-2 grid-rows-2 gap-4 flex-1 min-h-0">
-          <Quadrant
-            id="do"
-            notes={quadrantNotes.do}
-            noteIds={quadrantOrder.do}
-            onCreate={() => createNoteInQuadrant("do")}
-          />
-          <Quadrant
-            id="schedule"
-            notes={quadrantNotes.schedule}
-            noteIds={quadrantOrder.schedule}
-            onCreate={() => createNoteInQuadrant("schedule")}
-          />
-          <Quadrant
-            id="delegate"
-            notes={quadrantNotes.delegate}
-            noteIds={quadrantOrder.delegate}
-            onCreate={() => createNoteInQuadrant("delegate")}
-          />
-          <Quadrant
-            id="eliminate"
-            notes={quadrantNotes.eliminate}
-            noteIds={quadrantOrder.eliminate}
-            onCreate={() => createNoteInQuadrant("eliminate")}
-          />
+          {ALL_QUADRANTS.map((q) => (
+            <Quadrant
+              key={q}
+              id={q}
+              notes={quadrantNotes[q] ?? []}
+              onCreate={() => createNoteInQuadrant(q)}
+            />
+          ))}
         </div>
-        <DragOverlay>{activeNote ? <NoteCard note={activeNote} /> : null}</DragOverlay>
-      </DndContext>
-    </div>
+      </div>
+    </DragDropProvider>
   );
 }

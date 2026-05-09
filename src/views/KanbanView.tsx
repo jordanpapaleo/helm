@@ -1,22 +1,10 @@
-import {
-  SortableContext,
-  arrayMove,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import {
-  closestCenter,
-  DndContext,
-  type DragEndEvent,
-  DragOverlay,
-  PointerSensor,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ulid } from "ulid";
+import { CollisionPriority } from "@dnd-kit/abstract";
+import { Feedback, KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
+import { DragDropProvider, type DragDropEventHandlers, useDroppable } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { move } from "@dnd-kit/helpers";
 import { NOTE_STATES } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
@@ -24,32 +12,49 @@ import { useNoteStore } from "../store/notes";
 import { useUIStore } from "../store/ui";
 import type { Note, NoteState } from "../types/note";
 
-function KanbanCard({ note }: { note: Note }) {
+const sensors = [
+  PointerSensor.configure({
+    activationConstraints(event) {
+      if (event.pointerType === "touch") {
+        return [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })];
+      }
+      return [new PointerActivationConstraints.Distance({ value: 5 })];
+    },
+  }),
+  KeyboardSensor,
+];
+
+function KanbanCard({
+  note,
+  index,
+  column,
+}: {
+  note: Note;
+  index: number;
+  column: NoteState;
+}) {
   const { selectNote } = useNoteStore();
   const { setView } = useUIStore();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { ref, isDragSource } = useSortable({
     id: note.id,
+    index,
+    group: column,
+    type: "item",
+    accept: "item",
+    plugins: [Feedback.configure({ feedback: "clone" })],
   });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {@listeners}
-    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handler provided by dnd-kit {...listeners}
+    // biome-ignore lint/a11y/useKeyWithClickEvents: drag-and-drop element managed by dnd-kit
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop element managed by dnd-kit
     <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
+      ref={ref}
       onClick={() => {
         selectNote(note.id);
         setView("notes");
       }}
       className={`rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-3 cursor-pointer select-none transition-opacity ${
-        isDragging ? "opacity-40" : "hover:border-[var(--color-accent)]/50"
+        isDragSource ? "opacity-40" : "hover:border-[var(--color-accent)]/50"
       }`}
     >
       <p className="text-sm font-medium text-[var(--color-text)]">
@@ -73,22 +78,25 @@ function KanbanCard({ note }: { note: Note }) {
 function KanbanColumn({
   state,
   notes,
-  noteIds,
   onCreate,
 }: {
-  state: string;
+  state: NoteState;
   notes: Note[];
-  noteIds: string[];
   onCreate: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: state });
+  const { ref, isDropTarget } = useDroppable({
+    id: state,
+    type: "column",
+    accept: "item",
+    collisionPriority: CollisionPriority.Low,
+  });
 
   return (
     <div
-      ref={setNodeRef}
+      ref={ref}
       className={`flex flex-1 flex-col rounded-xl border p-4 gap-3 overflow-y-auto min-h-0 transition-colors ${
-        isOver
-          ? "border-[var(--color-accent)] bg-blue-500/5"
+        isDropTarget
+          ? "border-[var(--color-accent)] bg-[var(--color-accent)]/5"
           : "border-[var(--color-border)] bg-[var(--color-surface)]"
       }`}
     >
@@ -117,13 +125,11 @@ function KanbanColumn({
           </svg>
         </button>
       </div>
-      <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
-        <div className="flex flex-col gap-2">
-          {notes.map((n) => (
-            <KanbanCard key={n.id} note={n} />
-          ))}
-        </div>
-      </SortableContext>
+      <div className="flex flex-col gap-2">
+        {notes.map((n, index) => (
+          <KanbanCard key={n.id} note={n} index={index} column={state} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -131,56 +137,115 @@ function KanbanColumn({
 export function KanbanView() {
   const { notes, updateNote, addNote, selectNote, vaults, activeVaultId } = useNoteStore();
   const { setView } = useUIStore();
-  const [activeId, setActiveId] = useState<string | null>(null);
-
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-
-  // Local state for within-column ordering (persisted via kanbanOrder frontmatter field)
-  const [columnOrder, setColumnOrder] = useState<Record<NoteState, string[]>>(() => {
-    const init = {} as Record<NoteState, string[]>;
+  const [items, setItems] = useState<Record<string, string[]>>(() => {
+    const init: Record<string, string[]> = {};
     for (const s of NOTE_STATES) {
-      init[s as NoteState] = notes
+      init[s] = notes
         .filter((n) => n.frontmatter.state === s)
-        .sort((a, b) => (a.frontmatter.kanbanOrder ?? Infinity) - (b.frontmatter.kanbanOrder ?? Infinity))
+        .sort(
+          (a, b) =>
+            (a.frontmatter.kanbanOrder ?? Infinity) - (b.frontmatter.kanbanOrder ?? Infinity),
+        )
         .map((n) => n.id);
     }
     return init;
   });
 
-  // Sync order when notes are added, removed, or moved externally
+  // Always-current ref — safe to read in callbacks without deps
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  const snapshot = useRef<Record<string, string[]>>(structuredClone(items));
+
+  // Sync when notes are added or removed externally (file watcher, create)
   useEffect(() => {
-    setColumnOrder((prev) => {
+    setItems((prev) => {
       const byId = new Map(notes.map((n) => [n.id, n]));
+      let changed = false;
       const next = { ...prev };
       for (const s of NOTE_STATES) {
         const colIds = new Set(notes.filter((n) => n.frontmatter.state === s).map((n) => n.id));
-        const kept = (prev[s as NoteState] ?? []).filter((id) => colIds.has(id));
+        const kept = (prev[s] ?? []).filter((id) => colIds.has(id));
         const added = [...colIds]
           .filter((id) => !kept.includes(id))
           .sort((a, b) => {
             const noteA = byId.get(a);
             const noteB = byId.get(b);
-            return (noteA?.frontmatter.kanbanOrder ?? Infinity) - (noteB?.frontmatter.kanbanOrder ?? Infinity);
+            return (
+              (noteA?.frontmatter.kanbanOrder ?? Infinity) -
+              (noteB?.frontmatter.kanbanOrder ?? Infinity)
+            );
           });
-        next[s as NoteState] = [...kept, ...added];
+        const newCol = [...kept, ...added];
+        const prevCol = prev[s] ?? [];
+        if (newCol.length !== prevCol.length || newCol.some((id, i) => id !== prevCol[i])) {
+          next[s] = newCol;
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : prev;
     });
   }, [notes]);
 
-  // Derive ordered note arrays from columnOrder
   const columnNotes = useMemo(() => {
     const byId = new Map(notes.map((n) => [n.id, n]));
-    const result = {} as Record<NoteState, Note[]>;
+    const result: Record<string, Note[]> = {};
     for (const s of NOTE_STATES) {
-      result[s as NoteState] = (columnOrder[s as NoteState] ?? [])
+      result[s] = (items[s] ?? [])
         .map((id) => byId.get(id))
         .filter((n): n is Note => !!n);
     }
     return result;
-  }, [notes, columnOrder]);
+  }, [notes, items]);
+
+  const handleDragStart = useCallback<DragDropEventHandlers["onDragStart"]>(() => {
+    snapshot.current = structuredClone(itemsRef.current);
+  }, []);
+
+  const handleDragOver = useCallback<DragDropEventHandlers["onDragOver"]>((event) => {
+    setItems((current) => move(current, event));
+  }, []);
+
+  const handleDragEnd = useCallback<DragDropEventHandlers["onDragEnd"]>(
+    async (event) => {
+      if (event.canceled) {
+        setItems(snapshot.current);
+        return;
+      }
+      await persistDrop(itemsRef.current, notes);
+    },
+    [notes],
+  );
+
+  async function persistDrop(currentItems: Record<string, string[]>, currentNotes: Note[]) {
+    const byId = new Map(currentNotes.map((n) => [n.id, n]));
+    for (const col of NOTE_STATES) {
+      const order = currentItems[col] ?? [];
+      for (let i = 0; i < order.length; i++) {
+        const note = byId.get(order[i]);
+        if (!note) continue;
+        if (note.frontmatter.state !== col || note.frontmatter.kanbanOrder !== i) {
+          const updated: Note = {
+            ...note,
+            frontmatter: {
+              ...note.frontmatter,
+              state: col as NoteState,
+              kanbanOrder: i,
+              updated: new Date().toISOString().split("T")[0],
+            },
+          };
+          updateNote(updated);
+          try {
+            await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
+          } catch (e) {
+            console.error("Failed to save note:", e);
+          }
+        }
+      }
+    }
+  }
 
   async function createNoteInColumn(state: NoteState) {
     if (!vault) return;
@@ -215,127 +280,26 @@ export function KanbanView() {
     }
   }
 
-  async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    setActiveId(null);
-    if (!over) return;
-
-    const activeNoteId = String(active.id);
-    const overId = String(over.id);
-
-    // Find which column the dragged card came from
-    const sourceCol = NOTE_STATES.find((s) =>
-      (columnOrder[s as NoteState] ?? []).includes(activeNoteId),
-    ) as NoteState | undefined;
-    if (!sourceCol) return;
-
-    // over.id is either a column state name or a note id
-    const isDropOnColumn = (NOTE_STATES as string[]).includes(overId);
-    const targetCol: NoteState = isDropOnColumn
-      ? (overId as NoteState)
-      : ((NOTE_STATES.find((s) =>
-          (columnOrder[s as NoteState] ?? []).includes(overId),
-        ) as NoteState | undefined) ?? sourceCol);
-
-    const byId = new Map(notes.map((n) => [n.id, n]));
-
-    async function saveNote(note: Note) {
-      updateNote(note);
-      try {
-        await tauriCommands.writeNote(note.filePath, serializeNote(note));
-      } catch (e) {
-        console.error("Failed to save note:", e);
-      }
-    }
-
-    if (sourceCol === targetCol) {
-      // Same column — reorder in place
-      if (isDropOnColumn) return;
-      const oldIndex = columnOrder[sourceCol].indexOf(activeNoteId);
-      const newIndex = columnOrder[targetCol].indexOf(overId);
-      if (oldIndex === newIndex || newIndex < 0) return;
-
-      const newColOrder = arrayMove(columnOrder[sourceCol], oldIndex, newIndex);
-      setColumnOrder((prev) => ({ ...prev, [sourceCol]: newColOrder }));
-
-      // Persist kanbanOrder for notes whose position changed
-      for (let i = 0; i < newColOrder.length; i++) {
-        const note = byId.get(newColOrder[i]);
-        if (!note || note.frontmatter.kanbanOrder === i) continue;
-        await saveNote({ ...note, frontmatter: { ...note.frontmatter, kanbanOrder: i } });
-      }
-      return;
-    }
-
-    // Cross-column move — update state and order
-    const newSourceOrder = columnOrder[sourceCol].filter((id) => id !== activeNoteId);
-    const newTargetOrder = columnOrder[targetCol].filter((id) => id !== activeNoteId);
-    const insertAt = !isDropOnColumn ? columnOrder[targetCol].indexOf(overId) + 1 : -1;
-    if (insertAt > 0) {
-      newTargetOrder.splice(insertAt, 0, activeNoteId);
-    } else {
-      newTargetOrder.push(activeNoteId);
-    }
-
-    setColumnOrder((prev) => ({
-      ...prev,
-      [sourceCol]: newSourceOrder,
-      [targetCol]: newTargetOrder,
-    }));
-
-    // Persist source column order changes
-    for (let i = 0; i < newSourceOrder.length; i++) {
-      const note = byId.get(newSourceOrder[i]);
-      if (!note || note.frontmatter.kanbanOrder === i) continue;
-      await saveNote({ ...note, frontmatter: { ...note.frontmatter, kanbanOrder: i } });
-    }
-
-    // Persist target column — moved note gets state + order, others get order only
-    for (let i = 0; i < newTargetOrder.length; i++) {
-      const note = byId.get(newTargetOrder[i]);
-      if (!note) continue;
-      if (note.id === activeNoteId) {
-        if (note.frontmatter.state !== targetCol || note.frontmatter.kanbanOrder !== i) {
-          await saveNote({
-            ...note,
-            frontmatter: {
-              ...note.frontmatter,
-              state: targetCol,
-              kanbanOrder: i,
-              updated: new Date().toISOString().split("T")[0],
-            },
-          });
-        }
-      } else if (note.frontmatter.kanbanOrder !== i) {
-        await saveNote({ ...note, frontmatter: { ...note.frontmatter, kanbanOrder: i } });
-      }
-    }
-  }
-
-  const activeNote = activeId ? notes.find((n) => n.id === activeId) : null;
-
   return (
-    <div className="flex flex-col h-full p-6 gap-4 overflow-hidden">
-      <h2 className="shrink-0 text-xl font-bold text-[var(--color-text)]">Kanban</h2>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={(e) => setActiveId(String(e.active.id))}
-        onDragEnd={handleDragEnd}
-      >
+    <DragDropProvider
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex flex-col h-full p-6 gap-4 overflow-hidden">
+        <h2 className="shrink-0 text-xl font-bold text-[var(--color-text)]">Kanban</h2>
         <div className="flex flex-1 gap-4 min-h-0">
           {NOTE_STATES.map((state) => (
             <KanbanColumn
               key={state}
-              state={state}
-              notes={columnNotes[state as NoteState] ?? []}
-              noteIds={columnOrder[state as NoteState] ?? []}
+              state={state as NoteState}
+              notes={columnNotes[state] ?? []}
               onCreate={() => createNoteInColumn(state as NoteState)}
             />
           ))}
         </div>
-        <DragOverlay>{activeNote ? <KanbanCard note={activeNote} /> : null}</DragOverlay>
-      </DndContext>
-    </div>
+      </div>
+    </DragDropProvider>
   );
 }

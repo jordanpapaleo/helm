@@ -1,16 +1,10 @@
-import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
 import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import React, { useMemo, useState } from "react";
 import { ulid } from "ulid";
+import { KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
+import type { DragEndEvent } from "@dnd-kit/dom";
+import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
 import { buildTree, getAllFolderPaths, type TreeNode } from "../../lib/file-tree";
 import { serializeNote, slugify } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -18,6 +12,18 @@ import { useNoteStore } from "../../store/notes";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
+
+const sensors = [
+  PointerSensor.configure({
+    activationConstraints(event) {
+      if (event.pointerType === "touch") {
+        return [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })];
+      }
+      return [new PointerActivationConstraints.Distance({ value: 5 })];
+    },
+  }),
+  KeyboardSensor,
+];
 
 interface Props {
   notes: Note[];
@@ -115,19 +121,17 @@ function NoteItem({
   onRenameCommit: (v: string) => void;
   onRenameCancel: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+  const { ref, isDragSource } = useDraggable({
     id: note.filePath, // filePaths are always unique; note.id can be empty
     data: { note },
   });
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit spreads role, tabIndex, and onKeyDown via {...attributes} and {...listeners}
-    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handler provided by dnd-kit {...listeners}
+    // biome-ignore lint/a11y/useKeyWithClickEvents: drag-and-drop file tree item
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop file tree item
     <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      style={{ paddingLeft: depth * 12 + 8, opacity: isDragging ? 0.4 : 1 }}
+      ref={ref}
+      style={{ paddingLeft: depth * 12 + 8, opacity: isDragSource ? 0.4 : 1 }}
       className={`group flex items-center gap-1.5 rounded-md py-1 pr-2 text-sm transition-colors cursor-pointer ${
         isSelected
           ? "bg-[var(--color-surface)] text-[var(--color-text)]"
@@ -177,19 +181,19 @@ function FolderItem({
   onRenameCancel: () => void;
   children?: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { ref, isDropTarget } = useDroppable({
     id: `folder-${node.path}`,
     data: { folderPath: node.path },
   });
 
   return (
-    <div ref={setNodeRef}>
+    <div ref={ref}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: folder row is a nav element; keyboard users use context menu via keyboard shortcut */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: folder toggle is pointer-driven navigation within the file tree */}
       <div
         style={{ paddingLeft: depth * 12 + 8 }}
         className={`group flex items-center gap-1.5 rounded-md py-1 pr-2 text-sm cursor-pointer transition-colors ${
-          isOver
+          isDropTarget
             ? "bg-[var(--color-accent)] text-white"
             : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
         }`}
@@ -216,14 +220,14 @@ function FolderItem({
 
 // Drop target for the vault root — dropping here moves a note out of any subfolder.
 function VaultRootDrop({ vaultPath, children }: { vaultPath: string; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { ref, isDropTarget } = useDroppable({
     id: `folder-${vaultPath}`,
     data: { folderPath: vaultPath },
   });
   return (
     <div
-      ref={setNodeRef}
-      className={`flex-1 overflow-y-auto py-1 min-h-0 rounded transition-colors ${isOver ? "ring-1 ring-[var(--color-accent)]" : ""}`}
+      ref={ref}
+      className={`flex-1 overflow-y-auto py-1 min-h-0 rounded transition-colors ${isDropTarget ? "ring-1 ring-[var(--color-accent)]" : ""}`}
     >
       {children}
     </div>
@@ -235,7 +239,6 @@ type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
 export function FileTree({ notes, vault }: Props) {
   const { selectedNoteId, selectNote, knownFolderPaths } = useNoteStore();
   const { setView } = useUIStore();
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState>(null);
@@ -410,10 +413,10 @@ export function FileTree({ notes, vault }: Props) {
   }
 
   async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over) return;
-    const note = active.data.current?.note as Note | undefined;
-    const targetFolderPath = over.data.current?.folderPath as string | undefined;
+    if (event.canceled) return;
+    const { source, target } = event.operation;
+    const note = source?.data?.note as Note | undefined;
+    const targetFolderPath = target?.data?.folderPath as string | undefined;
     if (!note || !targetFolderPath) return;
     // Avoid a no-op move when the note is already in the target folder
     const currentFolder = note.filePath.split("/").slice(0, -1).join("/");
@@ -564,7 +567,7 @@ export function FileTree({ notes, vault }: Props) {
   }
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+    <DragDropProvider sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="relative flex flex-col min-h-0 h-full">
         {/* Toolbar — New Note and New Folder buttons */}
         <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--color-border)]">
@@ -618,6 +621,6 @@ export function FileTree({ notes, vault }: Props) {
           <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
         )}
       </div>
-    </DndContext>
+    </DragDropProvider>
   );
 }

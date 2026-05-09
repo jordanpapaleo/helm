@@ -152,14 +152,16 @@ describe("applyTheme", () => {
   });
 
   it("sets data-theme on <html> to the theme id", () => {
-    const theme = THEMES.find((t) => t.id === "dark")!;
+    const theme = THEMES.find((t) => t.id === "dark");
+    if (!theme) throw new Error("dark theme missing");
     applyTheme(theme);
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
   it("switches data-theme when called with a different theme", () => {
-    const light = THEMES.find((t) => t.id === "light")!;
-    const dark = THEMES.find((t) => t.id === "dark")!;
+    const light = THEMES.find((t) => t.id === "light");
+    const dark = THEMES.find((t) => t.id === "dark");
+    if (!light || !dark) throw new Error("light or dark theme missing");
     applyTheme(light);
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     applyTheme(dark);

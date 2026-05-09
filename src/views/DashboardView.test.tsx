@@ -274,7 +274,7 @@ describe("DashboardView — chip filtering", () => {
     expect(screen.getByText("Urgent Task")).toBeInTheDocument();
     expect(screen.getByText("Normal Task")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Do").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: /\bDo\b/ }));
 
     expect(screen.getByText("Urgent Task")).toBeInTheDocument();
     expect(screen.queryByText("Normal Task")).not.toBeInTheDocument();
@@ -282,7 +282,7 @@ describe("DashboardView — chip filtering", () => {
 
   it("clicking an active filter chip a second time resets to 'All Notes'", () => {
     render(<DashboardView />);
-    const doButton = screen.getByText("Do").closest("button")!;
+    const doButton = screen.getByRole("button", { name: /\bDo\b/ });
     fireEvent.click(doButton); // activate
     expect(screen.queryByText("Normal Task")).not.toBeInTheDocument();
 
@@ -299,7 +299,7 @@ describe("DashboardView — chip filtering", () => {
     useNoteStore.setState({ ...useNoteStore.getState(), notes: [urgentNote, blockedNote] });
 
     render(<DashboardView />);
-    fireEvent.click(screen.getByText("Blocked").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: /^\d+\s*Blocked/ }));
 
     expect(screen.getByText("Blocked Task")).toBeInTheDocument();
     expect(screen.queryByText("Urgent Task")).not.toBeInTheDocument();
@@ -310,7 +310,7 @@ describe("DashboardView — chip filtering", () => {
     // Default is "all" — header shows "All Notes"
     expect(screen.getByText("All Notes")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Schedule").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: /Schedule/ }));
     // After activating the Schedule filter the list header shows "Schedule".
     // Use getAllByText because the chip button also contains "Schedule".
     const scheduleMatches = screen.getAllByText("Schedule");
@@ -320,7 +320,7 @@ describe("DashboardView — chip filtering", () => {
   it("shows 'No notes in this category.' when filter has zero matches", () => {
     // None of the notes in this describe block are "schedule" (important, not urgent)
     render(<DashboardView />);
-    fireEvent.click(screen.getByText("Schedule").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: /Schedule/ }));
     expect(screen.getByText(/No notes in this category/i)).toBeInTheDocument();
   });
 });
@@ -339,7 +339,7 @@ describe("DashboardView — note click navigation", () => {
     useNoteStore.setState({ ...useNoteStore.getState(), notes: [note] });
 
     render(<DashboardView />);
-    fireEvent.click(screen.getByText("Click Me").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: /Click Me/ }));
 
     expect(useNoteStore.getState().selectedNoteId).toBe("n1");
     expect(useUIStore.getState().activeView).toBe("notes");

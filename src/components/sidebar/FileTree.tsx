@@ -236,8 +236,19 @@ function VaultRootDrop({ vaultPath, children }: { vaultPath: string; children: R
 
 type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
 
+function isNote(value: unknown): value is Note {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "filePath" in value &&
+    "id" in value &&
+    "frontmatter" in value
+  );
+}
+
 export function FileTree({ notes, vault }: Props) {
-  const { selectedNoteId, selectNote, knownFolderPaths } = useNoteStore();
+  const { selectedNoteId, selectNote, knownFolderPaths, addNote, updateNote, removeNote } =
+    useNoteStore();
   const { setView } = useUIStore();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -284,7 +295,7 @@ export function FileTree({ notes, vault }: Props) {
 
     try {
       await tauriCommands.writeNote(filePath, serializeNote(note));
-      useNoteStore.getState().addNote(note);
+      addNote(note);
       selectNote(id);
       setView("notes");
     } catch (e) {
@@ -299,7 +310,7 @@ export function FileTree({ notes, vault }: Props) {
     };
     try {
       await tauriCommands.writeNote(note.filePath, serializeNote(updated));
-      useNoteStore.getState().updateNote(updated);
+      updateNote(updated);
     } catch (e) {
       console.error("Failed to toggle pin:", e);
     }
@@ -322,7 +333,7 @@ export function FileTree({ notes, vault }: Props) {
     try {
       await tauriCommands.renameNote(note.filePath, newFilePath);
       await tauriCommands.writeNote(newFilePath, serializeNote(updated));
-      useNoteStore.getState().updateNote(updated);
+      updateNote(updated);
     } catch (e) {
       console.error("Failed to rename note:", e);
     }
@@ -336,7 +347,7 @@ export function FileTree({ notes, vault }: Props) {
     );
     if (!ok) return;
     if (note.id === selectedNoteId) selectNote(null);
-    useNoteStore.getState().removeNote(note.id);
+    removeNote(note.id);
     try {
       await tauriCommands.deleteNote(note.filePath);
     } catch (e) {
@@ -361,7 +372,7 @@ export function FileTree({ notes, vault }: Props) {
             ...n,
             filePath: newPath + n.filePath.slice(folderPath.length),
           };
-          useNoteStore.getState().updateNote(updatedNote);
+          updateNote(updatedNote);
         }
       }
       // Update collapsed set: replace old path with new path (preserving collapsed state)
@@ -391,7 +402,7 @@ export function FileTree({ notes, vault }: Props) {
     for (const n of allNotes) {
       if (n.filePath.startsWith(`${folderPath}/`)) {
         if (n.id === selectedNoteId) selectNote(null);
-        useNoteStore.getState().removeNote(n.id);
+        removeNote(n.id);
       }
     }
     try {
@@ -406,7 +417,7 @@ export function FileTree({ notes, vault }: Props) {
     if (newFilePath === note.filePath) return;
     try {
       await tauriCommands.renameNote(note.filePath, newFilePath);
-      useNoteStore.getState().updateNote({ ...note, filePath: newFilePath });
+      updateNote({ ...note, filePath: newFilePath });
     } catch (e) {
       console.error("Failed to move note:", e);
     }
@@ -415,9 +426,9 @@ export function FileTree({ notes, vault }: Props) {
   async function handleDragEnd(event: DragEndEvent) {
     if (event.canceled) return;
     const { source, target } = event.operation;
-    const note = source?.data?.note as Note | undefined;
-    const targetFolderPath = target?.data?.folderPath as string | undefined;
-    if (!note || !targetFolderPath) return;
+    const note = source?.data?.note;
+    const targetFolderPath = target?.data?.folderPath;
+    if (!isNote(note) || typeof targetFolderPath !== "string") return;
     // Avoid a no-op move when the note is already in the target folder
     const currentFolder = note.filePath.split("/").slice(0, -1).join("/");
     if (currentFolder === targetFolderPath) return;

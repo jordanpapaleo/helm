@@ -102,7 +102,7 @@ function Quadrant({
       ref={ref}
       className={`flex flex-col rounded-xl border p-4 gap-2 transition-colors overflow-y-auto min-h-0 ${
         isDropTarget
-          ? "border-[var(--color-accent)] bg-blue-500/5"
+          ? "border-[var(--color-accent)] bg-[var(--color-accent)]/5"
           : "border-[var(--color-border)] bg-[var(--color-surface)]"
       }`}
     >
@@ -234,6 +234,7 @@ export function EisenhowerView() {
   async function persistDrop(currentItems: Record<string, string[]>, currentNotes: Note[]) {
     const byId = new Map(currentNotes.map((n) => [n.id, n]));
     const today = new Date().toISOString().split("T")[0];
+    const writes: Promise<void>[] = [];
     for (const q of ALL_QUADRANTS) {
       const qConfig = EISENHOWER_QUADRANTS[q];
       const order = currentItems[q] ?? [];
@@ -256,13 +257,14 @@ export function EisenhowerView() {
           },
         };
         updateNote(updated);
-        try {
-          await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-        } catch (e) {
-          console.error("Failed to save note:", e);
-        }
+        writes.push(
+          tauriCommands.writeNote(updated.filePath, serializeNote(updated)).catch((e) => {
+            console.error("Failed to save note:", e);
+          }),
+        );
       }
     }
+    await Promise.all(writes);
   }
 
   async function createNoteInQuadrant(quadrant: EisenhowerQuadrant) {

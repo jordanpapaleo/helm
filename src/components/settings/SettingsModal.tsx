@@ -188,35 +188,40 @@ function ThemesTab() {
 
   return (
     <div className="grid grid-cols-3 gap-3">
-      {THEMES.map((t) => {
-        const isActive = theme.id === t.id;
-        return (
-          <button
-            type="button"
-            key={t.id}
-            data-theme={t.id}
-            onClick={() => setTheme(t.id)}
-            className="rounded-xl border-2 p-4 text-left transition-all"
-            style={{
-              backgroundColor: "var(--color-base-100)",
-              color: "var(--color-base-content)",
-              borderColor: isActive ? "var(--color-primary)" : "var(--color-border)",
-              boxShadow: isActive ? "0 0 0 1px var(--color-primary)" : "none",
-            }}
-          >
-            <p className="mb-2 text-sm font-bold">{t.name}</p>
-            <p
-              className="text-xs leading-relaxed"
-              style={{ color: "color-mix(in oklab, var(--color-base-content) 60%, transparent)" }}
+      {[...THEMES]
+        .sort((a, b) => {
+          if (a.colorScheme !== b.colorScheme) return a.colorScheme === "light" ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        })
+        .map((t) => {
+          const isActive = theme.id === t.id;
+          return (
+            <button
+              type="button"
+              key={t.id}
+              data-theme={t.id}
+              onClick={() => setTheme(t.id)}
+              className="rounded-xl border-2 p-4 text-left transition-all"
+              style={{
+                backgroundColor: "var(--color-base-100)",
+                color: "var(--color-base-content)",
+                borderColor: isActive ? "var(--color-primary)" : "var(--color-border)",
+                boxShadow: isActive ? "0 0 0 1px var(--color-primary)" : "none",
+              }}
             >
-              Lorem ipsum{" "}
-              <strong style={{ color: "var(--color-base-content)" }}>dolor sit amet</strong>,
-              consectetur adipiscing elit. Iaculis{" "}
-              <span style={{ color: "var(--color-accent)" }}>semper</span> pharetra.
-            </p>
-          </button>
-        );
-      })}
+              <p className="mb-2 text-sm font-bold">{t.name}</p>
+              <p
+                className="text-xs leading-relaxed"
+                style={{ color: "color-mix(in oklab, var(--color-base-content) 60%, transparent)" }}
+              >
+                Lorem ipsum{" "}
+                <strong style={{ color: "var(--color-base-content)" }}>dolor sit amet</strong>,
+                consectetur adipiscing elit. Iaculis{" "}
+                <span style={{ color: "var(--color-accent)" }}>semper</span> pharetra.
+              </p>
+            </button>
+          );
+        })}
     </div>
   );
 }

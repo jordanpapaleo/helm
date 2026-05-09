@@ -217,6 +217,7 @@ export function KanbanView() {
 
   async function persistDrop(currentItems: Record<string, string[]>, currentNotes: Note[]) {
     const byId = new Map(currentNotes.map((n) => [n.id, n]));
+    const writes: Promise<void>[] = [];
     for (const col of NOTE_STATES) {
       const order = currentItems[col] ?? [];
       for (let i = 0; i < order.length; i++) {
@@ -233,14 +234,15 @@ export function KanbanView() {
             },
           };
           updateNote(updated);
-          try {
-            await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-          } catch (e) {
-            console.error("Failed to save note:", e);
-          }
+          writes.push(
+            tauriCommands.writeNote(updated.filePath, serializeNote(updated)).catch((e) => {
+              console.error("Failed to save note:", e);
+            }),
+          );
         }
       }
     }
+    await Promise.all(writes);
   }
 
   async function createNoteInColumn(state: NoteState) {

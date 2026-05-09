@@ -69,7 +69,7 @@ interface ChipProps {
   value: number;
   /** Label text */
   label: string;
-  /** CSS classes for background/border/text color */
+  /** CSS color value (e.g. var(--color-error)) used to derive bg/border/text */
   color: string;
   /** Whether this chip is currently selected */
   active: boolean;
@@ -87,12 +87,22 @@ function SummaryChip({ value, label, color, active, onClick }: ChipProps) {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-xl border px-4 py-3 text-left transition-all min-w-[88px] ${color} ${
-        active ? "ring-2 ring-white/30 scale-105" : "opacity-80 hover:opacity-100"
+      style={{
+        backgroundColor: `color-mix(in oklab, ${color} 15%, transparent)`,
+        borderColor: `color-mix(in oklab, ${color} 35%, transparent)`,
+        color,
+      }}
+      className={`rounded-xl border px-4 py-3 text-left transition-all min-w-[88px] ${
+        active ? "ring-2 ring-offset-1 scale-105" : "opacity-80 hover:opacity-100"
       }`}
     >
       <p className="text-2xl font-bold">{value}</p>
-      <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
+      <p
+        className="text-xs"
+        style={{ color: `color-mix(in oklab, ${color} 80%, var(--color-base-content))` }}
+      >
+        {label}
+      </p>
     </button>
   );
 }
@@ -107,6 +117,8 @@ const tooltipStyle = {
   borderRadius: "8px",
   color: "var(--color-base-content)",
 };
+
+const tooltipTextStyle = { color: "var(--color-base-content)" };
 
 /**
  * Dashboard view component.
@@ -184,42 +196,42 @@ export function DashboardView() {
         <SummaryChip
           value={notes.filter((n) => getQuadrant(n) === "do").length}
           label="Do"
-          color="border-red-500/20 bg-red-500/10 text-red-400"
+          color="var(--color-error)"
           active={activeFilter === "urgent"}
           onClick={() => handleChipClick("urgent")}
         />
         <SummaryChip
           value={notes.filter((n) => getQuadrant(n) === "schedule").length}
           label="Schedule"
-          color="border-blue-500/20 bg-blue-500/10 text-blue-400"
+          color="var(--color-info)"
           active={activeFilter === "schedule"}
           onClick={() => handleChipClick("schedule")}
         />
         <SummaryChip
           value={notes.filter((n) => getQuadrant(n) === "delegate").length}
           label="Delegate"
-          color="border-orange-500/20 bg-orange-500/10 text-orange-400"
+          color="var(--color-secondary)"
           active={activeFilter === "delegate"}
           onClick={() => handleChipClick("delegate")}
         />
         <SummaryChip
           value={notes.filter((n) => getQuadrant(n) === "eliminate").length}
           label="Eliminate"
-          color="border-purple-500/20 bg-purple-500/10 text-purple-400"
+          color="var(--color-accent)"
           active={activeFilter === "eliminate"}
           onClick={() => handleChipClick("eliminate")}
         />
         <SummaryChip
           value={notes.filter((n) => n.frontmatter.blocked).length}
           label="Blocked"
-          color="border-yellow-500/20 bg-yellow-500/10 text-yellow-400"
+          color="var(--color-warning)"
           active={activeFilter === "blocked"}
           onClick={() => handleChipClick("blocked")}
         />
         <SummaryChip
           value={notes.length}
           label="Total Notes"
-          color="border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+          color="var(--color-base-content)"
           active={activeFilter === "all"}
           onClick={() => handleChipClick("all")}
         />
@@ -248,7 +260,11 @@ export function DashboardView() {
                       <Cell key={entry.name} fill={colors[i % colors.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle as React.CSSProperties} />
+                  <Tooltip
+                    contentStyle={tooltipStyle as React.CSSProperties}
+                    itemStyle={tooltipTextStyle}
+                    labelStyle={tooltipTextStyle}
+                  />
                   <Legend
                     formatter={(v) => (
                       <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>
@@ -284,7 +300,11 @@ export function DashboardView() {
                     <Cell key={entry.name} fill={colors[i % colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={tooltipStyle as React.CSSProperties} />
+                <Tooltip
+                  contentStyle={tooltipStyle as React.CSSProperties}
+                  itemStyle={tooltipTextStyle}
+                  labelStyle={tooltipTextStyle}
+                />
                 <Legend
                   formatter={(v) => (
                     <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>{v}</span>
@@ -314,7 +334,11 @@ export function DashboardView() {
                       <Cell key={entry.name} fill={colors[i % colors.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle as React.CSSProperties} />
+                  <Tooltip
+                    contentStyle={tooltipStyle as React.CSSProperties}
+                    itemStyle={tooltipTextStyle}
+                    labelStyle={tooltipTextStyle}
+                  />
                   <Legend
                     formatter={(v) => (
                       <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>

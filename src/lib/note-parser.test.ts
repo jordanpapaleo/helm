@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { extractInlineTags, extractWikiLinks, noteFilePath, parseNote, serializeNote, slugify } from "./note-parser";
+import {
+  extractInlineTags,
+  extractWikiLinks,
+  noteFilePath,
+  parseNote,
+  serializeNote,
+  slugify,
+} from "./note-parser";
 
 const RAW_NOTE = `---
 id: 01JPMXYZ123

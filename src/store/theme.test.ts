@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useThemeStore } from "./theme";
+import { beforeEach, describe, expect, it } from "vitest";
 import { THEMES } from "../lib/themes";
+import { useThemeStore } from "./theme";
 
 beforeEach(() => {
   localStorage.clear();

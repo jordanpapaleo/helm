@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useSettingsStore } from "./settings";
+import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../lib/settings";
+import { useSettingsStore } from "./settings";
 
 beforeEach(() => {
   localStorage.clear();
@@ -19,10 +19,14 @@ describe("useSettingsStore", () => {
       });
       expect(result.current.settings.fontSize).toBe(20);
       expect(result.current.settings.lineHeight).toBe(DEFAULT_SETTINGS.lineHeight);
-      expect(result.current.settings.autocompleteWikiLinks).toBe(DEFAULT_SETTINGS.autocompleteWikiLinks);
+      expect(result.current.settings.autocompleteWikiLinks).toBe(
+        DEFAULT_SETTINGS.autocompleteWikiLinks,
+      );
       expect(result.current.settings.autoSaveOnEdit).toBe(DEFAULT_SETTINGS.autoSaveOnEdit);
       expect(result.current.settings.pinnedNotesFloat).toBe(DEFAULT_SETTINGS.pinnedNotesFloat);
-      expect(result.current.settings.showNoteCountOnTags).toBe(DEFAULT_SETTINGS.showNoteCountOnTags);
+      expect(result.current.settings.showNoteCountOnTags).toBe(
+        DEFAULT_SETTINGS.showNoteCountOnTags,
+      );
     });
 
     it("persists to localStorage after update", () => {
@@ -39,9 +43,7 @@ describe("useSettingsStore", () => {
       act(() => {
         result.current.updateSettings({ fontSize: 20 });
       });
-      expect(
-        document.documentElement.style.getPropertyValue("--editor-font-size")
-      ).toBe("20px");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("20px");
     });
   });
 
@@ -75,15 +77,11 @@ describe("useSettingsStore", () => {
       act(() => {
         result.current.updateSettings({ fontSize: 20 });
       });
-      expect(
-        document.documentElement.style.getPropertyValue("--editor-font-size")
-      ).toBe("20px");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("20px");
       act(() => {
         result.current.resetSettings();
       });
-      expect(
-        document.documentElement.style.getPropertyValue("--editor-font-size")
-      ).toBe("16px");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("16px");
     });
   });
 });

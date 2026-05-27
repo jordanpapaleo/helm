@@ -130,7 +130,8 @@ export function DashboardView() {
   const { setView } = useUIStore();
   const [activeFilter, setActiveFilter] = useState<Filter>("all");
 
-  const subset = filterNotes(notes, activeFilter);
+  const subset = filterNotes(notes, activeFilter)
+    .sort((a, b) => b.frontmatter.updated.localeCompare(a.frontmatter.updated));
 
   // Charts derived from the active subset
   const tagCounts: Record<string, number> = {};

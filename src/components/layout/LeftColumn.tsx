@@ -4,6 +4,7 @@ import { addVault, removeVault } from "../../hooks/useVault";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore, type TagNode } from "../../store/notes";
+import { useTrashStore } from "../../store/trash";
 import { useUIStore, type View } from "../../store/ui";
 import { SettingsModal } from "../settings/SettingsModal";
 
@@ -218,6 +219,7 @@ export function LeftColumn() {
   const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
   const { activeView, setView, selectedGrouping, setSelectedGrouping, sidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, tagTree } = useNoteStore();
+  const trashCount = useTrashStore((s) => s.items.length);
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
@@ -457,6 +459,30 @@ export function LeftColumn() {
                 </ul>
               </>
             )}
+
+            {/* Trash */}
+            <div className="mt-4 border-t border-base-300 pt-2">
+              <ul className="py-1">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGrouping({ type: "trash", id: null });
+                      setView("notes");
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                      selectedGrouping.type === "trash"
+                        ? "bg-base-300 text-base-content"
+                        : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                    }`}
+                  >
+                    <Icon icon="uil:trash-alt" className="h-4 w-4 shrink-0 opacity-60" aria-hidden="true" />
+                    <span className="flex-1 text-left">Trash</span>
+                    {trashCount > 0 && <span className="text-xs opacity-40">{trashCount}</span>}
+                  </button>
+                </li>
+              </ul>
+            </div>
           </div>
         )}
       </div>

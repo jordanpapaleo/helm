@@ -4,12 +4,14 @@ import { ulid } from "ulid";
 import { serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
+import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
 
 export function NoteListPanel() {
   const { selectedGrouping, setView } = useUIStore();
   const { notes, selectedNoteId, selectNote, vaults, activeVaultId, addNote } = useNoteStore();
+  const { items: trashItems, removeFromTrash, permanentlyDelete } = useTrashStore();
   const [search, setSearch] = useState("");
 
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
@@ -84,6 +86,66 @@ export function NoteListPanel() {
     }
   }
 
+  async function handleRestore(noteId: string) {
+    const item = removeFromTrash(noteId);
+    if (!item) return;
+    try {
+      await tauriCommands.writeNote(item.note.filePath, serializeNote(item.note));
+      addNote(item.note);
+    } catch (e) {
+      console.error("Failed to restore note:", e);
+    }
+  }
+
+  // Trash view
+  if (selectedGrouping.type === "trash") {
+    return (
+      <div
+        className="flex flex-col border-r border-base-300"
+        style={{ width: "var(--notelist-width)", minWidth: "var(--notelist-width)" }}
+      >
+        <div className="flex items-center border-b border-base-300 px-3 py-2.5">
+          <span className="text-sm font-semibold">Trash</span>
+          <span className="ml-2 text-xs opacity-40">{trashItems.length}</span>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {trashItems.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm opacity-40">Trash is empty</p>
+          ) : (
+            <ul className="py-1">
+              {trashItems.map(({ note, deletedAt }) => (
+                <li key={note.id} className="flex flex-col gap-1 px-3 py-2.5 hover:bg-base-200">
+                  <span className="truncate text-sm font-medium">
+                    {note.frontmatter.title || "Untitled"}
+                  </span>
+                  <span className="text-xs opacity-40">
+                    Deleted {new Date(deletedAt).toLocaleDateString()}
+                  </span>
+                  <div className="mt-1 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRestore(note.id)}
+                      className="btn btn-ghost btn-xs"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => permanentlyDelete(note.id)}
+                      className="btn btn-ghost btn-xs text-error hover:text-error"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex flex-col border-r border-base-300"
@@ -122,9 +184,7 @@ export function NoteListPanel() {
                     setView("notes");
                   }}
                   className={`flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors ${
-                    note.id === selectedNoteId
-                      ? "bg-base-300"
-                      : "hover:bg-base-200"
+                    note.id === selectedNoteId ? "bg-base-300" : "hover:bg-base-200"
                   }`}
                 >
                   <span className="w-full truncate text-sm font-medium">

@@ -4,6 +4,7 @@ import { extractInlineTags, extractWikiLinks, serializeNote } from "../../lib/no
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
+import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { NoteFrontmatter } from "../../types/note";
 import { DashboardView } from "../../views/DashboardView";
@@ -151,12 +152,13 @@ export function MainPanel() {
   }
 
   async function handleDelete() {
-    if (!selectedNote) return;
+    if (!selectedNote || selectedNote.frontmatter.locked) return;
     const confirmed = await confirm(
-      `Delete "${selectedNote.frontmatter.title || "Untitled"}"? This cannot be undone.`,
-      { title: "Delete Note", kind: "warning" },
+      `Move "${selectedNote.frontmatter.title || "Untitled"}" to Trash?`,
+      { title: "Move to Trash", kind: "warning" },
     );
     if (!confirmed) return;
+    useTrashStore.getState().addToTrash(selectedNote);
     selectNote(null);
     removeNote(selectedNote.id);
     try {
@@ -176,7 +178,7 @@ export function MainPanel() {
               filePath={selectedNote.filePath}
               onChange={handleFrontmatterChange}
               onTitleTab={() => editorRef.current?.focus()}
-              onDelete={handleDelete}
+              onDelete={selectedNote.frontmatter.locked ? undefined : handleDelete}
               markdownMode={markdownMode}
               onToggleMarkdown={() => setMarkdownMode((v) => !v)}
             />

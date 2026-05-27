@@ -99,10 +99,7 @@ interface SliderRowProps {
 function SliderRow({ label, value, min, max, step, unit, onChange }: SliderRowProps) {
   return (
     <div className="flex items-center gap-4">
-      <span
-        className="shrink-0 text-right text-sm text-[var(--color-text-muted)]"
-        style={{ width: "9rem" }}
-      >
+      <span className="shrink-0 text-right text-sm opacity-50" style={{ width: "9rem" }}>
         {label}
       </span>
       <input
@@ -112,11 +109,10 @@ function SliderRow({ label, value, min, max, step, unit, onChange }: SliderRowPr
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1"
+        className="range range-accent range-sm flex-1"
       />
-      <span className="w-16 shrink-0 text-right text-sm tabular-nums text-[var(--color-text)]">
-        {value}
-        {unit}
+      <span className="w-16 shrink-0 text-right text-sm tabular-nums">
+        {value}{unit}
       </span>
     </div>
   );
@@ -132,14 +128,14 @@ interface CheckboxRowProps {
 
 function CheckboxRow({ label, checked, onChange }: CheckboxRowProps) {
   return (
-    <label className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[var(--color-border)]/30">
+    <label className="label cursor-pointer justify-start gap-3 rounded-lg px-3 py-2.5 hover:bg-base-300/50">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 cursor-pointer accent-[var(--color-accent)]"
+        className="checkbox checkbox-accent checkbox-sm"
       />
-      <span className="text-sm text-[var(--color-text)]">{label}</span>
+      <span className="label-text">{label}</span>
     </label>
   );
 }
@@ -170,12 +166,8 @@ function TypographyTab() {
         onChange={(lineHeight) => updateSettings({ lineHeight })}
       />
 
-      <div className="mt-2 border-t border-[var(--color-border)] pt-4">
-        <button
-          type="button"
-          onClick={resetSettings}
-          className="rounded-lg border border-[var(--color-border)] px-4 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
+      <div className="mt-2 border-t border-base-300 pt-4">
+        <button type="button" onClick={resetSettings} className="btn btn-ghost btn-sm">
           Restore Defaults
         </button>
       </div>
@@ -264,31 +256,24 @@ interface SettingsModalProps {
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>("typography");
 
-  // Close on overlay click but not on card click
-  function handleOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (e.target === e.currentTarget) onClose();
-  }
-
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop captures clicks outside the dialog
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-16"
-      onClick={handleOverlayClick}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
     >
       <div
-        className="flex flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
+        className="flex flex-col rounded-2xl border border-base-300 bg-base-200 shadow-2xl"
         style={{ width: 760, maxHeight: "85vh" }}
       >
         {/* Header */}
-        <div className="relative flex items-center justify-center border-b border-[var(--color-border)] px-6 py-4">
-          <h2 className="text-base font-semibold text-[var(--color-text)]">Settings</h2>
+        <div className="relative flex items-center justify-center border-b border-base-300 px-6 py-4 shrink-0">
+          <h2 className="text-base font-semibold">Settings</h2>
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-4 flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)]/50 hover:text-[var(--color-text)]"
+            className="btn btn-ghost btn-sm btn-circle absolute right-4"
             aria-label="Close settings"
           >
             <svg
@@ -307,21 +292,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         </div>
 
         {/* Tab bar */}
-        <div className="flex gap-1 border-b border-[var(--color-border)] px-4 pt-3">
+        <div role="tablist" className="tabs tabs-border px-4 shrink-0">
           {TABS.map((tab) => (
             <button
               type="button"
+              role="tab"
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 rounded-t-md px-4 py-2 text-sm transition-colors ${
-                activeTab === tab.id
-                  ? "border-b-2 border-[var(--color-accent)] text-[var(--color-text)]"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-              }`}
-              style={{
-                // Offset the bottom border of the tab bar so active tab border sits flush
-                marginBottom: activeTab === tab.id ? -1 : 0,
-              }}
+              className={`tab gap-2 ${activeTab === tab.id ? "tab-active" : ""}`}
             >
               {tab.icon}
               {tab.label}

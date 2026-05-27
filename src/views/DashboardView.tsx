@@ -96,13 +96,10 @@ function SummaryChip({ value, label, color, active, onClick }: ChipProps) {
         active ? "ring-2 ring-offset-1 scale-105" : "opacity-80 hover:opacity-100"
       }`}
     >
-      <p className="text-2xl font-bold">{value}</p>
-      <p
-        className="text-xs"
-        style={{ color: `color-mix(in oklab, ${color} 80%, var(--color-base-content))` }}
-      >
+      <div className="stat-value text-2xl">{value}</div>
+      <div className="stat-title text-xs" style={{ color: `color-mix(in oklab, ${color} 80%, var(--color-base-content))` }}>
         {label}
-      </p>
+      </div>
     </button>
   );
 }
@@ -188,8 +185,8 @@ export function DashboardView() {
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      <h2 className="mb-2 text-xl font-bold text-[var(--color-text)]">Dashboard</h2>
-      <p className="mb-6 text-sm text-[var(--color-text-muted)]">{notes.length} notes in vault</p>
+      <h2 className="mb-2 text-xl font-bold">Dashboard</h2>
+      <p className="mb-6 text-sm opacity-50">{notes.length} notes in vault</p>
 
       {/* Summary chips */}
       <div className="mb-8 flex flex-wrap gap-3">
@@ -240,13 +237,54 @@ export function DashboardView() {
       {/* Charts — scoped to subset */}
       {subset.length > 0 ? (
         <div className={`grid gap-6 mb-6 ${teamData.length > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <p className="mb-4 font-semibold text-[var(--color-text)]">Tag Distribution</p>
-            {tagData.length > 0 ? (
+          <div className="card bg-base-200">
+            <div className="card-body p-4">
+              <p className="card-title text-sm">Tag Distribution</p>
+              {tagData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={tagData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={85}
+                      dataKey="value"
+                      paddingAngle={2}
+                      stroke={strokeColor}
+                      strokeWidth={2}
+                    >
+                      {tagData.map((entry, i) => (
+                        <Cell key={entry.name} fill={colors[i % colors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={tooltipStyle as React.CSSProperties}
+                      itemStyle={tooltipTextStyle}
+                      labelStyle={tooltipTextStyle}
+                    />
+                    <Legend
+                      formatter={(v) => (
+                        <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>
+                          {v}
+                        </span>
+                      )}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="py-8 text-center text-sm opacity-50">No tags in selection</p>
+              )}
+            </div>
+          </div>
+
+          <div className="card bg-base-200">
+            <div className="card-body p-4">
+              <p className="card-title text-sm">State Distribution</p>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
-                    data={tagData}
+                    data={stateData}
                     cx="50%"
                     cy="50%"
                     innerRadius={55}
@@ -256,7 +294,7 @@ export function DashboardView() {
                     stroke={strokeColor}
                     strokeWidth={2}
                   >
-                    {tagData.map((entry, i) => (
+                    {stateData.map((entry, i) => (
                       <Cell key={entry.name} fill={colors[i % colors.length]} />
                     ))}
                   </Pie>
@@ -267,148 +305,112 @@ export function DashboardView() {
                   />
                   <Legend
                     formatter={(v) => (
-                      <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>
-                        {v}
-                      </span>
-                    )}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
-                No tags in selection
-              </p>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <p className="mb-4 font-semibold text-[var(--color-text)]">State Distribution</p>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={stateData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  dataKey="value"
-                  paddingAngle={2}
-                  stroke={strokeColor}
-                  strokeWidth={2}
-                >
-                  {stateData.map((entry, i) => (
-                    <Cell key={entry.name} fill={colors[i % colors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={tooltipStyle as React.CSSProperties}
-                  itemStyle={tooltipTextStyle}
-                  labelStyle={tooltipTextStyle}
-                />
-                <Legend
-                  formatter={(v) => (
-                    <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>{v}</span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {teamData.length > 0 && (
-            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <p className="mb-4 font-semibold text-[var(--color-text)]">Team Distribution</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie
-                    data={teamData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    dataKey="value"
-                    paddingAngle={2}
-                    stroke={strokeColor}
-                    strokeWidth={2}
-                  >
-                    {teamData.map((entry, i) => (
-                      <Cell key={entry.name} fill={colors[i % colors.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={tooltipStyle as React.CSSProperties}
-                    itemStyle={tooltipTextStyle}
-                    labelStyle={tooltipTextStyle}
-                  />
-                  <Legend
-                    formatter={(v) => (
-                      <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>
-                        {v}
-                      </span>
+                      <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>{v}</span>
                     )}
                   />
                 </PieChart>
               </ResponsiveContainer>
             </div>
+          </div>
+
+          {teamData.length > 0 && (
+            <div className="card bg-base-200">
+              <div className="card-body p-4">
+                <p className="card-title text-sm">Team Distribution</p>
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={teamData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={85}
+                      dataKey="value"
+                      paddingAngle={2}
+                      stroke={strokeColor}
+                      strokeWidth={2}
+                    >
+                      {teamData.map((entry, i) => (
+                        <Cell key={entry.name} fill={colors[i % colors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={tooltipStyle as React.CSSProperties}
+                      itemStyle={tooltipTextStyle}
+                      labelStyle={tooltipTextStyle}
+                    />
+                    <Legend
+                      formatter={(v) => (
+                        <span style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>
+                          {v}
+                        </span>
+                      )}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           )}
         </div>
       ) : (
-        <div className="mb-6 flex items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-12">
-          <p className="text-[var(--color-text-muted)]">No notes match this filter.</p>
+        <div className="card bg-base-200 mb-6">
+          <div className="card-body items-center justify-center py-12">
+            <p className="opacity-50">No notes match this filter.</p>
+          </div>
         </div>
       )}
 
       {/* Note list for active filter */}
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-          <p className="font-semibold text-[var(--color-text)]">{filterLabel[activeFilter]}</p>
-          <span className="text-xs text-[var(--color-text-muted)]">{subset.length} notes</span>
-        </div>
-        {subset.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">
-            No notes in this category.
-          </p>
-        ) : (
-          <div className="divide-y divide-[var(--color-border)]">
-            {subset.map((note) => (
-              <button
-                type="button"
-                key={note.id}
-                onClick={() => handleNoteClick(note)}
-                className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-[var(--color-border)]/20 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-sm font-medium text-[var(--color-text)]">
-                    {note.frontmatter.title || "Untitled"}
-                  </p>
-                  {note.frontmatter.tags.length > 0 && (
-                    <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
-                      {note.frontmatter.tags.join(", ")}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--color-text-muted)]">
-                  <span
-                    className="rounded px-1.5 py-0.5"
-                    style={{
-                      backgroundColor: `${stateColorMap[note.frontmatter.state] ?? "#6e6e73"}22`,
-                      color: stateColorMap[note.frontmatter.state] ?? "#6e6e73",
-                    }}
-                  >
-                    {note.frontmatter.state}
-                  </span>
-                  {note.frontmatter.urgent && (
-                    <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-red-400">urgent</span>
-                  )}
-                  {note.frontmatter.blocked && (
-                    <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-yellow-400">
-                      blocked
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))}
+      <div className="card bg-base-200">
+        <div className="card-body p-0">
+          <div className="flex items-center justify-between border-b border-base-300 px-4 py-3">
+            <p className="font-semibold">{filterLabel[activeFilter]}</p>
+            <span className="text-xs opacity-50">{subset.length} notes</span>
           </div>
-        )}
+          {subset.length === 0 ? (
+            <p className="px-4 py-6 text-sm opacity-50">No notes in this category.</p>
+          ) : (
+            <div className="divide-y divide-base-300">
+              {subset.map((note) => (
+                <button
+                  type="button"
+                  key={note.id}
+                  onClick={() => handleNoteClick(note)}
+                  className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-base-300/50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {note.frontmatter.title || "Untitled"}
+                    </p>
+                    {note.frontmatter.tags.length > 0 && (
+                      <p className="mt-0.5 truncate text-xs opacity-50">
+                        {note.frontmatter.tags.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      className="badge badge-sm"
+                      style={{
+                        backgroundColor: `${stateColorMap[note.frontmatter.state] ?? "#6e6e73"}22`,
+                        color: stateColorMap[note.frontmatter.state] ?? "#6e6e73",
+                        borderColor: "transparent",
+                      }}
+                    >
+                      {note.frontmatter.state}
+                    </span>
+                    {note.frontmatter.urgent && (
+                      <span className="badge badge-error badge-soft badge-sm">urgent</span>
+                    )}
+                    {note.frontmatter.blocked && (
+                      <span className="badge badge-warning badge-soft badge-sm">blocked</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

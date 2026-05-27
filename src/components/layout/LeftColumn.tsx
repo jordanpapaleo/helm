@@ -60,36 +60,35 @@ export function LeftColumn() {
 
   if (collapsed) {
     return (
-      <div className="flex w-10 flex-col items-center border-r border-[var(--color-border)] py-2">
-        {VIEWS.map((v) => (
-          <button
-            type="button"
-            key={v.id}
-            onClick={() => setView(v.id)}
-            title={v.label}
-            className={`mb-1 rounded p-2 transition-colors ${
-              activeView === v.id
-                ? "bg-[var(--color-surface)] text-[var(--color-text)]"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            }`}
-          >
-            <Icon icon={v.icon} className="h-4 w-4" aria-hidden="true" />
-          </button>
-        ))}
+      <div className="flex w-10 flex-col items-center border-r border-base-300 py-2">
+        <ul className="menu menu-xs px-0">
+          {VIEWS.map((v) => (
+            <li key={v.id}>
+              <button
+                type="button"
+                onClick={() => setView(v.id)}
+                title={v.label}
+                className={activeView === v.id ? "active" : ""}
+              >
+                <Icon icon={v.icon} className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
         <div className="flex-1" />
         <button
           type="button"
           onClick={() => setShowSettings(true)}
           title="Settings"
-          className="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+          className="btn btn-ghost btn-xs btn-square"
         >
           <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="rounded p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
           title="Expand sidebar"
+          className="btn btn-ghost btn-xs btn-square"
         >
           <Icon icon="uil:arrow-right" className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -98,48 +97,44 @@ export function LeftColumn() {
     );
   }
 
-  const vaultNavCls = (id: string) =>
-    `group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
-      activeVaultId === id
-        ? "bg-[var(--color-surface)] text-[var(--color-text)]"
-        : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-    }`;
-
   return (
     <div
-      className="flex flex-col border-r border-[var(--color-border)]"
+      className="flex flex-col border-r border-base-300"
       style={{ width: "var(--sidebar-width)", minWidth: "var(--sidebar-width)" }}
     >
       {/* Search */}
-      <div className="relative border-b border-[var(--color-border)] p-3">
+      <div className="relative border-b border-base-300 p-3">
         <input
           placeholder="Search..."
           value={searchQuery}
           onChange={(e) => search(e.target.value)}
-          className="w-full rounded-md bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none"
+          className="input input-ghost input-sm w-full"
         />
         {searchQuery && (
-          <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] shadow-xl">
+          <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-md border border-base-300 bg-base-100 shadow-xl">
             {searchResults.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-[var(--color-text-muted)]">No results</p>
+              <p className="px-3 py-2 text-sm opacity-50">No results</p>
             ) : (
-              searchResults.map((n) => (
-                <button
-                  type="button"
-                  key={n.id}
-                  onClick={() => {
-                    selectNote(n.id);
-                    setView("notes");
-                    search("");
-                  }}
-                  className="flex w-full flex-col px-3 py-2 text-left hover:bg-[var(--color-surface)]"
-                >
-                  <span className="text-sm text-[var(--color-text)]">{n.frontmatter.title}</span>
-                  <span className="text-xs text-[var(--color-text-muted)]">
-                    {n.frontmatter.tags.join(", ")}
-                  </span>
-                </button>
-              ))
+              <ul className="menu menu-sm">
+                {searchResults.map((n) => (
+                  <li key={n.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        selectNote(n.id);
+                        setView("notes");
+                        search("");
+                      }}
+                      className="flex-col items-start"
+                    >
+                      <span className="text-sm">{n.frontmatter.title}</span>
+                      {n.frontmatter.tags.length > 0 && (
+                        <span className="text-xs opacity-50">{n.frontmatter.tags.join(", ")}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
@@ -147,68 +142,63 @@ export function LeftColumn() {
 
       <div className="flex flex-1 flex-col overflow-hidden p-2">
         {/* View nav */}
-        <div className="mb-2">
+        <ul className="menu menu-sm mb-2 px-0">
           {VIEWS.map((v) => (
-            <button
-              type="button"
-              key={v.id}
-              onClick={() => setView(v.id)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
-                activeView === v.id
-                  ? "bg-[var(--color-surface)] text-[var(--color-text)]"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-              }`}
-            >
-              <Icon icon={v.icon} className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{v.label}</span>
-            </button>
+            <li key={v.id}>
+              <button
+                type="button"
+                onClick={() => setView(v.id)}
+                className={activeView === v.id ? "active" : ""}
+              >
+                <Icon icon={v.icon} className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>{v.label}</span>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
 
         {/* Vaults section */}
-        <div className="mb-2 border-t border-[var(--color-border)] pt-2">
-          <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)] opacity-60">
+        <div className="mb-2 border-t border-base-300 pt-2">
+          <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider opacity-40">
             Vaults
           </p>
-          {vaults.map((vault) => (
-            <div key={vault.id} className={vaultNavCls(vault.id)}>
-              <button
-                type="button"
-                className="flex flex-1 min-w-0 items-center gap-2 text-left"
-                onClick={() => handleVaultClick(vault.id)}
-              >
-                <Icon
-                  icon="uil:folder"
-                  className="h-4 w-4 shrink-0 opacity-70"
-                  aria-hidden="true"
-                />
-                <span className="flex-1 truncate">{vault.name}</span>
-                <span className="text-xs opacity-40">
-                  {notes.filter((n) => n.vaultId === vault.id).length}
-                </span>
+          <ul className="menu menu-sm px-0">
+            {vaults.map((vault) => (
+              <li key={vault.id} className="group">
+                <div className={activeVaultId === vault.id ? "active" : ""}>
+                  <button
+                    type="button"
+                    className="flex flex-1 min-w-0 items-center gap-2 text-left"
+                    onClick={() => handleVaultClick(vault.id)}
+                  >
+                    <Icon icon="uil:folder" className="h-4 w-4 shrink-0 opacity-70" aria-hidden="true" />
+                    <span className="flex-1 truncate">{vault.name}</span>
+                    <span className="text-xs opacity-40">
+                      {notes.filter((n) => n.vaultId === vault.id).length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleRemoveVault(vault.id, e)}
+                    title="Remove vault"
+                    className="btn btn-ghost btn-xs btn-square opacity-0 group-hover:opacity-100 hover:text-error"
+                  >
+                    <Icon icon="uil:times" className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </div>
+              </li>
+            ))}
+            <li>
+              <button type="button" onClick={handleAddVault} className="opacity-50 hover:opacity-100">
+                <span className="text-base leading-none">+</span>
+                <span>Add Vault</span>
               </button>
-              <button
-                type="button"
-                onClick={(e) => handleRemoveVault(vault.id, e)}
-                title="Remove vault"
-                className="ml-1 shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
-              >
-                <Icon icon="uil:times" className="h-3 w-3" aria-hidden="true" />
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={handleAddVault}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-          >
-            <span className="text-base leading-none">+</span>
-            <span>Add Vault</span>
-          </button>
+            </li>
+          </ul>
         </div>
 
         {/* File tree */}
-        <div className="flex-1 overflow-hidden min-h-0 border-t border-[var(--color-border)] pt-2">
+        <div className="flex-1 overflow-hidden min-h-0 border-t border-base-300 pt-2">
           {(() => {
             const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
             return activeVault?.path ? (
@@ -219,13 +209,13 @@ export function LeftColumn() {
       </div>
 
       {/* Footer: settings + collapse */}
-      <div className="border-t border-[var(--color-border)] px-3 py-2 flex items-center gap-2">
+      <div className="border-t border-base-300 px-3 py-2 flex items-center gap-2">
         <div className="flex-1" />
         <button
           type="button"
           onClick={() => setShowSettings(true)}
           title="Settings"
-          className="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+          className="btn btn-ghost btn-xs btn-square"
         >
           <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
@@ -233,7 +223,7 @@ export function LeftColumn() {
           type="button"
           onClick={() => setCollapsed(true)}
           title="Collapse sidebar"
-          className="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+          className="btn btn-ghost btn-xs btn-square"
         >
           <Icon icon="uil:arrow-left" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>

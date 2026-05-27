@@ -1,27 +1,28 @@
-/**
- * UI state store — manages active view selection.
- * Controls which main view is displayed (Dashboard, Eisenhower, Kanban, Graph, or Notes).
- */
 import { create } from "zustand";
 
-/** Available top-level views in the application */
 export type View = "notes" | "dashboard" | "eisenhower" | "kanban" | "graph";
 
-/**
- * UI store state and actions.
- */
-interface UIStore {
-  /** Currently active view */
-  activeView: View;
-  /** Switch to a different view */
-  setView: (view: View) => void;
+export type GroupingType = "all" | "folder";
+
+export interface Grouping {
+  type: GroupingType;
+  id: string | null; // folder path for "folder", null for "all"
 }
 
-/**
- * Global UI store using Zustand.
- * Manages which view is currently displayed.
- */
+interface UIStore {
+  activeView: View;
+  setView: (view: View) => void;
+  selectedGrouping: Grouping;
+  setSelectedGrouping: (grouping: Grouping) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+}
+
 export const useUIStore = create<UIStore>((set) => ({
   activeView: "dashboard",
   setView: (view) => set({ activeView: view }),
+  selectedGrouping: { type: "all", id: null },
+  setSelectedGrouping: (grouping) => set({ selectedGrouping: grouping }),
+  sidebarCollapsed: false,
+  setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
 }));

@@ -5,7 +5,8 @@
 }
 
 :root {
-  --sidebar-width: 260px;
+  --sidebar-width: 220px;
+  --notelist-width: 260px;
 
   /* ── Derived / alias vars — used by component files ─────────── */
   /* Theme color vars come exclusively from [data-theme="x"] blocks (injected by injectThemeStyles()) */

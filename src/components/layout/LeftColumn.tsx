@@ -1,11 +1,11 @@
 import { Icon } from "@iconify/react";
-import { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { addVault, removeVault } from "../../hooks/useVault";
+import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useUIStore, type View } from "../../store/ui";
 import { SettingsModal } from "../settings/SettingsModal";
-import { FileTree } from "../sidebar/FileTree";
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "uil:dashboard" },
@@ -14,27 +14,125 @@ const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: "graph", label: "Link", icon: "uil:link" },
 ];
 
-export function LeftColumn() {
-  const [collapsed, setCollapsed] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const { activeView, setView } = useUIStore();
-  const {
-    notes,
-    searchQuery,
-    searchResults,
-    search,
-    vaults,
-    activeVaultId,
-    setActiveVaultId,
-    selectNote,
-  } = useNoteStore();
+function FolderGroupings({
+  depth = 0,
+  nodes,
+  noteCount,
+}: {
+  depth?: number;
+  nodes: TreeNode[];
+  noteCount: (path: string) => number;
+}) {
+  const { selectedGrouping, setSelectedGrouping, setView } = useUIStore();
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const vaultFilteredNotes = activeVaultId
-    ? notes.filter((n) => n.vaultId === activeVaultId)
-    : notes;
+  const folderNodes = nodes.filter((n): n is Extract<TreeNode, { kind: "folder" }> => n.kind === "folder");
+
+  if (folderNodes.length === 0) return null;
+
+  return (
+    <>
+      {folderNodes.map((node) => {
+        const isOpen = !collapsed.has(node.path);
+        const isActive =
+          selectedGrouping.type === "folder" && selectedGrouping.id === node.path;
+        const count = noteCount(node.path);
+        const hasSubfolders = node.children.some((c) => c.kind === "folder");
+
+        return (
+          <React.Fragment key={node.path}>
+            <li>
+              <div
+                className={`flex w-full items-center gap-1 rounded-md py-1 text-sm transition-colors ${
+                  isActive
+                    ? "bg-base-300 text-base-content"
+                    : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                }`}
+                style={{ paddingLeft: depth * 12 + 4 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCollapsed((prev) => {
+                      const next = new Set(prev);
+                      next.has(node.path) ? next.delete(node.path) : next.add(node.path);
+                      return next;
+                    });
+                  }}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center"
+                  aria-label={isOpen ? "Collapse" : "Expand"}
+                >
+                  {hasSubfolders && (
+                    <Icon
+                      icon="uil:angle-right"
+                      className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                      aria-hidden="true"
+                    />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGrouping({ type: "folder", id: node.path });
+                    setView("notes");
+                  }}
+                  className="flex flex-1 min-w-0 items-center gap-1.5 pr-2"
+                >
+                  <Icon icon="uil:folder" className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
+                  <span className="flex-1 truncate text-left">{node.name}</span>
+                  {count > 0 && <span className="shrink-0 text-xs opacity-40">{count}</span>}
+                </button>
+              </div>
+            </li>
+            {isOpen && hasSubfolders && (
+              <FolderGroupings
+                depth={depth + 1}
+                nodes={node.children}
+                noteCount={noteCount}
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+export function LeftColumn() {
+  const [showSettings, setShowSettings] = useState(false);
+  const { activeView, setView, selectedGrouping, setSelectedGrouping, sidebarCollapsed, setSidebarCollapsed } = useUIStore();
+  const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths } = useNoteStore();
+
+  const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
+
+  const vaultFolderPaths = useMemo(
+    () =>
+      activeVault
+        ? knownFolderPaths.filter((fp) => fp.startsWith(`${activeVault.path}/`))
+        : [],
+    [knownFolderPaths, activeVault],
+  );
+
+  const vaultNotes = useMemo(
+    () => (activeVaultId ? notes.filter((n) => n.vaultId === activeVaultId) : notes),
+    [notes, activeVaultId],
+  );
+
+  const tree = useMemo(
+    () =>
+      activeVault ? buildTree(vaultNotes, activeVault.path, vaultFolderPaths) : [],
+    [vaultNotes, activeVault, vaultFolderPaths],
+  );
+
+  function noteCount(folderPath: string) {
+    const prefix = `${folderPath}/`;
+    return vaultNotes.filter((n) => n.filePath.startsWith(prefix)).length;
+  }
 
   function handleVaultClick(id: string) {
     setActiveVaultId(activeVaultId === id ? null : id);
+    setSelectedGrouping({ type: "all", id: null });
+    setView("notes");
   }
 
   async function handleAddVault() {
@@ -50,15 +148,15 @@ export function LeftColumn() {
     e.stopPropagation();
     const { confirm } = await import("@tauri-apps/plugin-dialog");
     const vault = vaults.find((v) => v.id === id);
-    const confirmed = await confirm(`Remove vault "${vault?.name}"? Notes on disk are untouched.`, {
-      title: "Remove Vault",
-      kind: "warning",
-    });
+    const confirmed = await confirm(
+      `Remove vault "${vault?.name}"? Notes on disk are untouched.`,
+      { title: "Remove Vault", kind: "warning" },
+    );
     if (!confirmed) return;
     await removeVault(id);
   }
 
-  if (collapsed) {
+  if (sidebarCollapsed) {
     return (
       <div className="flex w-10 flex-col items-center border-r border-base-300 py-2">
         <ul className="menu menu-xs px-0">
@@ -86,7 +184,7 @@ export function LeftColumn() {
         </button>
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
+          onClick={() => setSidebarCollapsed(false)}
           title="Expand sidebar"
           className="btn btn-ghost btn-xs btn-square"
         >
@@ -102,47 +200,9 @@ export function LeftColumn() {
       className="flex flex-col border-r border-base-300"
       style={{ width: "var(--sidebar-width)", minWidth: "var(--sidebar-width)" }}
     >
-      {/* Search */}
-      <div className="relative border-b border-base-300 p-3">
-        <input
-          placeholder="Search..."
-          value={searchQuery}
-          onChange={(e) => search(e.target.value)}
-          className="input input-ghost input-sm w-full"
-        />
-        {searchQuery && (
-          <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-md border border-base-300 bg-base-100 shadow-xl">
-            {searchResults.length === 0 ? (
-              <p className="px-3 py-2 text-sm opacity-50">No results</p>
-            ) : (
-              <ul className="menu menu-sm">
-                {searchResults.map((n) => (
-                  <li key={n.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        selectNote(n.id);
-                        setView("notes");
-                        search("");
-                      }}
-                      className="flex-col items-start"
-                    >
-                      <span className="text-sm">{n.frontmatter.title}</span>
-                      {n.frontmatter.tags.length > 0 && (
-                        <span className="text-xs opacity-50">{n.frontmatter.tags.join(", ")}</span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
-
       <div className="flex flex-1 flex-col overflow-hidden p-2">
         {/* View nav */}
-        <ul className="menu menu-sm mb-2 px-0">
+        <ul className="menu menu-sm mb-6 px-0">
           {VIEWS.map((v) => (
             <li key={v.id}>
               <button
@@ -157,8 +217,8 @@ export function LeftColumn() {
           ))}
         </ul>
 
-        {/* Vaults section */}
-        <div className="mb-2 border-t border-base-300 pt-2">
+        {/* Vaults */}
+        <div className="mb-2 border-t border-base-300 pt-4">
           <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider opacity-40">
             Vaults
           </p>
@@ -168,10 +228,14 @@ export function LeftColumn() {
                 <div className={activeVaultId === vault.id ? "active" : ""}>
                   <button
                     type="button"
-                    className="flex flex-1 min-w-0 items-center gap-2 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     onClick={() => handleVaultClick(vault.id)}
                   >
-                    <Icon icon="uil:folder" className="h-4 w-4 shrink-0 opacity-70" aria-hidden="true" />
+                    <Icon
+                      icon="uil:folder"
+                      className="h-4 w-4 shrink-0 opacity-70"
+                      aria-hidden="true"
+                    />
                     <span className="flex-1 truncate">{vault.name}</span>
                     <span className="text-xs opacity-40">
                       {notes.filter((n) => n.vaultId === vault.id).length}
@@ -181,7 +245,7 @@ export function LeftColumn() {
                     type="button"
                     onClick={(e) => handleRemoveVault(vault.id, e)}
                     title="Remove vault"
-                    className="btn btn-ghost btn-xs btn-square opacity-0 group-hover:opacity-100 hover:text-error"
+                    className="btn btn-ghost btn-xs btn-square opacity-0 hover:text-error group-hover:opacity-100"
                   >
                     <Icon icon="uil:times" className="h-3 w-3" aria-hidden="true" />
                   </button>
@@ -189,7 +253,11 @@ export function LeftColumn() {
               </li>
             ))}
             <li>
-              <button type="button" onClick={handleAddVault} className="opacity-50 hover:opacity-100">
+              <button
+                type="button"
+                onClick={handleAddVault}
+                className="opacity-50 hover:opacity-100"
+              >
                 <span className="text-base leading-none">+</span>
                 <span>Add Vault</span>
               </button>
@@ -197,19 +265,41 @@ export function LeftColumn() {
           </ul>
         </div>
 
-        {/* File tree */}
-        <div className="flex-1 overflow-hidden min-h-0 border-t border-base-300 pt-2">
-          {(() => {
-            const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
-            return activeVault?.path ? (
-              <FileTree notes={vaultFilteredNotes} vault={activeVault} />
-            ) : null;
-          })()}
-        </div>
+        {/* Folder groupings */}
+        {activeVault && (
+          <div className="flex-1 overflow-y-auto overflow-x-hidden border-t border-base-300 pt-2 min-h-0">
+            <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider opacity-40">
+              Folders
+            </p>
+            <ul className="py-1">
+              {/* All notes */}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGrouping({ type: "all", id: null });
+                    setView("notes");
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                    selectedGrouping.type === "all" && activeView === "notes"
+                      ? "bg-base-300 text-base-content"
+                      : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                  }`}
+                >
+                  <span className="flex-1 text-left">All Notes</span>
+                  <span className="text-xs opacity-40">{vaultNotes.length}</span>
+                </button>
+              </li>
+
+              {/* Folder tree */}
+              <FolderGroupings nodes={tree} noteCount={noteCount} />
+            </ul>
+          </div>
+        )}
       </div>
 
-      {/* Footer: settings + collapse */}
-      <div className="border-t border-base-300 px-3 py-2 flex items-center gap-2">
+      {/* Footer */}
+      <div className="flex items-center gap-2 border-t border-base-300 px-3 py-2">
         <div className="flex-1" />
         <button
           type="button"
@@ -221,7 +311,7 @@ export function LeftColumn() {
         </button>
         <button
           type="button"
-          onClick={() => setCollapsed(true)}
+          onClick={() => setSidebarCollapsed(true)}
           title="Collapse sidebar"
           className="btn btn-ghost btn-xs btn-square"
         >

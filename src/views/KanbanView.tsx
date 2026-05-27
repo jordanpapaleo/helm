@@ -50,23 +50,22 @@ function KanbanCard({ note, index, column }: { note: Note; index: number; column
         selectNote(note.id);
         setView("notes");
       }}
-      className={`rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-3 cursor-pointer select-none transition-opacity ${
-        isDragSource ? "opacity-40" : "hover:border-[var(--color-accent)]/50"
+      className={`card card-compact bg-base-100 cursor-pointer select-none transition-opacity ${
+        isDragSource ? "opacity-40" : "hover:border-accent/50"
       }`}
     >
-      <p className="text-sm font-medium text-[var(--color-text)]">
-        {note.frontmatter.title || "Untitled"}
-      </p>
-      {note.frontmatter.blocked && <p className="mt-0.5 text-xs text-red-400">⊘ Blocked</p>}
-      <div className="mt-2 flex flex-wrap gap-1">
-        {note.frontmatter.tags.slice(0, 2).map((t) => (
-          <span
-            key={t}
-            className="rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]"
-          >
-            {t}
-          </span>
-        ))}
+      <div className="card-body">
+        <p className="card-title text-sm font-medium">
+          {note.frontmatter.title || "Untitled"}
+        </p>
+        {note.frontmatter.blocked && (
+          <span className="badge badge-error badge-soft badge-sm">⊘ Blocked</span>
+        )}
+        <div className="flex flex-wrap gap-1">
+          {note.frontmatter.tags.slice(0, 2).map((t) => (
+            <span key={t} className="badge badge-ghost badge-sm">{t}</span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -91,41 +90,41 @@ function KanbanColumn({
   return (
     <div
       ref={ref}
-      className={`flex flex-1 flex-col rounded-xl border p-4 gap-3 overflow-y-auto min-h-0 transition-colors ${
-        isDropTarget
-          ? "border-[var(--color-accent)] bg-[var(--color-accent)]/5"
-          : "border-[var(--color-border)] bg-[var(--color-surface)]"
+      className={`card bg-base-200 flex-1 flex flex-col overflow-y-auto min-h-0 transition-colors ${
+        isDropTarget ? "border-accent bg-accent/5" : ""
       }`}
     >
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <p className="font-semibold text-[var(--color-text)]">{state}</p>
-          <span className="text-xs text-[var(--color-text-muted)]">{notes.length}</span>
-        </div>
-        <button
-          type="button"
-          onClick={onCreate}
-          title={`New note in ${state}`}
-          className="rounded p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-border)]/50 hover:text-[var(--color-text)] transition-colors"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            aria-hidden="true"
+      <div className="card-body p-4 gap-3 flex flex-col min-h-0">
+        <div className="flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <p className="card-title text-sm">{state}</p>
+            <span className="badge badge-ghost badge-sm">{notes.length}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onCreate}
+            title={`New note in ${state}`}
+            className="btn btn-ghost btn-sm btn-square"
           >
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
-      </div>
-      <div className="flex flex-col gap-2">
-        {notes.map((n, index) => (
-          <KanbanCard key={n.id} note={n} index={index} column={state} />
-        ))}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              aria-hidden="true"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </div>
+        <div className="flex flex-col gap-2">
+          {notes.map((n, index) => (
+            <KanbanCard key={n.id} note={n} index={index} column={state} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -286,7 +285,7 @@ export function KanbanView() {
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-col h-full p-6 gap-4 overflow-hidden">
-        <h2 className="shrink-0 text-xl font-bold text-[var(--color-text)]">Kanban</h2>
+        <h2 className="shrink-0 text-xl font-bold">Kanban</h2>
         <div className="flex flex-1 gap-4 min-h-0">
           {NOTE_STATES.map((state) => (
             <KanbanColumn

@@ -133,7 +133,7 @@ function CheckboxRow({ label, checked, onChange }: CheckboxRowProps) {
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="checkbox checkbox-accent checkbox-sm"
+        className="rounded accent-[var(--color-accent)]"
       />
       <span className="label-text">{label}</span>
     </label>

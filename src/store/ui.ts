@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 export type View = "notes" | "dashboard" | "eisenhower" | "kanban" | "graph";
 
-export type GroupingType = "all" | "folder";
+export type GroupingType = "all" | "folder" | "tag";
 
 export interface Grouping {
   type: GroupingType;

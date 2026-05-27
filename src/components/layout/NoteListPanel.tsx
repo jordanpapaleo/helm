@@ -22,6 +22,12 @@ export function NoteListPanel() {
     if (selectedGrouping.type === "folder" && selectedGrouping.id) {
       const prefix = `${selectedGrouping.id}/`;
       result = result.filter((n) => n.filePath.startsWith(prefix));
+    } else if (selectedGrouping.type === "tag" && selectedGrouping.id) {
+      const tag = selectedGrouping.id;
+      const tagPrefix = `${tag}/`;
+      result = result.filter((n) =>
+        n.frontmatter.tags.some((t) => t === tag || t.startsWith(tagPrefix)),
+      );
     }
 
     if (search.trim()) {

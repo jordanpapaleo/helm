@@ -3,7 +3,7 @@ import React, { useMemo, useState } from "react";
 import { addVault, removeVault } from "../../hooks/useVault";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { tauriCommands } from "../../lib/tauri-commands";
-import { useNoteStore } from "../../store/notes";
+import { useNoteStore, type TagNode } from "../../store/notes";
 import { useUIStore, type View } from "../../store/ui";
 import { SettingsModal } from "../settings/SettingsModal";
 
@@ -98,10 +98,126 @@ function FolderGroupings({
   );
 }
 
+function TagGroupings({
+  tags,
+  parentPath = "",
+  depth = 0,
+}: {
+  tags: Record<string, TagNode>;
+  parentPath?: string;
+  depth?: number;
+}) {
+  const { selectedGrouping, setSelectedGrouping, setView } = useUIStore();
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const entries = Object.entries(tags).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return null;
+
+  function totalNotes(node: TagNode): number {
+    const childCount = Object.values(node.children).reduce(
+      (sum, child) => sum + totalNotes(child),
+      0,
+    );
+    return node.notes.length + childCount;
+  }
+
+  return (
+    <>
+      {entries.map(([name, node]) => {
+        const fullPath = parentPath ? `${parentPath}/${name}` : name;
+        const isActive = selectedGrouping.type === "tag" && selectedGrouping.id === fullPath;
+        const hasChildren = Object.keys(node.children).length > 0;
+        const isOpen = !collapsed.has(fullPath);
+        const count = totalNotes(node);
+
+        return (
+          <React.Fragment key={fullPath}>
+            <li>
+              <div
+                className={`flex w-full items-center gap-1 rounded-md py-1 text-sm transition-colors ${
+                  isActive
+                    ? "bg-base-300 text-base-content"
+                    : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                }`}
+                style={{ paddingLeft: depth * 12 + 4 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hasChildren) {
+                      setCollapsed((prev) => {
+                        const next = new Set(prev);
+                        next.has(fullPath) ? next.delete(fullPath) : next.add(fullPath);
+                        return next;
+                      });
+                    }
+                  }}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center"
+                  aria-label={isOpen ? "Collapse" : "Expand"}
+                >
+                  {hasChildren && (
+                    <Icon
+                      icon="uil:angle-right"
+                      className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                      aria-hidden="true"
+                    />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGrouping({ type: "tag", id: fullPath });
+                    setView("notes");
+                  }}
+                  className="flex flex-1 min-w-0 items-center gap-1.5 pr-2"
+                >
+                  <span className="text-base-content/40">#</span>
+                  <span className="flex-1 truncate text-left">{name}</span>
+                  {count > 0 && <span className="shrink-0 text-xs opacity-40">{count}</span>}
+                </button>
+              </div>
+            </li>
+            {isOpen && hasChildren && (
+              <TagGroupings
+                tags={node.children}
+                parentPath={fullPath}
+                depth={depth + 1}
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+function NewFolderRow({ onCommit }: { onCommit: (name: string) => void }) {
+  const committed = React.useRef(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => { inputRef.current?.focus(); }, []);
+  return (
+    <div className="flex items-center gap-1.5 py-1" style={{ paddingLeft: 28 }}>
+      <Icon icon="uil:folder" className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
+      <input
+        ref={inputRef}
+        placeholder="folder name"
+        className="flex-1 rounded bg-base-100 px-1 text-sm outline outline-1 outline-accent"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { committed.current = true; onCommit((e.target as HTMLInputElement).value.trim()); }
+          if (e.key === "Escape") { committed.current = true; onCommit(""); }
+          e.stopPropagation();
+        }}
+        onBlur={(e) => { if (!committed.current) onCommit(e.target.value.trim()); }}
+      />
+    </div>
+  );
+}
+
 export function LeftColumn() {
   const [showSettings, setShowSettings] = useState(false);
+  const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
   const { activeView, setView, selectedGrouping, setSelectedGrouping, sidebarCollapsed, setSidebarCollapsed } = useUIStore();
-  const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths } = useNoteStore();
+  const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, tagTree } = useNoteStore();
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
@@ -265,12 +381,24 @@ export function LeftColumn() {
           </ul>
         </div>
 
-        {/* Folder groupings */}
+        {/* Folder groupings + Tags */}
         {activeVault && (
           <div className="flex-1 overflow-y-auto overflow-x-hidden border-t border-base-300 pt-2 min-h-0">
-            <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider opacity-40">
-              Folders
-            </p>
+            {/* Folders header */}
+            <div className="mb-1 flex items-center px-2">
+              <span className="flex-1 text-xs font-semibold uppercase tracking-wider opacity-40">
+                Folders
+              </span>
+              <button
+                type="button"
+                title="New folder"
+                onClick={() => setNewFolderParent(activeVault.path)}
+                className="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100"
+              >
+                <Icon icon="uil:folder-plus" className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+
             <ul className="py-1">
               {/* All notes */}
               <li>
@@ -291,9 +419,39 @@ export function LeftColumn() {
                 </button>
               </li>
 
+              {/* New folder inline input */}
+              {newFolderParent === activeVault.path && (
+                <li>
+                  <NewFolderRow
+                    onCommit={async (name) => {
+                      if (name) {
+                        try {
+                          await tauriCommands.createFolder(`${activeVault.path}/${name}`);
+                        } catch (e) {
+                          console.error("Failed to create folder:", e);
+                        }
+                      }
+                      setNewFolderParent(null);
+                    }}
+                  />
+                </li>
+              )}
+
               {/* Folder tree */}
               <FolderGroupings nodes={tree} noteCount={noteCount} />
             </ul>
+
+            {/* Tags section */}
+            {Object.keys(tagTree).length > 0 && (
+              <>
+                <p className="mb-1 mt-4 px-2 text-xs font-semibold uppercase tracking-wider opacity-40">
+                  Tags
+                </p>
+                <ul className="py-1">
+                  <TagGroupings tags={tagTree} />
+                </ul>
+              </>
+            )}
           </div>
         )}
       </div>

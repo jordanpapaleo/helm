@@ -274,38 +274,43 @@ export function LeftColumn() {
 
   if (sidebarCollapsed) {
     return (
-      <div className="flex w-10 flex-col items-center border-r border-base-300 py-2">
-        <ul className="menu menu-xs px-0">
+      <div className="flex w-10 flex-col border-r border-base-300">
+        {/* View nav icons */}
+        <div className="flex flex-col py-2">
           {VIEWS.map((v) => (
-            <li key={v.id}>
-              <button
-                type="button"
-                onClick={() => setView(v.id)}
-                title={v.label}
-                className={activeView === v.id ? "active" : ""}
-              >
-                <Icon icon={v.icon} className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </li>
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => { setSidebarCollapsed(false); setView(v.id); }}
+              title={v.label}
+              className={`btn btn-ghost btn-xs btn-square w-full rounded-none ${activeView === v.id ? "text-base-content" : "opacity-40 hover:opacity-100"}`}
+            >
+              <Icon icon={v.icon} className="h-4 w-4" aria-hidden="true" />
+            </button>
           ))}
-        </ul>
+        </div>
+
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={() => setShowSettings(true)}
-          title="Settings"
-          className="btn btn-ghost btn-xs btn-square"
-        >
-          <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed(false)}
-          title="Expand sidebar"
-          className="btn btn-ghost btn-xs btn-square"
-        >
-          <Icon icon="uil:arrow-right" className="h-4 w-4" aria-hidden="true" />
-        </button>
+
+        {/* Footer icons — same position as expanded state */}
+        <div className="flex flex-col border-t border-base-300 py-2">
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            title="Settings"
+            className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
+          >
+            <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            title="Expand sidebar"
+            className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
+          >
+            <Icon icon="uil:arrow-right" className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       </div>
     );
@@ -457,13 +462,12 @@ export function LeftColumn() {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center gap-2 border-t border-base-300 px-3 py-2">
-        <div className="flex-1" />
+      <div className="flex flex-col border-t border-base-300 py-2">
         <button
           type="button"
           onClick={() => setShowSettings(true)}
           title="Settings"
-          className="btn btn-ghost btn-xs btn-square"
+          className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
         >
           <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
@@ -471,7 +475,7 @@ export function LeftColumn() {
           type="button"
           onClick={() => setSidebarCollapsed(true)}
           title="Collapse sidebar"
-          className="btn btn-ghost btn-xs btn-square"
+          className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
         >
           <Icon icon="uil:arrow-left" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>

@@ -243,6 +243,11 @@ function GeneralTab() {
         checked={settings.showNoteCountOnTags}
         onChange={(v) => updateSettings({ showNoteCountOnTags: v })}
       />
+      <CheckboxRow
+        label="Default to Markdown view"
+        checked={settings.defaultNoteView === "markdown"}
+        onChange={(v) => updateSettings({ defaultNoteView: v ? "markdown" : "editor" })}
+      />
     </div>
   );
 }

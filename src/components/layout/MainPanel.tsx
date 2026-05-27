@@ -1,8 +1,9 @@
 import { confirm } from "@tauri-apps/plugin-dialog";
-import { useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { extractInlineTags, extractWikiLinks, serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
+import { useSettingsStore } from "../../store/settings";
 import { useUIStore } from "../../store/ui";
 import type { NoteFrontmatter } from "../../types/note";
 import { DashboardView } from "../../views/DashboardView";
@@ -12,6 +13,51 @@ import { KanbanView } from "../../views/KanbanView";
 import { BacklinksPanel } from "../editor/BacklinksPanel";
 import { NoteEditor, type NoteEditorHandle } from "../editor/NoteEditor";
 import { PropertyPanel } from "../editor/PropertyPanel";
+
+function MarkdownTextarea({
+  content,
+  onSave,
+  locked,
+}: {
+  content: string;
+  onSave: (md: string) => void;
+  locked?: boolean;
+}) {
+  const [value, setValue] = useState(content);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flush = useCallback(() => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    onSave(value);
+  }, [onSave, value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (locked) return;
+    const next = e.target.value;
+    setValue(next);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => onSave(next), 1000);
+  };
+
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+
+  return (
+    <textarea
+      value={value}
+      onChange={handleChange}
+      onBlur={flush}
+      readOnly={locked}
+      spellCheck={false}
+      className={`flex-1 resize-none bg-transparent px-12 py-6 outline-none ${locked ? "opacity-75 cursor-not-allowed" : ""}`}
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--editor-font-size)",
+        lineHeight: "var(--editor-line-height)",
+        color: "var(--color-text)",
+      }}
+    />
+  );
+}
 
 // Extract absolute file paths from asset:// URLs embedded in markdown image tags.
 // http://asset.localhost/Users/foo/notes/assets/img.png → /Users/foo/notes/assets/img.png
@@ -34,8 +80,18 @@ function extractAssetPaths(content: string): Set<string> {
 export function MainPanel() {
   const { activeView } = useUIStore();
   const { notes, selectedNoteId, updateNote, removeNote, selectNote } = useNoteStore();
+  const { settings } = useSettingsStore();
   const selectedNote = notes.find((n) => n.id === selectedNoteId);
   const editorRef = useRef<NoteEditorHandle>(null);
+
+  const [markdownMode, setMarkdownMode] = useState(
+    () => settings.defaultNoteView === "markdown",
+  );
+
+  // Reset mode to default when switching notes
+  useEffect(() => {
+    setMarkdownMode(settings.defaultNoteView === "markdown");
+  }, [selectedNoteId, settings.defaultNoteView]);
 
   async function handleSave(content: string) {
     if (!selectedNote) return;
@@ -121,13 +177,24 @@ export function MainPanel() {
               onChange={handleFrontmatterChange}
               onTitleTab={() => editorRef.current?.focus()}
               onDelete={handleDelete}
+              markdownMode={markdownMode}
+              onToggleMarkdown={() => setMarkdownMode((v) => !v)}
             />
-            <NoteEditor
-              ref={editorRef}
-              note={selectedNote}
-              onSave={handleSave}
-              locked={selectedNote.frontmatter.locked}
-            />
+            {markdownMode ? (
+              <MarkdownTextarea
+                key={selectedNote.id}
+                content={selectedNote.content}
+                onSave={handleSave}
+                locked={selectedNote.frontmatter.locked}
+              />
+            ) : (
+              <NoteEditor
+                ref={editorRef}
+                note={selectedNote}
+                onSave={handleSave}
+                locked={selectedNote.frontmatter.locked}
+              />
+            )}
             <BacklinksPanel note={selectedNote} />
           </div>
         ) : (

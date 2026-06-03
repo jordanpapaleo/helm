@@ -109,7 +109,6 @@ export function FindReplaceBar({
     setMarkdownMatches(matches);
     setMarkdownMatchIdx(matches.length > 0 ? 0 : -1);
     if (matches.length > 0) {
-      textareaHandle.textarea.focus();
       textareaHandle.textarea.setSelectionRange(matches[0].start, matches[0].end);
     }
   }, [findTerm, caseSensitive, wholeWord, mode, textareaHandle]);

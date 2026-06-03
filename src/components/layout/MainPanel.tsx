@@ -130,10 +130,7 @@ export function MainPanel() {
             setFindExpanded(false);
             return true;
           }
-          setFindExpanded((exp) => {
-            if (!exp) return true;
-            return true;
-          });
+          setFindExpanded(true);
           return true;
         });
       }

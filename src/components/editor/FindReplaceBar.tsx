@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
 import type { Editor } from "@tiptap/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { findReplacePluginKey } from "./findReplaceExtension";
 
 interface MarkdownTextareaHandle {
@@ -102,7 +102,7 @@ export function FindReplaceBar({
   }, [mode, editor]);
 
   // Markdown mode: recompute matches on query / option change
-  const runMarkdownFind = useCallback(() => {
+  useEffect(() => {
     if (mode !== "markdown" || !textareaHandle?.textarea) return;
     const text = textareaHandle.textarea.value;
     const matches = findTextMatches(text, findTerm, caseSensitive, wholeWord);
@@ -113,10 +113,6 @@ export function FindReplaceBar({
       textareaHandle.textarea.setSelectionRange(matches[0].start, matches[0].end);
     }
   }, [findTerm, caseSensitive, wholeWord, mode, textareaHandle]);
-
-  useEffect(() => {
-    runMarkdownFind();
-  }, [runMarkdownFind]);
 
   const matchCount = mode === "editor" ? editorMatchState.matchCount : markdownMatches.length;
   const currentMatch =
@@ -165,7 +161,9 @@ export function FindReplaceBar({
       const text = textareaHandle.textarea.value;
       const newContent = text.slice(0, m.start) + replaceTerm + text.slice(m.end);
       textareaHandle.replaceContent(newContent);
-      setTimeout(runMarkdownFind, 0);
+      const newMatches = findTextMatches(newContent, findTerm, caseSensitive, wholeWord);
+      setMarkdownMatches(newMatches);
+      setMarkdownMatchIdx(newMatches.length > 0 ? 0 : -1);
     }
   };
 

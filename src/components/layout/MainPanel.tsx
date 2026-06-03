@@ -1,5 +1,5 @@
 import { confirm } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { extractInlineTags, extractWikiLinks, serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
@@ -15,20 +15,24 @@ import { BacklinksPanel } from "../editor/BacklinksPanel";
 import { NoteEditor, type NoteEditorHandle } from "../editor/NoteEditor";
 import { PropertyPanel } from "../editor/PropertyPanel";
 
-function MarkdownTextarea({
-  content,
-  onSave,
-  locked,
-}: {
-  content: string;
-  onSave: (md: string) => void;
-  locked?: boolean;
-}) {
+interface MarkdownTextareaHandle {
+  textarea: HTMLTextAreaElement | null;
+  replaceContent: (newContent: string) => void;
+}
+
+const MarkdownTextarea = forwardRef<
+  MarkdownTextareaHandle,
+  { content: string; onSave: (md: string) => void; locked?: boolean }
+>(function MarkdownTextarea({ content, onSave, locked }, ref) {
   const [value, setValue] = useState(content);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flush = useCallback(() => {
-    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     onSave(value);
   }, [onSave, value]);
 
@@ -40,10 +44,26 @@ function MarkdownTextarea({
     saveTimer.current = setTimeout(() => onSave(next), 1000);
   };
 
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      get textarea() { return textareaRef.current; },
+      replaceContent(newContent: string) {
+        setValue(newContent);
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => onSave(newContent), 1000);
+      },
+    }),
+    [onSave],
+  );
 
   return (
     <textarea
+      ref={textareaRef}
       value={value}
       onChange={handleChange}
       onBlur={flush}
@@ -58,7 +78,7 @@ function MarkdownTextarea({
       }}
     />
   );
-}
+});
 
 // Extract absolute file paths from asset:// URLs embedded in markdown image tags.
 // http://asset.localhost/Users/foo/notes/assets/img.png → /Users/foo/notes/assets/img.png

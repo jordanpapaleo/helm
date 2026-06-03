@@ -7,7 +7,7 @@ import { serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore, type TagNode } from "../../store/notes";
 import { useTrashStore } from "../../store/trash";
-import { useUIStore, type View } from "../../store/ui";
+import { useUIStore, type View, type Grouping } from "../../store/ui";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
 import { SettingsModal } from "../settings/SettingsModal";
 import { ulid } from "ulid";
@@ -24,13 +24,15 @@ function FolderGroupings({
   nodes,
   noteCount,
   onContextMenu,
+  onNavigate,
 }: {
   depth?: number;
   nodes: TreeNode[];
   noteCount: (path: string) => number;
   onContextMenu: (e: React.MouseEvent, folderPath: string) => void;
+  onNavigate: (grouping: Grouping) => void;
 }) {
-  const { selectedGrouping, setSelectedGrouping, setView } = useUIStore();
+  const { selectedGrouping } = useUIStore();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const folderNodes = nodes.filter((n): n is Extract<TreeNode, { kind: "folder" }> => n.kind === "folder");
@@ -80,10 +82,7 @@ function FolderGroupings({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedGrouping({ type: "folder", id: node.path });
-                    setView("notes");
-                  }}
+                  onClick={() => onNavigate({ type: "folder", id: node.path })}
                   className="flex flex-1 min-w-0 items-center gap-1.5 pr-2"
                 >
                   <Icon icon="uil:folder" className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
@@ -98,6 +97,7 @@ function FolderGroupings({
                 nodes={node.children}
                 noteCount={noteCount}
                 onContextMenu={onContextMenu}
+                onNavigate={onNavigate}
               />
             )}
           </React.Fragment>
@@ -111,12 +111,14 @@ function TagGroupings({
   tags,
   parentPath = "",
   depth = 0,
+  onNavigate,
 }: {
   tags: Record<string, TagNode>;
   parentPath?: string;
   depth?: number;
+  onNavigate: (grouping: Grouping) => void;
 }) {
-  const { selectedGrouping, setSelectedGrouping, setView } = useUIStore();
+  const { selectedGrouping } = useUIStore();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const entries = Object.entries(tags).sort(([a], [b]) => a.localeCompare(b));
@@ -174,10 +176,7 @@ function TagGroupings({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedGrouping({ type: "tag", id: fullPath });
-                    setView("notes");
-                  }}
+                  onClick={() => onNavigate({ type: "tag", id: fullPath })}
                   className="flex flex-1 min-w-0 items-center gap-1.5 pr-2"
                 >
                   <span className="text-base-content/40">#</span>
@@ -191,6 +190,7 @@ function TagGroupings({
                 tags={node.children}
                 parentPath={fullPath}
                 depth={depth + 1}
+                onNavigate={onNavigate}
               />
             )}
           </React.Fragment>
@@ -228,8 +228,8 @@ export function LeftColumn() {
   const [showSettings, setShowSettings] = useState(false);
   const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
   const [folderMenu, setFolderMenu] = useState<MenuState>(null);
-  const { activeView, setView, selectedGrouping, setSelectedGrouping, sidebarCollapsed, setSidebarCollapsed } = useUIStore();
-  const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, tagTree } = useNoteStore();
+  const { activeView, setView, selectedGrouping, setSelectedGrouping, sidebarCollapsed, setSidebarCollapsed, navigate } = useUIStore();
+  const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, tagTree, selectedNoteId } = useNoteStore();
   const trashCount = useTrashStore((s) => s.items.length);
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
@@ -371,7 +371,7 @@ export function LeftColumn() {
             <button
               key={v.id}
               type="button"
-              onClick={() => { setSidebarCollapsed(false); setView(v.id); }}
+              onClick={() => { setSidebarCollapsed(false); navigate({ view: v.id, selectedNoteId, selectedGrouping }); }}
               title={v.label}
               className={`btn btn-ghost btn-xs btn-square w-full rounded-none ${activeView === v.id ? "text-base-content" : "opacity-40 hover:opacity-100"}`}
             >
@@ -418,7 +418,7 @@ export function LeftColumn() {
             <li key={v.id}>
               <button
                 type="button"
-                onClick={() => setView(v.id)}
+                onClick={() => navigate({ view: v.id, selectedNoteId, selectedGrouping })}
                 className={`flex w-full items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
                   activeView === v.id
                     ? "bg-base-300 text-base-content"
@@ -507,10 +507,7 @@ export function LeftColumn() {
               <li>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedGrouping({ type: "all", id: null });
-                    setView("notes");
-                  }}
+                  onClick={() => navigate({ view: "notes", selectedNoteId, selectedGrouping: { type: "all", id: null } })}
                   className={`flex w-full items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
                     selectedGrouping.type === "all" && activeView === "notes"
                       ? "bg-base-300 text-base-content"
@@ -541,7 +538,12 @@ export function LeftColumn() {
               )}
 
               {/* Folder tree */}
-              <FolderGroupings nodes={tree} noteCount={noteCount} onContextMenu={handleFolderContextMenu} />
+              <FolderGroupings
+                nodes={tree}
+                noteCount={noteCount}
+                onContextMenu={handleFolderContextMenu}
+                onNavigate={(grouping) => navigate({ view: "notes", selectedNoteId, selectedGrouping: grouping })}
+              />
             </ul>
 
             {/* Tags section */}
@@ -551,7 +553,10 @@ export function LeftColumn() {
                   Tags
                 </p>
                 <ul className="py-1">
-                  <TagGroupings tags={tagTree} />
+                  <TagGroupings
+                    tags={tagTree}
+                    onNavigate={(grouping) => navigate({ view: "notes", selectedNoteId, selectedGrouping: grouping })}
+                  />
                 </ul>
               </>
             )}

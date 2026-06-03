@@ -41,8 +41,7 @@ function NoteCard({
   index: number;
   quadrant: EisenhowerQuadrant;
 }) {
-  const { selectNote } = useNoteStore();
-  const { setView } = useUIStore();
+  const { navigate, selectedGrouping } = useUIStore();
   const { ref, isDragSource } = useSortable({
     id: note.id,
     index,
@@ -57,10 +56,7 @@ function NoteCard({
     // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop element managed by dnd-kit
     <div
       ref={ref}
-      onClick={() => {
-        selectNote(note.id);
-        setView("notes");
-      }}
+      onClick={() => navigate({ view: "notes", selectedNoteId: note.id, selectedGrouping })}
       className={`card card-compact bg-base-100 cursor-pointer select-none transition-opacity ${
         isDragSource ? "opacity-40" : "hover:border-accent/50"
       }`}
@@ -146,8 +142,8 @@ function Quadrant({
 }
 
 export function EisenhowerView() {
-  const { notes, updateNote, addNote, selectNote, vaults, activeVaultId } = useNoteStore();
-  const { setView } = useUIStore();
+  const { notes, updateNote, addNote, vaults, activeVaultId } = useNoteStore();
+  const { navigate, selectedGrouping } = useUIStore();
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const activeNotes = useMemo(
@@ -296,8 +292,7 @@ export function EisenhowerView() {
     try {
       await tauriCommands.writeNote(filePath, serializeNote(note));
       addNote(note);
-      selectNote(id);
-      setView("notes");
+      navigate({ view: "notes", selectedNoteId: id, selectedGrouping });
     } catch (e) {
       console.error("Failed to create note:", e);
     }

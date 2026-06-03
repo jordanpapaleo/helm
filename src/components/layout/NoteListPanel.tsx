@@ -14,7 +14,7 @@ import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
 type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
 
 export function NoteListPanel() {
-  const { selectedGrouping, setView } = useUIStore();
+  const { selectedGrouping, setView, navigate } = useUIStore();
   const { notes, selectedNoteId, selectNote, vaults, activeVaultId, addNote, updateNote, removeNote, knownFolderPaths } = useNoteStore();
   const { items: trashItems, removeFromTrash, permanentlyDelete, addToTrash } = useTrashStore();
   const [search, setSearch] = useState("");
@@ -242,8 +242,7 @@ export function NoteListPanel() {
                 <button
                   type="button"
                   onClick={() => {
-                    selectNote(note.id);
-                    setView("notes");
+                    navigate({ view: "notes", selectedNoteId: note.id, selectedGrouping });
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();

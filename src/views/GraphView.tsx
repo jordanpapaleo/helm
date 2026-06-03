@@ -75,8 +75,7 @@ function linkKey(link: GraphLink): string {
 
 export function GraphView() {
   const { notes, updateNote } = useNoteStore();
-  const { setView } = useUIStore();
-  const { selectNote } = useNoteStore();
+  const { navigate, selectedGrouping } = useUIStore();
 
   // biome-ignore lint/suspicious/noExplicitAny: react-force-graph-2d does not export ref instance types
   const fgRef = useRef<any>(null);
@@ -230,11 +229,12 @@ export function GraphView() {
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
       if (node.id) {
-        selectNote(node.id);
-        setView("notes");
+        navigate({ view: "notes", selectedNoteId: node.id, selectedGrouping });
       }
     },
-    [selectNote, setView],
+    // selectedNoteId and selectedGrouping are stable enough here — navigate handles dedup
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [navigate, selectedGrouping],
   );
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {

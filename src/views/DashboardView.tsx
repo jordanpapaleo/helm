@@ -126,8 +126,8 @@ const tooltipTextStyle = { color: "var(--color-base-content)" };
  */
 export function DashboardView() {
   const { colors, strokeColor } = useChartColors();
-  const { notes, selectNote } = useNoteStore();
-  const { setView } = useUIStore();
+  const { notes } = useNoteStore();
+  const { navigate, selectedGrouping } = useUIStore();
   const [activeFilter, setActiveFilter] = useState<Filter>("all");
 
   const subset = filterNotes(notes, activeFilter)
@@ -171,8 +171,7 @@ export function DashboardView() {
   }
 
   function handleNoteClick(note: Note) {
-    selectNote(note.id);
-    setView("notes");
+    navigate({ view: "notes", selectedNoteId: note.id, selectedGrouping });
   }
 
   const filterLabel: Record<Filter, string> = {

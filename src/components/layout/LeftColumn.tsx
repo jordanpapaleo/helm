@@ -50,12 +50,12 @@ function FolderGroupings({
           <React.Fragment key={node.path}>
             <li>
               <div
-                className={`flex w-full items-center gap-1 rounded-md py-1 text-sm transition-colors ${
+                className={`flex w-full items-center gap-1 py-1 text-sm transition-colors ${
                   isActive
                     ? "bg-base-300 text-base-content"
                     : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
                 }`}
-                style={{ paddingLeft: depth * 12 + 4 }}
+                style={{ paddingLeft: depth * 12 + 8 }}
                 onContextMenu={(e) => onContextMenu(e, node.path)}
               >
                 <button
@@ -143,12 +143,12 @@ function TagGroupings({
           <React.Fragment key={fullPath}>
             <li>
               <div
-                className={`flex w-full items-center gap-1 rounded-md py-1 text-sm transition-colors ${
+                className={`flex w-full items-center gap-1 py-1 text-sm transition-colors ${
                   isActive
                     ? "bg-base-300 text-base-content"
                     : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
                 }`}
-                style={{ paddingLeft: depth * 12 + 4 }}
+                style={{ paddingLeft: depth * 12 + 8 }}
               >
                 <button
                   type="button"
@@ -411,15 +411,19 @@ export function LeftColumn() {
       className="flex flex-col border-r border-base-300"
       style={{ width: "var(--sidebar-width)", minWidth: "var(--sidebar-width)" }}
     >
-      <div className="flex flex-1 flex-col overflow-hidden p-2">
+      <div className="flex flex-1 flex-col overflow-hidden py-2">
         {/* View nav */}
-        <ul className="menu menu-sm mb-6 px-0">
+        <ul className="mb-4">
           {VIEWS.map((v) => (
             <li key={v.id}>
               <button
                 type="button"
                 onClick={() => setView(v.id)}
-                className={activeView === v.id ? "active" : ""}
+                className={`flex w-full items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                  activeView === v.id
+                    ? "bg-base-300 text-base-content"
+                    : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                }`}
               >
                 <Icon icon={v.icon} className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>{v.label}</span>
@@ -433,10 +437,14 @@ export function LeftColumn() {
           <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider opacity-40">
             Vaults
           </p>
-          <ul className="menu menu-sm px-0">
+          <ul>
             {vaults.map((vault) => (
               <li key={vault.id} className="group">
-                <div className={activeVaultId === vault.id ? "active" : ""}>
+                <div className={`flex items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                  activeVaultId === vault.id
+                    ? "bg-base-300 text-base-content"
+                    : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                }`}>
                   <button
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
@@ -467,7 +475,7 @@ export function LeftColumn() {
               <button
                 type="button"
                 onClick={handleAddVault}
-                className="opacity-50 hover:opacity-100"
+                className="flex w-full items-center gap-2 px-2 py-1.5 text-sm text-base-content/50 transition-colors hover:bg-base-200 hover:text-base-content"
               >
                 <span className="text-base leading-none">+</span>
                 <span>Add Vault</span>
@@ -503,7 +511,7 @@ export function LeftColumn() {
                     setSelectedGrouping({ type: "all", id: null });
                     setView("notes");
                   }}
-                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  className={`flex w-full items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
                     selectedGrouping.type === "all" && activeView === "notes"
                       ? "bg-base-300 text-base-content"
                       : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
@@ -558,7 +566,7 @@ export function LeftColumn() {
                       setSelectedGrouping({ type: "trash", id: null });
                       setView("notes");
                     }}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                    className={`flex w-full items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
                       selectedGrouping.type === "trash"
                         ? "bg-base-300 text-base-content"
                         : "text-base-content/60 hover:bg-base-200 hover:text-base-content"

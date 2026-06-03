@@ -338,3 +338,11 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
 .hljs-meta {
   color: var(--color-syntax-meta);
 }
+
+.find-replace-highlight {
+  background-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border-radius: 2px;
+}
+.find-replace-highlight-active {
+  background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+}

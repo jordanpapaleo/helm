@@ -52,6 +52,8 @@ export interface NoteFrontmatter {
   locked?: boolean;
   /** Whether the note is pinned to the top of lists */
   pinned?: boolean;
+  /** Excludes the note from Kanban and Eisenhower views */
+  unmanaged?: boolean;
   /** Position index within a Kanban column (persists drag-and-drop order) */
   kanbanOrder?: number;
   /** Position index within an Eisenhower quadrant (persists drag-and-drop order) */

@@ -133,6 +133,16 @@ export function NoteListPanel() {
     }
   }
 
+  async function handleFrontmatterToggle(note: Note, field: "locked" | "unmanaged") {
+    const updated = { ...note, frontmatter: { ...note.frontmatter, [field]: !note.frontmatter[field] } };
+    try {
+      await tauriCommands.writeNote(note.filePath, serializeNote(updated));
+      updateNote(updated);
+    } catch (e) {
+      console.error(`Failed to toggle ${field}:`, e);
+    }
+  }
+
   async function handleDeleteNote(note: Note) {
     const ok = await confirm(
       `Move "${note.frontmatter.title || "Untitled"}" to Trash?`,
@@ -246,6 +256,16 @@ export function NoteListPanel() {
                           kind: "action",
                           label: note.frontmatter.pinned ? "Unpin" : "Pin",
                           onClick: () => handlePinToggle(note),
+                        },
+                        {
+                          kind: "action",
+                          label: note.frontmatter.locked ? "Unlock" : "Lock",
+                          onClick: () => handleFrontmatterToggle(note, "locked"),
+                        },
+                        {
+                          kind: "action",
+                          label: note.frontmatter.unmanaged ? "Mark Managed" : "Mark Unmanaged",
+                          onClick: () => handleFrontmatterToggle(note, "unmanaged"),
                         },
                         {
                           kind: "submenu",

@@ -151,7 +151,7 @@ export function EisenhowerView() {
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const activeNotes = useMemo(
-    () => notes.filter((n) => n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing"),
+    () => notes.filter((n) => !n.frontmatter.unmanaged && (n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing")),
     [notes],
   );
 

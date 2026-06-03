@@ -139,7 +139,7 @@ export function KanbanView() {
     const init: Record<string, string[]> = {};
     for (const s of NOTE_STATES) {
       init[s] = notes
-        .filter((n) => n.frontmatter.state === s)
+        .filter((n) => n.frontmatter.state === s && !n.frontmatter.unmanaged)
         .sort(
           (a, b) =>
             (a.frontmatter.kanbanOrder ?? Infinity) - (b.frontmatter.kanbanOrder ?? Infinity),

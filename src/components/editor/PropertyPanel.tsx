@@ -29,6 +29,9 @@ const KNOWN_FIELDS = new Set([
   "links",
   "locked",
   "pinned",
+  "unmanaged",
+  "kanbanOrder",
+  "eisenhowerOrder",
 ]);
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -226,6 +229,16 @@ export function PropertyPanel({
             className="rounded accent-[var(--color-accent)]"
           />
           Locked
+        </label>
+
+        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+          <input
+            type="checkbox"
+            checked={frontmatter.unmanaged ?? false}
+            onChange={(e) => onChange({ unmanaged: e.target.checked })}
+            className="rounded accent-[var(--color-accent)]"
+          />
+          Unmanaged
         </label>
 
         {/* Expand toggle */}

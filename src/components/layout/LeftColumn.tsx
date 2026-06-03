@@ -1,12 +1,16 @@
 import { Icon } from "@iconify/react";
 import React, { useMemo, useState } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { addVault, removeVault } from "../../hooks/useVault";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
+import { serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore, type TagNode } from "../../store/notes";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore, type View } from "../../store/ui";
+import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
 import { SettingsModal } from "../settings/SettingsModal";
+import { ulid } from "ulid";
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "uil:dashboard" },
@@ -19,10 +23,12 @@ function FolderGroupings({
   depth = 0,
   nodes,
   noteCount,
+  onContextMenu,
 }: {
   depth?: number;
   nodes: TreeNode[];
   noteCount: (path: string) => number;
+  onContextMenu: (e: React.MouseEvent, folderPath: string) => void;
 }) {
   const { selectedGrouping, setSelectedGrouping, setView } = useUIStore();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -50,6 +56,7 @@ function FolderGroupings({
                     : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
                 }`}
                 style={{ paddingLeft: depth * 12 + 4 }}
+                onContextMenu={(e) => onContextMenu(e, node.path)}
               >
                 <button
                   type="button"
@@ -90,6 +97,7 @@ function FolderGroupings({
                 depth={depth + 1}
                 nodes={node.children}
                 noteCount={noteCount}
+                onContextMenu={onContextMenu}
               />
             )}
           </React.Fragment>
@@ -214,9 +222,12 @@ function NewFolderRow({ onCommit }: { onCommit: (name: string) => void }) {
   );
 }
 
+type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
+
 export function LeftColumn() {
   const [showSettings, setShowSettings] = useState(false);
   const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
+  const [folderMenu, setFolderMenu] = useState<MenuState>(null);
   const { activeView, setView, selectedGrouping, setSelectedGrouping, sidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, tagTree } = useNoteStore();
   const trashCount = useTrashStore((s) => s.items.length);
@@ -264,7 +275,6 @@ export function LeftColumn() {
 
   async function handleRemoveVault(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    const { confirm } = await import("@tauri-apps/plugin-dialog");
     const vault = vaults.find((v) => v.id === id);
     const confirmed = await confirm(
       `Remove vault "${vault?.name}"? Notes on disk are untouched.`,
@@ -272,6 +282,84 @@ export function LeftColumn() {
     );
     if (!confirmed) return;
     await removeVault(id);
+  }
+
+  async function handleCreateNoteInFolder(folderPath: string) {
+    if (!activeVault) return;
+    const id = ulid();
+    const today = new Date().toISOString().split("T")[0];
+    const slug = id.toLowerCase();
+    const filePath = `${folderPath}/${slug}.md`;
+    const note = {
+      id,
+      filePath,
+      fileName: `${slug}.md`,
+      content: "",
+      vaultId: activeVault.id,
+      frontmatter: {
+        id,
+        title: "Untitled",
+        created: today,
+        updated: today,
+        tags: [],
+        urgent: false,
+        important: false,
+        state: "Prepare" as const,
+        blocked: false,
+      },
+    };
+    try {
+      await tauriCommands.writeNote(filePath, serializeNote(note));
+      useNoteStore.getState().addNote(note);
+      useNoteStore.getState().selectNote(id);
+      setView("notes");
+    } catch (e) {
+      console.error("Failed to create note:", e);
+    }
+  }
+
+  async function handleDeleteFolder(folderPath: string) {
+    const name = folderPath.split("/").pop();
+    const ok = await confirm(
+      `Delete folder "${name}" and all its contents? This cannot be undone.`,
+      { title: "Delete Folder", kind: "warning" },
+    );
+    if (!ok) return;
+    const { notes: allNotes, selectedNoteId, selectNote: sel, removeNote } = useNoteStore.getState();
+    for (const n of allNotes) {
+      if (n.filePath.startsWith(`${folderPath}/`)) {
+        if (n.id === selectedNoteId) sel(null);
+        removeNote(n.id);
+      }
+    }
+    try {
+      await tauriCommands.deleteFolder(folderPath);
+    } catch (e) {
+      console.error("Failed to delete folder:", e);
+    }
+  }
+
+  function handleFolderContextMenu(e: React.MouseEvent, folderPath: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setFolderMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { kind: "action", label: "New Note Here", onClick: () => handleCreateNoteInFolder(folderPath) },
+        {
+          kind: "action",
+          label: "New Subfolder",
+          onClick: () => {
+            setNewFolderParent(folderPath);
+            setSelectedGrouping({ type: "folder", id: folderPath });
+            setView("notes");
+          },
+        },
+        { kind: "separator" },
+        { kind: "action", label: "Delete", danger: true, onClick: () => handleDeleteFolder(folderPath) },
+      ],
+    });
   }
 
   if (sidebarCollapsed) {
@@ -445,7 +533,7 @@ export function LeftColumn() {
               )}
 
               {/* Folder tree */}
-              <FolderGroupings nodes={tree} noteCount={noteCount} />
+              <FolderGroupings nodes={tree} noteCount={noteCount} onContextMenu={handleFolderContextMenu} />
             </ul>
 
             {/* Tags section */}
@@ -508,6 +596,14 @@ export function LeftColumn() {
       </div>
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {folderMenu && (
+        <ContextMenu
+          x={folderMenu.x}
+          y={folderMenu.y}
+          items={folderMenu.items}
+          onClose={() => setFolderMenu(null)}
+        />
+      )}
     </div>
   );
 }

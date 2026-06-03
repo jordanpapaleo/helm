@@ -84,7 +84,16 @@ export const FindReplaceExtension = Extension.create({
           }),
           apply(tr, prev) {
             const action = tr.getMeta(findReplacePluginKey) as FindReplaceAction | undefined;
-            if (!action) return prev;
+            if (!action) {
+              if (!tr.docChanged || prev.matches.length === 0) return prev;
+              const mapped = prev.matches
+                .map((m) => ({
+                  from: tr.mapping.map(m.from),
+                  to: tr.mapping.map(m.to, -1),
+                }))
+                .filter((m) => m.from < m.to);
+              return { ...prev, matches: mapped };
+            }
             switch (action.type) {
               case "OPEN":
                 return { ...prev, isOpen: true };
@@ -138,14 +147,20 @@ export const FindReplaceExtension = Extension.create({
       openFind:
         () =>
         ({ tr, dispatch }) => {
-          if (dispatch) tr.setMeta(findReplacePluginKey, { type: "OPEN" } as FindReplaceAction);
+          if (dispatch) {
+            tr.setMeta(findReplacePluginKey, { type: "OPEN" } as FindReplaceAction);
+            dispatch(tr);
+          }
           return true;
         },
 
       closeFind:
         () =>
         ({ tr, dispatch }) => {
-          if (dispatch) tr.setMeta(findReplacePluginKey, { type: "CLOSE" } as FindReplaceAction);
+          if (dispatch) {
+            tr.setMeta(findReplacePluginKey, { type: "CLOSE" } as FindReplaceAction);
+            dispatch(tr);
+          }
           return true;
         },
 
@@ -154,13 +169,15 @@ export const FindReplaceExtension = Extension.create({
         ({ tr, dispatch, state }) => {
           const s = findReplacePluginKey.getState(state);
           if (!s?.isOpen) return false;
-          if (dispatch)
+          if (dispatch) {
             tr.setMeta(findReplacePluginKey, {
               type: "FIND",
               query,
               caseSensitive,
               wholeWord,
             } as FindReplaceAction);
+            dispatch(tr);
+          }
           return true;
         },
 
@@ -200,34 +217,38 @@ export const FindReplaceExtension = Extension.create({
 
       replaceCurrent:
         (replacement) =>
-        ({ tr, state, dispatch, editor }) => {
+        ({ tr, state, dispatch }) => {
           const s = findReplacePluginKey.getState(state);
           if (!s || s.activeMatchIndex < 0) return false;
           const match = s.matches[s.activeMatchIndex];
           if (!match) return false;
           if (dispatch) {
             tr.insertText(replacement, match.from, match.to);
+            tr.setMeta(findReplacePluginKey, {
+              type: "FIND",
+              query: s.query,
+              caseSensitive: s.caseSensitive,
+              wholeWord: s.wholeWord,
+            } as FindReplaceAction);
             dispatch(tr);
-            setTimeout(
-              () => editor.commands.setFindQuery(s.query, s.caseSensitive, s.wholeWord),
-              0,
-            );
           }
           return true;
         },
 
       replaceAllMatches:
         (replacement) =>
-        ({ tr, state, dispatch, editor }) => {
+        ({ tr, state, dispatch }) => {
           const s = findReplacePluginKey.getState(state);
           if (!s || s.matches.length === 0) return false;
           if (dispatch) {
             [...s.matches].reverse().forEach(({ from, to }) => tr.insertText(replacement, from, to));
+            tr.setMeta(findReplacePluginKey, {
+              type: "FIND",
+              query: s.query,
+              caseSensitive: s.caseSensitive,
+              wholeWord: s.wholeWord,
+            } as FindReplaceAction);
             dispatch(tr);
-            setTimeout(
-              () => editor.commands.setFindQuery(s.query, s.caseSensitive, s.wholeWord),
-              0,
-            );
           }
           return true;
         },

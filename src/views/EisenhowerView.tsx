@@ -273,7 +273,7 @@ export function EisenhowerView() {
     if (!vault) return;
     const q = EISENHOWER_QUADRANTS[quadrant];
     const id = ulid();
-    const filePath = noteFilePath(vault.path, `untitled-${id.slice(-8).toLowerCase()}`);
+    const filePath = noteFilePath(vault.path, id.toLowerCase());
     const note: Note = {
       id,
       filePath,

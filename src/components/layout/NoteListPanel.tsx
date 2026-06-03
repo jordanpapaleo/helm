@@ -54,22 +54,24 @@ export function NoteListPanel() {
       selectedGrouping.type === "folder" && selectedGrouping.id
         ? selectedGrouping.id
         : vault.path;
+    const contextTag =
+      selectedGrouping.type === "tag" && selectedGrouping.id ? selectedGrouping.id : null;
     const id = ulid();
     const today = new Date().toISOString().split("T")[0];
-    const slug = `untitled-${id.slice(-8).toLowerCase()}`;
+    const slug = id.toLowerCase();
     const filePath = `${folderPath}/${slug}.md`;
     const note: Note = {
       id,
       filePath,
       fileName: `${slug}.md`,
-      content: "",
+      content: contextTag ? `#${contextTag}` : "",
       vaultId: vault.id,
       frontmatter: {
         id,
         title: "Untitled",
         created: today,
         updated: today,
-        tags: [],
+        tags: contextTag ? [contextTag] : [],
         urgent: false,
         important: false,
         state: "Prepare",

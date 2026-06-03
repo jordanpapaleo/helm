@@ -3,6 +3,10 @@ import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import Paragraph from "@tiptap/extension-paragraph";
 import Placeholder from "@tiptap/extension-placeholder";
+import { Table } from "@tiptap/extension-table";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TableRow from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { TextSelection } from "@tiptap/pm/state";
@@ -278,6 +282,10 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         TaskItemMarkdown.configure({ nested: true }),
         ClearMarksOnEnter,
         Image.configure({ inline: false, allowBase64: false }),
+        Table.configure({ resizable: false }),
+        TableRow,
+        TableHeader,
+        TableCell,
         WikiLinkExtension.configure({
           suggestion: {
             items: ({ query }: { query: string }) =>

@@ -269,7 +269,7 @@ export function FileTree({ notes, vault }: Props) {
 
   async function handleCreateNote(folderPath: string) {
     const id = ulid();
-    const slug = `untitled-${id.slice(-8).toLowerCase()}`;
+    const slug = id.toLowerCase();
     const filePath = `${folderPath}/${slug}.md`;
     const fileName = `${slug}.md`;
     const today = new Date().toISOString().split("T")[0];

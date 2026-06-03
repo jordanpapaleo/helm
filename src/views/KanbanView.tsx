@@ -247,7 +247,7 @@ export function KanbanView() {
   async function createNoteInColumn(state: NoteState) {
     if (!vault) return;
     const id = ulid();
-    const filePath = noteFilePath(vault.path, `untitled-${id.slice(-8).toLowerCase()}`);
+    const filePath = noteFilePath(vault.path, id.toLowerCase());
     const note: Note = {
       id,
       filePath,

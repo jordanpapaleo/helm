@@ -16,7 +16,7 @@ export function useCreateNote() {
 
     const id = ulid();
     const title = "Untitled";
-    const filePath = noteFilePath(vault.path, `untitled-${id.slice(-8).toLowerCase()}`);
+    const filePath = noteFilePath(vault.path, id.toLowerCase());
     const fileName = filePath.split("/").at(-1) ?? "";
 
     const note: Note = {

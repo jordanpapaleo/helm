@@ -213,6 +213,7 @@ import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import type { Note } from "../../types/note";
 import { WikiLinkExtension } from "./WikiLink";
+import { FindReplaceExtension } from "./findReplaceExtension";
 
 const lowlight = createLowlight(common);
 
@@ -225,16 +226,18 @@ interface SuggestionPopup {
 
 export interface NoteEditorHandle {
   focus: () => void;
+  getEditor: () => import("@tiptap/react").Editor | null;
 }
 
 interface NoteEditorProps {
   note: Note;
   onSave: (content: string) => void;
   locked?: boolean;
+  findOpen?: boolean;
 }
 
 export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
-  ({ note, onSave, locked = false }, ref) => {
+  ({ note, onSave, locked = false, findOpen = false }, ref) => {
     const { vaults, notes } = useNoteStore();
     const { settings } = useSettingsStore();
     const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path ?? null;
@@ -362,6 +365,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           transformPastedText: true,
           transformCopiedText: true,
         }),
+        FindReplaceExtension,
       ],
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [],
@@ -455,6 +459,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       ref,
       () => ({
         focus: () => editor?.commands.focus("end"),
+        getEditor: () => editor ?? null,
       }),
       [editor],
     );
@@ -489,6 +494,15 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     useEffect(() => {
       if (editor) editor.setEditable(!locked);
     }, [editor, locked]);
+
+    useEffect(() => {
+      if (!editor) return;
+      if (findOpen) {
+        editor.commands.openFind();
+      } else {
+        editor.commands.closeFind();
+      }
+    }, [editor, findOpen]);
 
     const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

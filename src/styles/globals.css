@@ -169,6 +169,80 @@ body {
   font-size: inherit;
 }
 
+/* ── Code block node view ───────────────────────────────────── */
+.code-block-node-view {
+  position: relative;
+  display: block;
+}
+.code-block-node-view pre {
+  padding-top: 2.25rem !important;
+}
+.code-block-lang-bar {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 1;
+}
+.code-block-lang-btn {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-base-content);
+  opacity: 0.35;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: opacity 0.15s;
+}
+.code-block-lang-btn:hover {
+  opacity: 0.75;
+}
+.code-block-lang-empty {
+  font-style: italic;
+}
+.code-block-lang-editing {
+  position: relative;
+}
+.code-block-lang-input {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-base-content);
+  background: var(--color-base-300, var(--color-base-200));
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  outline: none;
+  width: 7rem;
+}
+.code-block-lang-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  background: var(--color-surface, var(--color-base-200));
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  min-width: 8rem;
+  z-index: 50;
+}
+.code-block-lang-option {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  color: var(--color-base-content);
+  opacity: 0.75;
+}
+.code-block-lang-option:hover,
+.code-block-lang-option.active {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  opacity: 1;
+}
+
 /* ── Highlight mark (==text==) ──────────────────────────────── */
 .prose mark {
   background: color-mix(in srgb, var(--color-accent) 20%, transparent);

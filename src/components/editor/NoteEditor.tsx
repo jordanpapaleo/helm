@@ -10,9 +10,10 @@ import TableRow from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { TextSelection } from "@tiptap/pm/state";
-import { EditorContent, Extension, InputRule, useEditor } from "@tiptap/react";
+import { EditorContent, Extension, InputRule, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
+import { CodeBlockView } from "./CodeBlockView";
 import StarterKit from "@tiptap/starter-kit";
-import { common, createLowlight } from "lowlight";
+import { lowlight } from "../../lib/lowlight";
 import taskListPlugin from "markdown-it-task-lists";
 import { Markdown } from "tiptap-markdown";
 
@@ -280,7 +281,11 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         ParagraphMarkdown,
         Placeholder.configure({ placeholder: "Start writing…" }),
         Highlight.configure({ multicolor: false }),
-        CodeBlockLowlight.configure({ lowlight }),
+        CodeBlockLowlight.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(CodeBlockView);
+          },
+        }).configure({ lowlight }),
         TaskListMarkdown,
         TaskItemMarkdown.configure({ nested: true }),
         ClearMarksOnEnter,

@@ -168,11 +168,34 @@ Some content.
     const raw = "Just raw markdown with no frontmatter.";
     const note = parseNote(raw, "/notes/raw.md");
     expect(note.frontmatter.id).toBe("");
-    expect(note.frontmatter.title).toBe("");
+    expect(note.frontmatter.title).toBe("Raw"); // derived from filename
     expect(note.frontmatter.state).toBe("Prepare");
     expect(note.frontmatter.urgent).toBe(false);
     expect(note.frontmatter.links).toEqual([]);
     expect(note.frontmatter.tags).toEqual([]);
+  });
+
+  it("derives title from first H1 when frontmatter title is absent", () => {
+    const raw = "# My Great Note\n\nSome content here.";
+    const note = parseNote(raw, "/notes/some-file.md");
+    expect(note.frontmatter.title).toBe("My Great Note");
+  });
+
+  it("prefers frontmatter title over H1", () => {
+    const raw = `---\ntitle: Frontmatter Title\n---\n# H1 Title\n\nContent.`;
+    const note = parseNote(raw, "/notes/some-file.md");
+    expect(note.frontmatter.title).toBe("Frontmatter Title");
+  });
+
+  it("falls back to filename when no frontmatter title and no H1", () => {
+    const raw = "Just some content without a heading.";
+    const note = parseNote(raw, "/notes/my-project-notes.md");
+    expect(note.frontmatter.title).toBe("My Project Notes");
+  });
+
+  it("derives title from filename with underscores", () => {
+    const note = parseNote("content", "/notes/meeting_notes_2026.md");
+    expect(note.frontmatter.title).toBe("Meeting Notes 2026");
   });
 
   it("merges frontmatter tags with inline tags and deduplicates", () => {

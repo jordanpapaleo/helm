@@ -170,15 +170,38 @@ export function useVault() {
             const vault = store.vaults.find((v) => filePath.startsWith(v.path));
             try {
               const content = await tauriCommands.readNote(filePath);
-              const note: Note = {
+              let note: Note = {
                 ...parseNote(content, filePath),
                 vaultId: vault?.id ?? "",
               };
-              const existing = store.notes.find((n) => n.filePath === filePath);
-              if (existing) {
+
+              // Repair missing id — can happen when an external tool creates a
+              // file without frontmatter. Assign a ULID and write it back so the
+              // note has a stable identity from this point forward.
+              if (!note.id) {
+                const newId = ulid();
+                note = {
+                  ...note,
+                  id: newId,
+                  frontmatter: { ...note.frontmatter, id: newId },
+                };
+                tauriCommands.writeNote(filePath, serializeNote(note)).catch(() => {});
+              }
+
+              const existingByPath = store.notes.find((n) => n.filePath === filePath);
+              if (existingByPath) {
                 store.updateNote(note);
               } else {
-                store.addNote(note);
+                // Check if this is an external rename: same ULID, different path.
+                // In that case update in-place rather than adding a duplicate.
+                const existingById = note.id
+                  ? store.notes.find((n) => n.id === note.id)
+                  : null;
+                if (existingById) {
+                  store.updateNote({ ...note, vaultId: existingById.vaultId });
+                } else {
+                  store.addNote(note);
+                }
               }
             } catch {
               // Transient read error (race with write) — ignore

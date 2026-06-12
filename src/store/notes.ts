@@ -128,7 +128,8 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   updateNote: (updated) =>
     set((state) => {
       const notes = state.notes.map((n) => (n.id === updated.id ? updated : n));
-      return { notes, tagTree: buildTagTree(notes) };
+      const searchIndex = buildIndex(notes);
+      return { notes, tagTree: buildTagTree(notes), searchIndex };
     }),
   addNote: (note) =>
     set((state) => {

@@ -15,6 +15,16 @@ import type { Note, NoteFrontmatter } from "../types/note";
  * @param filePath - Absolute path to the markdown file on disk
  * @returns Parsed Note with id, frontmatter, content, filePath, and fileName
  */
+function extractH1(content: string): string {
+  const match = content.match(/^#\s+(.+)$/m);
+  return match ? match[1].trim() : "";
+}
+
+function derivetitleFromFilename(fileName: string): string {
+  const base = fileName.replace(/\.md$/i, "") || "Untitled";
+  return base.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export function parseNote(raw: string, filePath: string): Note {
   const { data, content } = matter(raw);
   const fileName = filePath.split("/").pop() ?? "";
@@ -25,7 +35,7 @@ export function parseNote(raw: string, filePath: string): Note {
 
   const frontmatter: NoteFrontmatter = {
     id: data.id ?? "",
-    title: data.title ?? "",
+    title: data.title || extractH1(content) || derivetitleFromFilename(fileName),
     created: data.created ?? new Date().toISOString().split("T")[0],
     updated: data.updated ?? new Date().toISOString().split("T")[0],
     urgent: data.urgent ?? false,

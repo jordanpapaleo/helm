@@ -216,7 +216,17 @@ pub async fn watch_vault(app: AppHandle, vault_path: String) -> Result<(), Strin
                     .map(|p| p.to_string_lossy().to_string())
                     .collect();
                 if !md_paths.is_empty() {
-                    if matches!(event.kind, notify::EventKind::Remove(_)) {
+                    // Treat Remove and Rename-from as deletions. On macOS, a
+                    // file rename emits Modify(Name(From)) for the old path and
+                    // Modify(Name(To)) for the new path — neither is EventKind::Remove.
+                    let is_deletion = matches!(event.kind, notify::EventKind::Remove(_))
+                        || matches!(
+                            event.kind,
+                            notify::EventKind::Modify(notify::event::ModifyKind::Name(
+                                notify::event::RenameMode::From
+                            ))
+                        );
+                    if is_deletion {
                         let _ = app_clone.emit("vault-note-deleted", &md_paths);
                     } else {
                         let _ = app_clone.emit("vault-changed", &md_paths);

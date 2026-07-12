@@ -21,21 +21,30 @@ import { useUIStore } from "./store/ui";
 const FONT_MIN = 12;
 const FONT_MAX = 24;
 
+/** Prevents stacked dialogs when Check for Updates is clicked again while a check is running. */
+let checkForUpdatesInFlight = false;
+
 async function handleCheckForUpdates() {
-  const result = await checkForUpdates(getVersion);
-  if (result.status === "up-to-date") {
-    await message(`You're up to date (v${result.current}).`, { title: "Check for Updates" });
-    return;
+  if (checkForUpdatesInFlight) return;
+  checkForUpdatesInFlight = true;
+  try {
+    const result = await checkForUpdates(getVersion);
+    if (result.status === "up-to-date") {
+      await message(`You're up to date (v${result.current}).`, { title: "Check for Updates" });
+      return;
+    }
+    if (result.status === "update-available") {
+      const open = await ask(
+        `Helm v${result.latest} is available (you have v${result.current}).\n\nOpen the release page?`,
+        { title: "Check for Updates", kind: "info" },
+      );
+      if (open) await openUrl(result.htmlUrl);
+      return;
+    }
+    await message(result.message, { title: "Check for Updates", kind: "error" });
+  } finally {
+    checkForUpdatesInFlight = false;
   }
-  if (result.status === "update-available") {
-    const open = await ask(
-      `Helm v${result.latest} is available (you have v${result.current}).\n\nOpen the release page?`,
-      { title: "Check for Updates", kind: "info" },
-    );
-    if (open) await openUrl(result.htmlUrl);
-    return;
-  }
-  await message(result.message, { title: "Check for Updates", kind: "error" });
 }
 
 export default function App() {

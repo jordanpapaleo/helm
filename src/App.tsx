@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS } from "./lib/settings";
 import { tauriCommands } from "./lib/tauri-commands";
 import { useSettingsStore } from "./store/settings";
 import { useThemeStore } from "./store/theme";
-import { reportError } from "./store/toast";
+import { reportError, useToastStore } from "./store/toast";
 import { useUIStore } from "./store/ui";
 
 const FONT_MIN = 12;
@@ -27,8 +27,11 @@ let checkForUpdatesInFlight = false;
 async function handleCheckForUpdates() {
   if (checkForUpdatesInFlight) return;
   checkForUpdatesInFlight = true;
+  const { showToast, dismissToast } = useToastStore.getState();
+  const toastId = showToast("Checking for updates…", "info", { persist: true });
   try {
     const result = await checkForUpdates(getVersion);
+    dismissToast(toastId);
     if (result.status === "up-to-date") {
       await message(`You're up to date (v${result.current}).`, { title: "Check for Updates" });
       return;
@@ -43,6 +46,7 @@ async function handleCheckForUpdates() {
     }
     await message(result.message, { title: "Check for Updates", kind: "error" });
   } finally {
+    dismissToast(toastId);
     checkForUpdatesInFlight = false;
   }
 }

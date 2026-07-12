@@ -20,8 +20,8 @@ const TOAST_DURATION: Record<ToastKind, number> = {
 
 interface ToastStore {
   toasts: Toast[];
-  /** Show a toast; it auto-dismisses after a kind-specific duration. */
-  showToast: (message: string, kind: ToastKind) => void;
+  /** Show a toast; returns its id. Auto-dismisses unless `persist` is set. */
+  showToast: (message: string, kind: ToastKind, options?: { persist?: boolean }) => number;
   /** Remove a toast immediately (close button). */
   dismissToast: (id: number) => void;
 }
@@ -30,12 +30,15 @@ let nextId = 0;
 
 export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
-  showToast: (message, kind) => {
+  showToast: (message, kind, options) => {
     const id = nextId++;
     set((state) => ({ toasts: [...state.toasts, { id, message, kind }] }));
-    setTimeout(() => {
-      set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
-    }, TOAST_DURATION[kind]);
+    if (!options?.persist) {
+      setTimeout(() => {
+        set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
+      }, TOAST_DURATION[kind]);
+    }
+    return id;
   },
   dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));

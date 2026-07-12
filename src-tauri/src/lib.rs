@@ -57,6 +57,8 @@ pub fn run() {
             let about_metadata = AboutMetadataBuilder::new()
                 .version(Some(app.package_info().version.to_string()))
                 .copyright(Some("© 2026 Jordan Papaleo".to_string()))
+                .website(Some("https://github.com/jordanpapaleo/helm".to_string()))
+                .website_label(Some("GitHub".to_string()))
                 .build();
 
             let settings_item = MenuItemBuilder::new("Settings…")

@@ -100,3 +100,47 @@ describe("buildBriefing", () => {
     expect(b.staleDoing).toHaveLength(0);
   });
 });
+
+describe("buildBriefing — unmanaged notes", () => {
+  it("excludes an unmanaged note from every bucket", () => {
+    const notes = [
+      makeNote(
+        {
+          unmanaged: true,
+          state: "Doing",
+          blocked: true,
+          deadline: "2026-07-01",
+          updated: "2026-06-01",
+        },
+        "unmanaged",
+      ),
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.doing).toHaveLength(0);
+    expect(b.blocked).toHaveLength(0);
+    expect(b.overdue).toHaveLength(0);
+    expect(b.dueSoon).toHaveLength(0);
+    expect(b.staleDoing).toHaveLength(0);
+  });
+
+  // The specific regression: marking a Done note unmanaged clears state to "",
+  // which is `!== "Done"`, so without the unmanaged filter it would resurface
+  // as overdue.
+  it("keeps a cleared-state note with a past deadline out of overdue", () => {
+    const notes = [
+      makeNote({ unmanaged: true, state: "", deadline: "2020-01-01" }, "cleared"),
+      makeNote({ deadline: "2020-01-01" }, "managed"),
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.overdue.map((n) => n.id)).toEqual(["managed"]);
+  });
+
+  it("still includes managed notes alongside unmanaged ones", () => {
+    const notes = [
+      makeNote({ unmanaged: true, state: "Doing" }, "skip"),
+      makeNote({ state: "Doing" }, "keep"),
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.doing.map((n) => n.id)).toEqual(["keep"]);
+  });
+});

@@ -4,19 +4,14 @@
  * "inline-tag" CSS class. Nothing here is clickable and nothing here
  * affects how tags are extracted or stored — see extractInlineTags in
  * src/lib/note-parser.ts for that.
+ *
+ * The tag grammar itself is imported from note-parser rather than restated
+ * here, so what the editor decorates and what gets stored cannot drift apart.
  */
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-
-/** Matches 3- or 6-digit hex color values (e.g. fff, ff0000). */
-// KEEP IN SYNC with HEX_COLOR_RE in src/lib/note-parser.ts
-const HEX_COLOR_RE = /^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/;
-
-/** Boundary + tag body. */
-// KEEP IN SYNC with the tag pattern in extractInlineTags (src/lib/note-parser.ts) —
-// what looks like a tag in the editor must be exactly what gets stored as one.
-const TAG_RE = /(?:^|[^a-zA-Z0-9])#([a-zA-Z][a-zA-Z0-9/_-]*)/g;
+import { createTagPattern, HEX_COLOR_RE } from "../../lib/note-parser";
 
 /** A `#tag` span within a piece of text, as zero-based character offsets. */
 export interface InlineTagRange {
@@ -40,8 +35,10 @@ export interface InlineTagRange {
  */
 export function findInlineTagRanges(text: string): InlineTagRange[] {
   const ranges: InlineTagRange[] = [];
-  TAG_RE.lastIndex = 0;
-  let match = TAG_RE.exec(text);
+  // Fresh pattern per call — the shared grammar is global, so it must never be
+  // reused across loops.
+  const pattern = createTagPattern();
+  let match = pattern.exec(text);
   while (match !== null) {
     const tag = match[1];
     if (!HEX_COLOR_RE.test(tag)) {
@@ -49,7 +46,7 @@ export function findInlineTagRanges(text: string): InlineTagRange[] {
       const hashIndex = match.index + match[0].length - tag.length - 1;
       ranges.push({ from: hashIndex, to: hashIndex + tag.length + 1 });
     }
-    match = TAG_RE.exec(text);
+    match = pattern.exec(text);
   }
   return ranges;
 }

@@ -1,132 +1,10 @@
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import Highlight from "@tiptap/extension-highlight";
-import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Table } from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
-import TaskItem from "@tiptap/extension-task-item";
-import TaskList from "@tiptap/extension-task-list";
 import { TextSelection } from "@tiptap/pm/state";
-import {
-  EditorContent,
-  Extension,
-  InputRule,
-  ReactNodeViewRenderer,
-  useEditor,
-} from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import taskListPlugin from "markdown-it-task-lists";
-import { Markdown } from "tiptap-markdown";
+import { EditorContent, Extension, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import { lowlight } from "../../lib/lowlight";
 import { CodeBlockView } from "./CodeBlockView";
-import { CodeBlockGapCursor, handleTextPaste, ParagraphMarkdown } from "./extensions";
-
-// tiptap-markdown calls parse.setup(md) on every parse() call (initial load, paste, setContent).
-// We use this to register markdown-it-task-lists once on the md instance.
-// setup runs inside parser.parse() so the md instance already exists.
-const TaskListMarkdown = TaskList.extend({
-  addInputRules() {
-    return [
-      // When "[ ] " or "[x] " is typed at the start of a bulletList item, convert it
-      // to a taskList item. The "- " prefix already created a bulletList via StarterKit's
-      // input rule, so we match only the checkbox portion here.
-      new InputRule({
-        find: /^\[([xX ]?)\]\s$/,
-        handler: ({ state, match }) => {
-          const checked = match[1]?.toLowerCase() === "x";
-          const { $from } = state.selection;
-          const taskListType = state.schema.nodes.taskList;
-          const taskItemType = state.schema.nodes.taskItem;
-          const listItemType = state.schema.nodes.listItem;
-          if (!taskListType || !taskItemType || !listItemType) return;
-
-          // Only fire when inside a bulletList listItem
-          let listItemDepth = -1;
-          for (let d = $from.depth; d >= 0; d--) {
-            if ($from.node(d).type === listItemType) {
-              listItemDepth = d;
-              break;
-            }
-          }
-          if (listItemDepth < 0) return;
-
-          const { tr } = state;
-          // Replace the entire bulletList in one operation to avoid intermediate invalid state
-          const bulletListStart = $from.before(listItemDepth - 1);
-          const bulletListEnd = $from.after(listItemDepth - 1);
-          const paragraph = state.schema.nodes.paragraph?.create();
-          const taskItem = taskItemType.create({ checked }, paragraph ?? undefined);
-          const taskList = taskListType.create(null, taskItem);
-          tr.replaceWith(bulletListStart, bulletListEnd, taskList);
-          // Place cursor inside the new task item's paragraph:
-          // taskList(+1) > taskItem(+1) > paragraph(+1) = +3 from bulletListStart
-          tr.setSelection(TextSelection.create(tr.doc, bulletListStart + 3));
-        },
-      }),
-    ];
-  },
-
-  addStorage() {
-    return {
-      markdown: {
-        // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown serializer types are not exported
-        serialize(state: any, node: any) {
-          state.renderList(node, "  ", () => "- ");
-        },
-        parse: {
-          // biome-ignore lint/suspicious/noExplicitAny: markdown-it instance type not exported by tiptap-markdown
-          setup(md: any) {
-            if (!md.__taskListsAdded) {
-              // Normalize escaped task list brackets \[ \] → [ ] before task list plugin runs.
-              // This fixes content that was previously serialized without task list support
-              // (tiptap-markdown escapes [ and ] in plain text, producing \[ \]).
-              // biome-ignore lint/suspicious/noExplicitAny: markdown-it core ruler state not exported
-              md.core.ruler.before("block", "unescape-task-list", (state: any) => {
-                state.src = state.src.replace(/^([-*+])\s+\\\[([xX ]?)\\\]/gm, "$1 [$2]");
-              });
-              md.use(taskListPlugin);
-              md.__taskListsAdded = true;
-            }
-          },
-          // updateDOM converts markdown-it-task-lists output classes to tiptap data-type attrs
-          updateDOM(element: Element) {
-            [...element.querySelectorAll(".contains-task-list")].forEach((list) => {
-              list.setAttribute("data-type", "taskList");
-            });
-          },
-        },
-      },
-    };
-  },
-});
-
-const TaskItemMarkdown = TaskItem.extend({
-  addStorage() {
-    return {
-      markdown: {
-        // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown serializer types are not exported
-        serialize(state: any, node: any) {
-          state.write(node.attrs.checked ? "[x] " : "[ ] ");
-          state.renderContent(node);
-        },
-        parse: {
-          updateDOM(element: Element) {
-            [...element.querySelectorAll(".task-list-item")].forEach((item) => {
-              const input = item.querySelector("input");
-              item.setAttribute("data-type", "taskItem");
-              if (input) {
-                item.setAttribute("data-checked", String((input as HTMLInputElement).checked));
-                input.remove();
-              }
-            });
-          },
-        },
-      },
-    };
-  },
-});
+import { CodeBlockGapCursor, handleTextPaste, markdownExtensions } from "./extensions";
 
 // Convert a heading to a paragraph when Backspace is pressed at position 0.
 // Without this, pressing Backspace at the start of a heading is a no-op,
@@ -195,9 +73,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { docPositionToTextOffset, textOffsetToDocPosition } from "../../lib/cursor-position";
+import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-position";
 import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
@@ -224,6 +103,8 @@ export interface NoteEditorHandle {
   getCursorTextOffset: () => number | null;
   /** Move the caret to a text offset and focus the editor. Never throws. */
   setCursorTextOffset: (offset: number) => void;
+  /** How far through the document the view is scrolled, 0…1 (see scroll-fraction.ts). */
+  getScrollFraction: () => number | null;
 }
 
 interface NoteEditorProps {
@@ -236,14 +117,33 @@ interface NoteEditorProps {
    * from the markdown textarea. Applied once, then ignored.
    */
   initialCursorOffset?: number | null;
+  /** Scroll fraction to restore on mount, so the view keeps its place. */
+  initialScrollFraction?: number | null;
+}
+
+/** Keep a document position inside `doc`, whatever the mapping produced. */
+function clampPos(doc: { content: { size: number } }, pos: number): number {
+  return Math.min(Math.max(pos, 0), doc.content.size);
 }
 
 export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
-  ({ note, onSave, locked = false, findOpen = false, initialCursorOffset = null }, ref) => {
+  (
+    {
+      note,
+      onSave,
+      locked = false,
+      findOpen = false,
+      initialCursorOffset = null,
+      initialScrollFraction = null,
+    },
+    ref,
+  ) => {
     const { vaults, notes } = useNoteStore();
     const { settings } = useSettingsStore();
     const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path ?? null;
     const [popup, setPopup] = useState<SuggestionPopup | null>(null);
+    // The element that actually scrolls in editor mode (see scroll-fraction.ts).
+    const scrollerRef = useRef<HTMLDivElement>(null);
 
     // Refs prevent stale closures inside the TipTap extension config
     const notesRef = useRef(notes);
@@ -278,25 +178,25 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // so it is safe to create this array once on mount.
     const extensions = useMemo(
       () => [
-        StarterKit.configure({ codeBlock: false, paragraph: false }),
-        ParagraphMarkdown,
+        // Schema + markdown behaviour, shared verbatim with the tests that check
+        // the cursor mapping against a real document (see extensions.ts).
+        ...markdownExtensions(
+          CodeBlockLowlight.extend({
+            addNodeView() {
+              return ReactNodeViewRenderer(CodeBlockView);
+            },
+          }).configure({ lowlight }),
+        ),
+        // Interaction only — none of these adds a node, mark, or markdown spec,
+        // so none can change the text of a parsed document. InlineTagExtension
+        // only draws decorations over #tags, so it stays out of the shared
+        // markdown set that the cursor-mapping tests build from.
+        // Adding to this group? Mirror it in INTERACTION_ONLY in
+        // src/test/cursor-position-editor.test.ts, which proves the claim above.
         Placeholder.configure({ placeholder: "Start writing…" }),
-        Highlight.configure({ multicolor: false }),
-        CodeBlockLowlight.extend({
-          addNodeView() {
-            return ReactNodeViewRenderer(CodeBlockView);
-          },
-        }).configure({ lowlight }),
-        TaskListMarkdown,
-        TaskItemMarkdown.configure({ nested: true }),
         ClearMarksOnEnter,
         HeadingKeyboardFix,
         CodeBlockGapCursor,
-        Image.configure({ inline: false, allowBase64: false }),
-        Table.configure({ resizable: false }),
-        TableRow,
-        TableHeader,
-        TableCell,
         InlineTagExtension,
         WikiLinkExtension.configure({
           suggestion: {
@@ -368,11 +268,6 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
               },
             }),
           },
-        }),
-        Markdown.configure({
-          html: false,
-          transformPastedText: true,
-          transformCopiedText: true,
         }),
         FindReplaceExtension,
       ],
@@ -451,20 +346,37 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // Placing the caret is a selection-only transaction. TipTap emits `update`
     // only when the doc actually changed, so restoring a cursor can never wake
     // the debounced auto-save.
-    const setCursorTextOffset = useCallback(
+    //
+    // The selection transaction carries `scrollIntoView()`, which is ProseMirror's
+    // own minimal scroll: it does nothing when the caret is already visible and
+    // otherwise scrolls every ancestor scroller by just the deficit. That is what
+    // guarantees the caret ends up on screen no matter how the mapping behaved,
+    // so focus does not need to scroll as well.
+    const placeCursor = useCallback(
       (offset: number) => {
         if (!editor || editor.isDestroyed) return;
         try {
           const { doc } = editor.state;
-          const pos = textOffsetToDocPosition(doc, offset);
-          const selection = TextSelection.near(doc.resolve(pos));
-          editor.view.dispatch(editor.state.tr.setSelection(selection));
+          const { pos, clamped } = resolveTextOffset(doc, offset);
+          let target = pos;
+          if (clamped) {
+            // The offset fell outside the document, so it tells us nothing
+            // trustworthy. Jumping to the end would strand the reader at the far
+            // side of the note; put the caret at the top of whatever the restored
+            // view is actually showing instead.
+            const box = scrollerRef.current?.getBoundingClientRect();
+            const at = box && editor.view.posAtCoords({ left: box.left + 4, top: box.top + 4 });
+            if (at) target = at.pos;
+          }
+          const selection = TextSelection.near(doc.resolve(clampPos(doc, target)));
+          editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView());
         } catch (e) {
           reportError("Could not restore the cursor position", e);
+          // Still guarantee a visible caret rather than leaving the reader
+          // looking at a viewport with no cursor in it.
+          editor.commands.scrollIntoView();
         }
-        // Focus regardless: a caret in the wrong place still beats an editor the
-        // user has to click before they can type.
-        editor.commands.focus();
+        editor.commands.focus(null, { scrollIntoView: false });
       },
       [editor],
     );
@@ -478,9 +390,13 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           editor && !editor.isDestroyed
             ? docPositionToTextOffset(editor.state.doc, editor.state.selection.head)
             : null,
-        setCursorTextOffset,
+        setCursorTextOffset: (offset: number) => placeCursor(offset),
+        // The editor's own wrapper is the element that scrolls, not the MainPanel
+        // wrapper around it.
+        getScrollFraction: () =>
+          scrollerRef.current ? getScrollFraction(scrollerRef.current) : null,
       }),
-      [editor, setCursorTextOffset],
+      [editor, placeCursor],
     );
 
     // Reset editor when switching to a different note.
@@ -514,17 +430,33 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       lastSavedContentRef.current = note.content;
     }, [note.content]);
 
-    // Carry a cursor over from the markdown textarea. The editor mounts fresh on
-    // every toggle, so this runs exactly once — a ref guard keeps a later re-render
-    // from yanking the caret back. It must sit after the content effects above,
-    // whose `setContent` would otherwise reset the selection we just placed.
-    const restoredCursorRef = useRef(false);
+    // Carry the cursor and the scroll position over from the markdown textarea.
+    // The editor mounts fresh on every toggle, so this happens exactly once. It
+    // must sit after the content effects above, whose `setContent` would
+    // otherwise reset the selection we place.
+    //
+    // Everything runs in one frame, in this order:
+    //   1. restore the reading position, so the view is where the reader left it
+    //   2. place the caret, letting ProseMirror scroll it into view *only* if
+    //      step 1 did not already show it
+    // Waiting a frame matters because node views (code blocks) render after
+    // mount, so scrollHeight is not trustworthy before then.
+    //
+    // The "done" guard is set inside the frame rather than before it: if a
+    // re-render cancels the frame first, the effect re-runs and reschedules
+    // instead of silently dropping the restore.
+    const restoreDoneRef = useRef(false);
     useEffect(() => {
-      if (!editor || restoredCursorRef.current) return;
+      if (!editor || restoreDoneRef.current) return;
       if (initialCursorOffset === null || initialCursorOffset === undefined) return;
-      restoredCursorRef.current = true;
-      setCursorTextOffset(initialCursorOffset);
-    }, [editor, initialCursorOffset, setCursorTextOffset]);
+      const frame = requestAnimationFrame(() => {
+        if (editor.isDestroyed) return;
+        restoreDoneRef.current = true;
+        if (scrollerRef.current) applyScrollFraction(scrollerRef.current, initialScrollFraction);
+        placeCursor(initialCursorOffset);
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [editor, initialCursorOffset, initialScrollFraction, placeCursor]);
 
     useEffect(() => {
       if (editor) editor.setEditable(!locked);
@@ -596,6 +528,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     return (
       // biome-ignore lint/a11y/noStaticElementInteractions: onBlur bubbles from TipTap's focusable editor content
       <div
+        ref={scrollerRef}
         onBlur={locked ? undefined : handleBlur}
         className={`relative flex-1 overflow-y-auto px-12 py-6 ${locked ? "opacity-75 cursor-not-allowed select-none" : ""}`}
       >

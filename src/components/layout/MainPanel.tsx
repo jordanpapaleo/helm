@@ -17,6 +17,7 @@ import {
   serializeNote,
 } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
@@ -46,6 +47,8 @@ interface MarkdownTextareaHandle {
   getCursorTextOffset: () => number | null;
   /** Move the caret to a text offset and focus the textarea. Never throws. */
   setCursorTextOffset: (offset: number) => void;
+  /** How far through the document the view is scrolled, 0…1 (see scroll-fraction.ts). */
+  getScrollFraction: () => number | null;
 }
 
 const MarkdownTextarea = forwardRef<
@@ -59,8 +62,13 @@ const MarkdownTextarea = forwardRef<
      * from the rich-text editor. Applied once, then ignored.
      */
     initialCursorOffset?: number | null;
+    /** Scroll fraction to restore on mount, so the view keeps its place. */
+    initialScrollFraction?: number | null;
   }
->(function MarkdownTextarea({ content, onSave, locked, initialCursorOffset = null }, ref) {
+>(function MarkdownTextarea(
+  { content, onSave, locked, initialCursorOffset = null, initialScrollFraction = null },
+  ref,
+) {
   const [value, setValue] = useState(content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,8 +171,14 @@ const MarkdownTextarea = forwardRef<
     const el = textareaRef.current;
     if (!el) return;
     const index = textOffsetToMarkdownIndex(valueForCursorRef.current, offset);
-    el.focus();
+    // Order matters: set the selection *before* focusing. Focusing a text control
+    // reveals its cached selection, which scrolls the caret into view; focusing
+    // first and then setting the selection leaves it off-screen (measured in
+    // Chromium: scrollTop stayed 0 with the caret 2587px down a 3375px note).
+    // When a scroll fraction is also being restored it overrides this, but this
+    // is what keeps the caret on screen when there is no fraction to restore.
     el.setSelectionRange(index, index);
+    el.focus();
   }, []);
 
   useImperativeHandle(
@@ -187,19 +201,41 @@ const MarkdownTextarea = forwardRef<
         return markdownIndexToTextOffset(valueForCursorRef.current, el.selectionStart);
       },
       setCursorTextOffset,
+      // The textarea scrolls internally — it, not the MainPanel wrapper, is the
+      // element that actually moves in markdown mode.
+      getScrollFraction: () =>
+        textareaRef.current ? getScrollFraction(textareaRef.current) : null,
     }),
     [onSave, setCursorTextOffset],
   );
 
-  // Carry a cursor over from the rich-text editor. The textarea mounts fresh on
-  // every toggle, so this runs exactly once.
-  const restoredCursorRef = useRef(false);
+  // Carry the cursor and the scroll position over from the rich-text editor. The
+  // textarea mounts fresh on every toggle, so this happens exactly once.
+  //
+  // Order is load-bearing, and was measured rather than assumed:
+  //   1. restore the reading position while the textarea is still unfocused
+  //   2. set the selection, then focus
+  // Focusing a text control reveals its cached selection with a *minimal* scroll,
+  // so step 2 leaves the view exactly where step 1 put it when the caret is
+  // already visible, and rescues the caret when it is not. That is what keeps the
+  // invariant — caret visible after a restore — even if the mapping drifted.
+  //
+  // The "done" guard is set inside the frame so that a re-render which cancels
+  // the frame reschedules the restore instead of dropping it.
+  const restoreDoneRef = useRef(false);
   useEffect(() => {
-    if (restoredCursorRef.current) return;
+    if (restoreDoneRef.current) return;
     if (initialCursorOffset === null || initialCursorOffset === undefined) return;
-    restoredCursorRef.current = true;
-    setCursorTextOffset(initialCursorOffset);
-  }, [initialCursorOffset, setCursorTextOffset]);
+    // Wait for layout: scrollHeight is meaningless until the textarea has one.
+    const frame = requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      restoreDoneRef.current = true;
+      applyScrollFraction(el, initialScrollFraction);
+      setCursorTextOffset(initialCursorOffset);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialCursorOffset, initialScrollFraction, setCursorTextOffset]);
 
   return (
     <textarea
@@ -250,12 +286,14 @@ export function MainPanel() {
   const [findExpanded, setFindExpanded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const markdownTextareaRef = useRef<MarkdownTextareaHandle>(null);
-  // Cursor handed from the outgoing surface to the incoming one across a
-  // markdown/editor toggle, tagged with the note it came from so a note switch
-  // can never resurrect a stale position.
-  const [pendingCursor, setPendingCursor] = useState<{ noteId: string; offset: number } | null>(
-    null,
-  );
+  // Cursor and scroll position handed from the outgoing surface to the incoming
+  // one across a markdown/editor toggle, tagged with the note it came from so a
+  // note switch can never resurrect a stale position.
+  const [pendingCursor, setPendingCursor] = useState<{
+    noteId: string;
+    offset: number;
+    scrollFraction: number | null;
+  } | null>(null);
   const selectedVaultPath = selectedNote
     ? (vaults.find((v) => v.id === selectedNote.vaultId)?.path ?? null)
     : null;
@@ -272,29 +310,31 @@ export function MainPanel() {
     setPendingCursor(null);
   }, [selectedNoteId, settings.defaultNoteView, setMarkdownMode]);
 
-  // Keep the caret where the user left it when flipping between the rich-text
-  // editor and the raw markdown view. The two surfaces are separate mount trees
-  // with incompatible position spaces, so we hand over a plain-text offset (see
-  // src/lib/cursor-position.ts) and let the incoming surface translate it.
+  // Keep the caret *and* the reading position where the user left them when
+  // flipping between the rich-text editor and the raw markdown view. The two
+  // surfaces are separate mount trees with incompatible position spaces, so we
+  // hand over two view-independent numbers: a plain-text offset for the caret
+  // (src/lib/cursor-position.ts) and a scroll fraction for the viewport
+  // (src/lib/scroll-fraction.ts). The incoming surface translates both.
   //
-  // The offset rides in as a mount-time prop rather than being pushed through an
+  // They ride in as mount-time props rather than being pushed through an
   // imperative handle from an effect: the incoming component is brand new, its
   // handle does not exist yet at toggle time, and a prop keeps the restore inside
   // the component that owns the caret.
   const handleToggleMarkdown = useCallback(() => {
-    const offset = markdownMode
-      ? markdownTextareaRef.current?.getCursorTextOffset()
-      : editorRef.current?.getCursorTextOffset();
+    const outgoing = markdownMode ? markdownTextareaRef.current : editorRef.current;
+    const offset = outgoing?.getCursorTextOffset();
     setPendingCursor(
       selectedNoteId && offset !== null && offset !== undefined
-        ? { noteId: selectedNoteId, offset }
+        ? { noteId: selectedNoteId, offset, scrollFraction: outgoing?.getScrollFraction() ?? null }
         : null,
     );
     toggleMarkdownMode();
   }, [markdownMode, selectedNoteId, toggleMarkdownMode]);
 
-  const initialCursorOffset =
-    pendingCursor && pendingCursor.noteId === selectedNoteId ? pendingCursor.offset : null;
+  const restoring = pendingCursor && pendingCursor.noteId === selectedNoteId ? pendingCursor : null;
+  const initialCursorOffset = restoring ? restoring.offset : null;
+  const initialScrollFraction = restoring ? restoring.scrollFraction : null;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -477,6 +517,7 @@ export function MainPanel() {
                 onSave={handleSave}
                 locked={selectedNote.frontmatter.locked}
                 initialCursorOffset={initialCursorOffset}
+                initialScrollFraction={initialScrollFraction}
               />
             ) : (
               <NoteEditor
@@ -486,6 +527,7 @@ export function MainPanel() {
                 locked={selectedNote.frontmatter.locked}
                 findOpen={findOpen}
                 initialCursorOffset={initialCursorOffset}
+                initialScrollFraction={initialScrollFraction}
               />
             )}
             {findOpen && (

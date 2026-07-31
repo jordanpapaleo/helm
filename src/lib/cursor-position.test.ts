@@ -5,6 +5,7 @@ import {
   docTextLength,
   markdownIndexToTextOffset,
   markdownTextLength,
+  resolveTextOffset,
   textOffsetToDocPosition,
   textOffsetToMarkdownIndex,
 } from "./cursor-position";
@@ -250,6 +251,24 @@ describe("document ⇄ text offset", () => {
     const doc = schema.nodes.doc.create(null, [paragraph("one"), paragraph("two")]);
     for (let offset = -5; offset <= 20; offset++) {
       const pos = textOffsetToDocPosition(doc, offset);
+      expect(pos).toBeGreaterThanOrEqual(0);
+      expect(pos).toBeLessThanOrEqual(doc.content.size);
+    }
+  });
+
+  it("reports whether an offset had to be clamped", () => {
+    const doc = schema.nodes.doc.create(null, [paragraph("abc")]);
+    // In range: trustworthy.
+    expect(resolveTextOffset(doc, 0)).toEqual({ pos: 1, clamped: false });
+    expect(resolveTextOffset(doc, 3)).toEqual({ pos: 4, clamped: false });
+    // Out of range: still a valid position, but flagged so the caller can fall
+    // back instead of confidently jumping to the end of the note.
+    expect(resolveTextOffset(doc, 4).clamped).toBe(true);
+    expect(resolveTextOffset(doc, 9999).clamped).toBe(true);
+    expect(resolveTextOffset(doc, -1).clamped).toBe(true);
+    // A clamped result is still inside the document.
+    for (const offset of [-50, 4, 9999]) {
+      const { pos } = resolveTextOffset(doc, offset);
       expect(pos).toBeGreaterThanOrEqual(0);
       expect(pos).toBeLessThanOrEqual(doc.content.size);
     }

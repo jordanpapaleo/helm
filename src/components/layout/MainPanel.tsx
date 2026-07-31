@@ -17,6 +17,7 @@ import {
   serializeNote,
 } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
@@ -354,7 +355,16 @@ export function MainPanel() {
         });
     }
 
-    const inlineTags = extractInlineTags(content);
+    // Tags are merged, never recomputed. Reading a note unions the frontmatter
+    // list with the body's inline tags, so recomputing from the body alone
+    // would delete every tag set from the property panel and never typed as
+    // `#tag`. Comparing the pre-save body with the incoming one tells us which
+    // tags the user actually removed. See mergeTagsOnSave.
+    const mergedTags = mergeTagsOnSave(
+      selectedNote.frontmatter.tags,
+      extractInlineTags(selectedNote.content),
+      extractInlineTags(content),
+    );
     const wikiTitles = extractWikiLinks(content);
     const linkedIds = wikiTitles
       .map(
@@ -367,7 +377,7 @@ export function MainPanel() {
       content,
       frontmatter: {
         ...selectedNote.frontmatter,
-        tags: inlineTags,
+        tags: mergedTags,
         links: linkedIds.length > 0 ? linkedIds : undefined,
         updated: nowTimestamp(),
       },

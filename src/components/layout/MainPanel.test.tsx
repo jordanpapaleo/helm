@@ -153,6 +153,82 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
   });
 });
 
+describe("MainPanel.handleSave — tags are merged, not recomputed", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function savedTags(): string[] {
+    return useNoteStore.getState().notes[0].frontmatter.tags;
+  }
+
+  async function edit(from: string, to: string) {
+    const el = screen.getByDisplayValue(from);
+    fireEvent.change(el, { target: { value: to } });
+    await act(async () => {
+      fireEvent.blur(el);
+    });
+  }
+
+  // The real data-loss shape: tags set from the property panel, never written
+  // as `#tag` in the body. Recomputing from the body wiped all four.
+  it("keeps frontmatter-only tags across a content save", async () => {
+    const note = makeNote({ content: "Body with no inline tags" });
+    note.frontmatter.tags = ["rfl", "rfl/ux", "rfl/phase", "rfl/ios"];
+    setup(note, true);
+
+    await edit("Body with no inline tags", "Body with no inline tags, now edited");
+
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
+    expect(savedTags()).toEqual(["rfl", "rfl/ux", "rfl/phase", "rfl/ios"]);
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(serialized).toContain("rfl/ios");
+  });
+
+  it("removes a tag deleted from the body", async () => {
+    const note = makeNote({ content: "Plan #work today" });
+    note.frontmatter.tags = ["work", "panel-only"];
+    setup(note, true);
+
+    await edit("Plan #work today", "Plan today");
+
+    expect(savedTags()).toEqual(["panel-only"]);
+  });
+
+  it("adds a tag typed into the body", async () => {
+    const note = makeNote({ content: "Plan today" });
+    note.frontmatter.tags = ["panel-only"];
+    setup(note, true);
+
+    await edit("Plan today", "Plan #work today");
+
+    expect(savedTags()).toEqual(["panel-only", "work"]);
+  });
+
+  it("does not resurrect a tag a bulk delete removed from both places", async () => {
+    const note = makeNote({ content: "Plan #work today" });
+    note.frontmatter.tags = ["work"];
+    const view = setup(note, true);
+
+    await act(async () => {
+      await useNoteStore.getState().deleteTag("work");
+    });
+    expect(savedTags()).toEqual([]);
+    expect(useNoteStore.getState().notes[0].content).toBe("Plan today");
+
+    // Reopen the note on the rewritten body — the next editor save must not
+    // bring the tag back through the merge.
+    view.unmount();
+    render(<MainPanel />);
+    vi.mocked(tauriCommands.writeNote).mockClear();
+    await edit("Plan today", "Plan today, edited");
+
+    expect(savedTags()).toEqual([]);
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(serialized).not.toContain("#work");
+  });
+});
+
 const MARKDOWN_CONTENT = "# Title\n\nSome **bold** words here.";
 
 // TipTap re-renders asynchronously once the editor mounts and takes focus, so the

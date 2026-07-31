@@ -1,7 +1,18 @@
-import { type Editor, Extension } from "@tiptap/core";
+import { type AnyExtension, type Editor, Extension, InputRule } from "@tiptap/core";
+import Highlight from "@tiptap/extension-highlight";
+import Image from "@tiptap/extension-image";
 import Paragraph from "@tiptap/extension-paragraph";
+import { Table } from "@tiptap/extension-table";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TableRow from "@tiptap/extension-table-row";
+import TaskItem from "@tiptap/extension-task-item";
+import TaskList from "@tiptap/extension-task-list";
 import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
+import StarterKit from "@tiptap/starter-kit";
+import taskListPlugin from "markdown-it-task-lists";
+import { Markdown } from "tiptap-markdown";
 
 /**
  * Shared, framework-free editor building blocks used by NoteEditor.
@@ -139,4 +150,150 @@ export function handleTextPaste(view: EditorView, text: string | undefined): boo
   });
   if (!handled) view.dispatch(view.state.tr.insertText(text));
   return true;
+}
+
+// tiptap-markdown calls parse.setup(md) on every parse() call (initial load, paste, setContent).
+// We use this to register markdown-it-task-lists once on the md instance.
+// setup runs inside parser.parse() so the md instance already exists.
+export const TaskListMarkdown = TaskList.extend({
+  addInputRules() {
+    return [
+      // When "[ ] " or "[x] " is typed at the start of a bulletList item, convert it
+      // to a taskList item. The "- " prefix already created a bulletList via StarterKit's
+      // input rule, so we match only the checkbox portion here.
+      new InputRule({
+        find: /^\[([xX ]?)\]\s$/,
+        handler: ({ state, match }) => {
+          const checked = match[1]?.toLowerCase() === "x";
+          const { $from } = state.selection;
+          const taskListType = state.schema.nodes.taskList;
+          const taskItemType = state.schema.nodes.taskItem;
+          const listItemType = state.schema.nodes.listItem;
+          if (!taskListType || !taskItemType || !listItemType) return;
+
+          // Only fire when inside a bulletList listItem
+          let listItemDepth = -1;
+          for (let d = $from.depth; d >= 0; d--) {
+            if ($from.node(d).type === listItemType) {
+              listItemDepth = d;
+              break;
+            }
+          }
+          if (listItemDepth < 0) return;
+
+          const { tr } = state;
+          // Replace the entire bulletList in one operation to avoid intermediate invalid state
+          const bulletListStart = $from.before(listItemDepth - 1);
+          const bulletListEnd = $from.after(listItemDepth - 1);
+          const paragraph = state.schema.nodes.paragraph?.create();
+          const taskItem = taskItemType.create({ checked }, paragraph ?? undefined);
+          const taskList = taskListType.create(null, taskItem);
+          tr.replaceWith(bulletListStart, bulletListEnd, taskList);
+          // Place cursor inside the new task item's paragraph:
+          // taskList(+1) > taskItem(+1) > paragraph(+1) = +3 from bulletListStart
+          tr.setSelection(TextSelection.create(tr.doc, bulletListStart + 3));
+        },
+      }),
+    ];
+  },
+
+  addStorage() {
+    return {
+      markdown: {
+        // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown serializer types are not exported
+        serialize(state: any, node: any) {
+          state.renderList(node, "  ", () => "- ");
+        },
+        parse: {
+          // biome-ignore lint/suspicious/noExplicitAny: markdown-it instance type not exported by tiptap-markdown
+          setup(md: any) {
+            if (!md.__taskListsAdded) {
+              // Normalize escaped task list brackets \[ \] → [ ] before task list plugin runs.
+              // This fixes content that was previously serialized without task list support
+              // (tiptap-markdown escapes [ and ] in plain text, producing \[ \]).
+              // biome-ignore lint/suspicious/noExplicitAny: markdown-it core ruler state not exported
+              md.core.ruler.before("block", "unescape-task-list", (state: any) => {
+                state.src = state.src.replace(/^([-*+])\s+\\\[([xX ]?)\\\]/gm, "$1 [$2]");
+              });
+              md.use(taskListPlugin);
+              md.__taskListsAdded = true;
+            }
+          },
+          // updateDOM converts markdown-it-task-lists output classes to tiptap data-type attrs
+          updateDOM(element: Element) {
+            [...element.querySelectorAll(".contains-task-list")].forEach((list) => {
+              list.setAttribute("data-type", "taskList");
+            });
+          },
+        },
+      },
+    };
+  },
+});
+
+export const TaskItemMarkdown = TaskItem.extend({
+  addStorage() {
+    return {
+      markdown: {
+        // biome-ignore lint/suspicious/noExplicitAny: tiptap-markdown serializer types are not exported
+        serialize(state: any, node: any) {
+          state.write(node.attrs.checked ? "[x] " : "[ ] ");
+          state.renderContent(node);
+        },
+        parse: {
+          updateDOM(element: Element) {
+            [...element.querySelectorAll(".task-list-item")].forEach((item) => {
+              const input = item.querySelector("input");
+              item.setAttribute("data-type", "taskItem");
+              if (input) {
+                item.setAttribute("data-checked", String((input as HTMLInputElement).checked));
+                input.remove();
+              }
+            });
+          },
+        },
+      },
+    };
+  },
+});
+
+/**
+ * The extensions that determine the editor's *schema* and its markdown
+ * parse/serialize behaviour — i.e. everything that decides what text a document
+ * contains once markdown has been parsed.
+ *
+ * NoteEditor composes this with its interaction-only extensions (Placeholder,
+ * WikiLinkExtension, FindReplaceExtension, CodeBlockGapCursor, ClearMarksOnEnter,
+ * HeadingKeyboardFix). Those are deliberately excluded: none of them registers a
+ * node, a mark, or a markdown spec, so none can change the text of a parsed
+ * document.
+ *
+ * Tests build their editor from this same function. Re-declaring an
+ * "equivalent" list in a test is how a harness silently becomes a different
+ * editor from the one that ships — the task-list extensions below are exactly
+ * that trap, because stock TaskList/TaskItem parse `- [ ] x` through
+ * tiptap-markdown's built-in specs and produce different text than these do.
+ *
+ * `codeBlock` is passed in because the app wraps it in a React node view and
+ * tests do not; a node view cannot affect document text.
+ */
+export function markdownExtensions(codeBlock: AnyExtension): AnyExtension[] {
+  return [
+    StarterKit.configure({ codeBlock: false, paragraph: false }),
+    ParagraphMarkdown,
+    Highlight.configure({ multicolor: false }),
+    codeBlock,
+    TaskListMarkdown,
+    TaskItemMarkdown.configure({ nested: true }),
+    Image.configure({ inline: false, allowBase64: false }),
+    Table.configure({ resizable: false }),
+    TableRow,
+    TableHeader,
+    TableCell,
+    Markdown.configure({
+      html: false,
+      transformPastedText: true,
+      transformCopiedText: true,
+    }),
+  ];
 }

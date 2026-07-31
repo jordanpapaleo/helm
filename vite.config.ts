@@ -29,7 +29,9 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**", "**/.history/**"],
+      // `.claude/worktrees` holds full checkouts of this repo (agent worktrees).
+      // Without this, edits in a worktree look like source edits and full-reload the app.
+      ignored: ["**/src-tauri/**", "**/.history/**", "**/.claude/**"],
     },
   },
   test: {

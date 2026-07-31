@@ -195,6 +195,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
@@ -441,11 +442,15 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       [editor],
     );
 
-    // Reset editor when switching to a different note
+    // Reset editor when switching to a different note.
+    // emitUpdate: false — this is a programmatic content load, not a user edit.
+    // TipTap v3 emits `update` from setContent by default, which would schedule
+    // the debounced auto-save and rewrite the note (bumping `updated`) merely
+    // because it was opened.
     // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
       if (editor) {
-        editor.commands.setContent(note.content);
+        editor.commands.setContent(note.content, { emitUpdate: false });
         lastSavedContentRef.current = note.content;
       }
     }, [note.id]);
@@ -457,14 +462,14 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
       if (!editor) return;
-      const strip = (s: string) => s.replace(/^\n+|\n+$/g, "");
-      if (strip(note.content) === strip(lastSavedContentRef.current)) return;
+      if (normalizeContent(note.content) === normalizeContent(lastSavedContentRef.current)) return;
       // Cancel any pending auto-save so it doesn't overwrite the external change
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
       }
-      editor.commands.setContent(note.content);
+      // emitUpdate: false — reloading from disk must not look like a user edit.
+      editor.commands.setContent(note.content, { emitUpdate: false });
       lastSavedContentRef.current = note.content;
     }, [note.content]);
 

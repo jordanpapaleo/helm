@@ -195,6 +195,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { docPositionToTextOffset, textOffsetToDocPosition } from "../../lib/cursor-position";
 import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -215,6 +216,13 @@ interface SuggestionPopup {
 export interface NoteEditorHandle {
   focus: () => void;
   getEditor: () => import("@tiptap/react").Editor | null;
+  /**
+   * The caret as a surface-independent text offset — the number of characters a
+   * reader sees before it. See `src/lib/cursor-position.ts`.
+   */
+  getCursorTextOffset: () => number | null;
+  /** Move the caret to a text offset and focus the editor. Never throws. */
+  setCursorTextOffset: (offset: number) => void;
 }
 
 interface NoteEditorProps {
@@ -222,10 +230,15 @@ interface NoteEditorProps {
   onSave: (content: string) => void | Promise<void>;
   locked?: boolean;
   findOpen?: boolean;
+  /**
+   * Text offset to place the caret at on mount — used to carry the cursor over
+   * from the markdown textarea. Applied once, then ignored.
+   */
+  initialCursorOffset?: number | null;
 }
 
 export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
-  ({ note, onSave, locked = false, findOpen = false }, ref) => {
+  ({ note, onSave, locked = false, findOpen = false, initialCursorOffset = null }, ref) => {
     const { vaults, notes } = useNoteStore();
     const { settings } = useSettingsStore();
     const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path ?? null;
@@ -433,13 +446,39 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       content: initialContentRef.current,
     });
 
+    // Placing the caret is a selection-only transaction. TipTap emits `update`
+    // only when the doc actually changed, so restoring a cursor can never wake
+    // the debounced auto-save.
+    const setCursorTextOffset = useCallback(
+      (offset: number) => {
+        if (!editor || editor.isDestroyed) return;
+        try {
+          const { doc } = editor.state;
+          const pos = textOffsetToDocPosition(doc, offset);
+          const selection = TextSelection.near(doc.resolve(pos));
+          editor.view.dispatch(editor.state.tr.setSelection(selection));
+        } catch (e) {
+          reportError("Could not restore the cursor position", e);
+        }
+        // Focus regardless: a caret in the wrong place still beats an editor the
+        // user has to click before they can type.
+        editor.commands.focus();
+      },
+      [editor],
+    );
+
     useImperativeHandle(
       ref,
       () => ({
         focus: () => editor?.commands.focus("end"),
         getEditor: () => editor ?? null,
+        getCursorTextOffset: () =>
+          editor && !editor.isDestroyed
+            ? docPositionToTextOffset(editor.state.doc, editor.state.selection.head)
+            : null,
+        setCursorTextOffset,
       }),
-      [editor],
+      [editor, setCursorTextOffset],
     );
 
     // Reset editor when switching to a different note.
@@ -472,6 +511,18 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       editor.commands.setContent(note.content, { emitUpdate: false });
       lastSavedContentRef.current = note.content;
     }, [note.content]);
+
+    // Carry a cursor over from the markdown textarea. The editor mounts fresh on
+    // every toggle, so this runs exactly once — a ref guard keeps a later re-render
+    // from yanking the caret back. It must sit after the content effects above,
+    // whose `setContent` would otherwise reset the selection we just placed.
+    const restoredCursorRef = useRef(false);
+    useEffect(() => {
+      if (!editor || restoredCursorRef.current) return;
+      if (initialCursorOffset === null || initialCursorOffset === undefined) return;
+      restoredCursorRef.current = true;
+      setCursorTextOffset(initialCursorOffset);
+    }, [editor, initialCursorOffset, setCursorTextOffset]);
 
     useEffect(() => {
       if (editor) editor.setEditable(!locked);

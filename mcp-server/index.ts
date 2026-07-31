@@ -710,9 +710,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       Done: [],
     };
     for (const n of notes) {
-      // `||` not `??` — an unmanaged note has state "" and must not fall through
-      // as its own (empty) column.
-      const state = n.frontmatter.state || "Prepare";
+      // `??` not `||` — a cleared (empty) state means the note is unmanaged, and
+      // the `state in columns` guard below intentionally leaves it off the board.
+      // Do not "fix" this into `||`: that would bucket unmanaged notes into Prepare.
+      const state = n.frontmatter.state ?? "Prepare";
       if (state in columns) columns[state].push(noteSummary(n));
     }
     return {

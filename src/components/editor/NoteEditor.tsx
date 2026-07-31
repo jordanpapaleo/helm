@@ -202,6 +202,7 @@ import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import type { Note } from "../../types/note";
 import { FindReplaceExtension } from "./findReplaceExtension";
+import { InlineTagExtension } from "./InlineTag";
 import { WikiLinkExtension } from "./WikiLink";
 
 interface SuggestionPopup {
@@ -282,6 +283,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         TableRow,
         TableHeader,
         TableCell,
+        InlineTagExtension,
         WikiLinkExtension.configure({
           suggestion: {
             items: ({ query }: { query: string }) =>

@@ -141,6 +141,30 @@ function extractInlineTags(content: string): string[] {
   return [...seen];
 }
 
+// KEEP IN SYNC with src/lib/tags.ts mergeTagsOnSave — the app and the MCP
+// server write tags to the same notes and must reconcile them identically.
+//
+// Reading a note unions `frontmatter.tags` with the body's inline tags, so a
+// write that recomputed the list from the body alone would silently delete
+// every tag that only ever lived in the frontmatter. The rule is three-way: a
+// tag is dropped only if it *was* an inline tag and has stopped being one.
+//
+//     next = (previousTags − (previousInline − nextInline)) ∪ nextInline
+//
+// Order is stable (previousTags keep their positions, new inline tags are
+// appended) so the YAML diff stays minimal, and the result is deduplicated.
+function mergeTagsOnSave(
+  previousTags: string[] | undefined,
+  previousInline: string[] | undefined,
+  nextInline: string[] | undefined,
+): string[] {
+  const next = new Set(nextInline ?? []);
+  const removed = new Set((previousInline ?? []).filter((t) => !next.has(t)));
+  const merged = (previousTags ?? []).filter((t) => !removed.has(t));
+  merged.push(...next);
+  return [...new Set(merged)];
+}
+
 function extractWikiLinks(content: string): string[] {
   const seen = new Set<string>();
   const unescaped = content.replace(/\\\[/g, "[").replace(/\\\]/g, "]");
@@ -231,7 +255,11 @@ DATES
 
 SHALLOW MERGE
 • update_note does a shallow merge of frontmatter fields.
-• Passing frontmatter: { tags: ["new"] } REPLACES the entire tags array.
+• Passing frontmatter: { tags: ["new"] } REPLACES the entire tags array, except that
+  tags still written as #tag in the body are kept — the body is the other half of the
+  tag list, so clearing a tag means removing it from the body too.
+• A tag is only dropped by a content edit if it was an inline #tag before and is not one
+  after. Frontmatter-only tags are never touched by editing the body.
 • Use append_tags and append_links instead to safely add without overwriting.
 
 STATES
@@ -901,11 +929,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     const incoming = (args?.frontmatter as Record<string, unknown>) ?? {};
+    const content = args?.content !== undefined ? String(args.content) : note.content;
 
-    // Build updated frontmatter — protect id and locked
-    let updatedTags: string[] = incoming.tags
-      ? (incoming.tags as string[])
-      : (note.frontmatter.tags ?? []);
+    // Build updated frontmatter — protect id and locked.
+    //
+    // Tags are reconciled against the body the same way the app's editor save
+    // does: an explicit `frontmatter.tags` (or the note's existing list) is the
+    // base, and only tags the body actually *lost* are dropped. Recomputing
+    // from the body would delete frontmatter-only tags outright.
+    let updatedTags: string[] = mergeTagsOnSave(
+      incoming.tags ? (incoming.tags as string[]) : (note.frontmatter.tags ?? []),
+      extractInlineTags(note.content),
+      extractInlineTags(content),
+    );
 
     let updatedLinks: string[] = incoming.links
       ? (incoming.links as string[])
@@ -928,8 +964,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       locked: note.frontmatter.locked, // never overwrite
       updated: nowTimestamp(),
     };
-
-    const content = args?.content !== undefined ? String(args.content) : note.content;
 
     // Time machine: snapshot the current on-disk version before overwriting,
     // mirroring what the Helm app does. Never blocks the write.

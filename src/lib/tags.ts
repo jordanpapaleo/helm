@@ -3,10 +3,10 @@
  *
  * Tags live in two places and the two must agree: `frontmatter.tags` and the
  * inline `#tag` occurrences in the markdown body. The editor's save path
- * (`MainPanel.handleSave`) recomputes `frontmatter.tags` from the body with
- * `extractInlineTags` on every save, so rewriting only the frontmatter would be
- * silently reverted the next time the note is edited. Every operation here
- * therefore rewrites the body as well.
+ * (`MainPanel.handleSave`) reconciles the two through `mergeTagsOnSave` below,
+ * which drops a tag once it disappears from the body — so rewriting only the
+ * frontmatter would be silently reverted the next time the note is edited.
+ * Every operation here therefore rewrites the body as well.
  *
  * All operations are **descendant-aware**, matching how the sidebar groups
  * tags: acting on `work` also acts on `work/project` and `work/ops`, but never
@@ -61,6 +61,47 @@ export function renameTagInList(tags: string[], oldTag: string, newTag: string):
 /** Remove `target` and all its descendants from a frontmatter tag list. */
 export function removeTagFromList(tags: string[], target: string): string[] {
   return tags.filter((t) => !tagMatches(t, target));
+}
+
+/**
+ * Three-way merge of a note's tag list across a content save.
+ *
+ * Reading a note is generous — `parseNote` unions the frontmatter list with the
+ * body's inline tags — so a save that simply recomputed the list from the body
+ * would silently delete every tag that lives *only* in the frontmatter (set
+ * from the property panel, never typed as `#tag`). That asymmetry destroyed
+ * real tags in the wild; this is the fix.
+ *
+ * The rule: a tag is only dropped if it *was* an inline tag and has stopped
+ * being one.
+ *
+ *     next = (previousTags − (previousInline − nextInline)) ∪ nextInline
+ *
+ * - frontmatter-only tag, body edited → kept (the bug being fixed)
+ * - `#work` deleted from the body → `work` dropped
+ * - `#work` typed into the body → `work` added
+ * - tag in *both* places, then deleted from the body → dropped. Deliberate: it
+ *   was inline, and it stopped being inline. Frontmatter alone cannot record
+ *   that the user also meant to pin it independently.
+ *
+ * Order is stable — `previousTags` keep their positions and genuinely new
+ * inline tags are appended — so the YAML diff stays minimal. Result is
+ * deduplicated, and every argument is optional.
+ *
+ * @param previousTags - `frontmatter.tags` as it stood before this save
+ * @param previousInline - inline tags of the *pre-save* body
+ * @param nextInline - inline tags of the body being saved
+ */
+export function mergeTagsOnSave(
+  previousTags: string[] | undefined,
+  previousInline: string[] | undefined,
+  nextInline: string[] | undefined,
+): string[] {
+  const next = new Set(nextInline ?? []);
+  const removed = new Set((previousInline ?? []).filter((t) => !next.has(t)));
+  const merged = (previousTags ?? []).filter((t) => !removed.has(t));
+  merged.push(...next);
+  return [...new Set(merged)];
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { extractInlineTags } from "./note-parser";
 import {
   isValidTagName,
+  mergeTagsOnSave,
   normalizeTagName,
   removeInlineTag,
   removeTagFromList,
@@ -327,5 +328,72 @@ describe("removeInlineTag", () => {
     const content = "#work and #work/project and #workflow";
     const stripped = removeInlineTag(content, "work");
     expect(extractInlineTags(stripped)).toEqual(["workflow"]);
+  });
+});
+
+describe("mergeTagsOnSave", () => {
+  // The bug this exists to prevent: a note whose tags were set from the
+  // property panel and never written as `#tag` in the body lost every one of
+  // them the first time the editor saved. Real shape from the user's vault.
+  it("keeps frontmatter-only tags when the body has no inline tags at all", () => {
+    const previous = ["rfl", "rfl/ux", "rfl/phase", "rfl/ios"];
+    expect(mergeTagsOnSave(previous, [], [])).toEqual(previous);
+  });
+
+  it("removes a tag that was inline and is no longer inline", () => {
+    expect(mergeTagsOnSave(["work", "home"], ["work"], [])).toEqual(["home"]);
+  });
+
+  it("adds a tag newly written into the body", () => {
+    expect(mergeTagsOnSave(["home"], [], ["work"])).toEqual(["home", "work"]);
+  });
+
+  it("removes a tag present in both places once it leaves the body", () => {
+    // Deliberate: it was an inline tag, and it stopped being one.
+    expect(mergeTagsOnSave(["work"], ["work"], [])).toEqual([]);
+  });
+
+  it("keeps an inline tag that is still inline", () => {
+    expect(mergeTagsOnSave(["work"], ["work"], ["work"])).toEqual(["work"]);
+  });
+
+  it("handles a simultaneous inline add and inline remove", () => {
+    expect(mergeTagsOnSave(["panel", "work"], ["work"], ["home"])).toEqual(["panel", "home"]);
+  });
+
+  it("preserves the previous order and appends new inline tags at the end", () => {
+    // A minimal YAML diff matters: reordering the list churns the file.
+    expect(mergeTagsOnSave(["zeta", "alpha", "mid"], ["mid"], ["mid", "beta"])).toEqual([
+      "zeta",
+      "alpha",
+      "mid",
+      "beta",
+    ]);
+  });
+
+  it("deduplicates", () => {
+    expect(mergeTagsOnSave(["work", "work"], [], ["work", "work", "home"])).toEqual([
+      "work",
+      "home",
+    ]);
+  });
+
+  it("tolerates undefined and empty inputs", () => {
+    expect(mergeTagsOnSave(undefined, undefined, undefined)).toEqual([]);
+    expect(mergeTagsOnSave(undefined, undefined, ["work"])).toEqual(["work"]);
+    expect(mergeTagsOnSave(["work"], undefined, undefined)).toEqual(["work"]);
+    expect(mergeTagsOnSave([], [], [])).toEqual([]);
+  });
+
+  it("does not resurrect a tag a bulk delete stripped from both places", () => {
+    // After deleteTag both the frontmatter list and the body are clean, so the
+    // next save has nothing to bring back.
+    expect(mergeTagsOnSave([], [], [])).toEqual([]);
+  });
+
+  it("leaves a bulk-renamed tag alone on the next save", () => {
+    // renameTag rewrites both sides; the save that follows sees the new name in
+    // `previousTags` and in the body, so nothing moves.
+    expect(mergeTagsOnSave(["client"], ["client"], ["client"])).toEqual(["client"]);
   });
 });

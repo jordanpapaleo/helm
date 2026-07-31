@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import {
   extractInlineTags,
   extractWikiLinks,
@@ -36,12 +37,28 @@ import { PropertyPanel } from "../editor/PropertyPanel";
 interface MarkdownTextareaHandle {
   textarea: HTMLTextAreaElement | null;
   replaceContent: (newContent: string) => void;
+  /**
+   * The caret as a surface-independent text offset — the number of characters a
+   * reader sees before it. See `src/lib/cursor-position.ts`.
+   */
+  getCursorTextOffset: () => number | null;
+  /** Move the caret to a text offset and focus the textarea. Never throws. */
+  setCursorTextOffset: (offset: number) => void;
 }
 
 const MarkdownTextarea = forwardRef<
   MarkdownTextareaHandle,
-  { content: string; onSave: (md: string) => void | Promise<void>; locked?: boolean }
->(function MarkdownTextarea({ content, onSave, locked }, ref) {
+  {
+    content: string;
+    onSave: (md: string) => void | Promise<void>;
+    locked?: boolean;
+    /**
+     * Text offset to place the caret at on mount — used to carry the cursor over
+     * from the rich-text editor. Applied once, then ignored.
+     */
+    initialCursorOffset?: number | null;
+  }
+>(function MarkdownTextarea({ content, onSave, locked, initialCursorOffset = null }, ref) {
   const [value, setValue] = useState(content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,6 +150,21 @@ const MarkdownTextarea = forwardRef<
     [],
   );
 
+  // Read the caret through a ref so the mount effect and the imperative handle
+  // always measure against the text currently in the box, not the mounted value.
+  const valueForCursorRef = useRef(value);
+  valueForCursorRef.current = value;
+
+  // Moving the caret does not fire `change`, so restoring a cursor can never
+  // wake the debounced auto-save.
+  const setCursorTextOffset = useCallback((offset: number) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const index = textOffsetToMarkdownIndex(valueForCursorRef.current, offset);
+    el.focus();
+    el.setSelectionRange(index, index);
+  }, []);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -147,9 +179,25 @@ const MarkdownTextarea = forwardRef<
           onSave(newContent);
         }, 1000);
       },
+      getCursorTextOffset: () => {
+        const el = textareaRef.current;
+        if (!el) return null;
+        return markdownIndexToTextOffset(valueForCursorRef.current, el.selectionStart);
+      },
+      setCursorTextOffset,
     }),
-    [onSave],
+    [onSave, setCursorTextOffset],
   );
+
+  // Carry a cursor over from the rich-text editor. The textarea mounts fresh on
+  // every toggle, so this runs exactly once.
+  const restoredCursorRef = useRef(false);
+  useEffect(() => {
+    if (restoredCursorRef.current) return;
+    if (initialCursorOffset === null || initialCursorOffset === undefined) return;
+    restoredCursorRef.current = true;
+    setCursorTextOffset(initialCursorOffset);
+  }, [initialCursorOffset, setCursorTextOffset]);
 
   return (
     <textarea
@@ -200,6 +248,12 @@ export function MainPanel() {
   const [findExpanded, setFindExpanded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const markdownTextareaRef = useRef<MarkdownTextareaHandle>(null);
+  // Cursor handed from the outgoing surface to the incoming one across a
+  // markdown/editor toggle, tagged with the note it came from so a note switch
+  // can never resurrect a stale position.
+  const [pendingCursor, setPendingCursor] = useState<{ noteId: string; offset: number } | null>(
+    null,
+  );
   const selectedVaultPath = selectedNote
     ? (vaults.find((v) => v.id === selectedNote.vaultId)?.path ?? null)
     : null;
@@ -211,7 +265,34 @@ export function MainPanel() {
     setFindOpen(false);
     setFindExpanded(false);
     setHistoryOpen(false);
+    // Switching notes starts clean — never reuse the previous note's cursor,
+    // and never re-apply this note's cursor if the user navigates back to it.
+    setPendingCursor(null);
   }, [selectedNoteId, settings.defaultNoteView, setMarkdownMode]);
+
+  // Keep the caret where the user left it when flipping between the rich-text
+  // editor and the raw markdown view. The two surfaces are separate mount trees
+  // with incompatible position spaces, so we hand over a plain-text offset (see
+  // src/lib/cursor-position.ts) and let the incoming surface translate it.
+  //
+  // The offset rides in as a mount-time prop rather than being pushed through an
+  // imperative handle from an effect: the incoming component is brand new, its
+  // handle does not exist yet at toggle time, and a prop keeps the restore inside
+  // the component that owns the caret.
+  const handleToggleMarkdown = useCallback(() => {
+    const offset = markdownMode
+      ? markdownTextareaRef.current?.getCursorTextOffset()
+      : editorRef.current?.getCursorTextOffset();
+    setPendingCursor(
+      selectedNoteId && offset !== null && offset !== undefined
+        ? { noteId: selectedNoteId, offset }
+        : null,
+    );
+    toggleMarkdownMode();
+  }, [markdownMode, selectedNoteId, toggleMarkdownMode]);
+
+  const initialCursorOffset =
+    pendingCursor && pendingCursor.noteId === selectedNoteId ? pendingCursor.offset : null;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -366,7 +447,7 @@ export function MainPanel() {
               onTitleTab={() => editorRef.current?.focus()}
               onDelete={selectedNote.frontmatter.locked ? undefined : handleDelete}
               markdownMode={markdownMode}
-              onToggleMarkdown={toggleMarkdownMode}
+              onToggleMarkdown={handleToggleMarkdown}
               onShowHistory={selectedVaultPath ? () => setHistoryOpen(true) : undefined}
             />
             {historyOpen && selectedVaultPath && (
@@ -384,6 +465,7 @@ export function MainPanel() {
                 content={selectedNote.content}
                 onSave={handleSave}
                 locked={selectedNote.frontmatter.locked}
+                initialCursorOffset={initialCursorOffset}
               />
             ) : (
               <NoteEditor
@@ -392,6 +474,7 @@ export function MainPanel() {
                 onSave={handleSave}
                 locked={selectedNote.frontmatter.locked}
                 findOpen={findOpen}
+                initialCursorOffset={initialCursorOffset}
               />
             )}
             {findOpen && (

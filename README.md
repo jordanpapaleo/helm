@@ -8,7 +8,13 @@ Helm is a personal knowledge management app for macOS and Linux. Notes are plain
 
 ### 1. Install
 
-Download the latest `.dmg` from the [Releases](../../releases) page, open it, and drag Helm to your Applications folder.
+**macOS:** 
+
+Download the [latest `.dmg`](../../releases/latest/download/Helm_aarch64.dmg) from the [Releases](../../releases) page, open it, and drag Helm to your Applications folder.
+
+**Linux (Debian/Ubuntu):** 
+
+Download [`Helm_amd64.deb`](../../releases/latest/download/Helm_amd64.deb) from the [Releases](../../releases) page, then `sudo dpkg -i Helm_amd64.deb`.
 
 ### 2. Open a vault
 

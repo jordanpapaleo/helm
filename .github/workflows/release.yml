@@ -1,0 +1,86 @@
+# Build Linux packages when a vX.Y.Z tag is pushed, attach them to the
+# existing draft GitHub Release, then publish. Push the tag, then create
+# the draft with the .dmg immediately after — see release.sh.
+#
+# Rust deps are warmed on main (.github/workflows/rust-cache-warm.yml);
+# this job restores that cache and does not save a per-tag entry.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          # Must match rust-cache-warm.yml (avoids job-name key mismatch).
+          shared-key: helm-linux
+          # Restore from main's cache; don't write per-tag entries.
+          save-if: false
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm \
+            libfuse2
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Linux bundles
+        run: npm run tauri build -- --bundles deb,rpm,appimage
+
+      - name: Upload artifacts and publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "No GitHub Release for $TAG — quitting early."
+            exit 0
+          fi
+
+          shopt -s nullglob
+          deb=(src-tauri/target/release/bundle/deb/*.deb)
+          rpm=(src-tauri/target/release/bundle/rpm/*.rpm)
+          appimage=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          if (( ${#deb[@]} != 1 || ${#rpm[@]} != 1 || ${#appimage[@]} != 1 )); then
+            echo "Expected one .deb, one .rpm, and one .AppImage"
+            ls -laR src-tauri/target/release/bundle || true
+            exit 1
+          fi
+
+          # Stable names only (no versioned duplicates on the Release)
+          cp "${deb[0]}" Helm_amd64.deb
+          cp "${rpm[0]}" Helm_amd64.rpm
+          cp "${appimage[0]}" Helm_amd64.AppImage
+
+          gh release upload "$TAG" \
+            Helm_amd64.deb Helm_amd64.rpm Helm_amd64.AppImage \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          printf 'Uploaded:\n  Helm_amd64.deb\n  Helm_amd64.rpm\n  Helm_amd64.AppImage\n'
+
+          # Leave the Release as a draft so the maintainer can update the notes
+          # before publishing. Uncomment to auto-publish after Linux uploads:
+          # gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

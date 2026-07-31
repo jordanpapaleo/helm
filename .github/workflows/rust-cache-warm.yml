@@ -1,0 +1,37 @@
+# Populate GitHub Actions rust-cache on main so tag release jobs can restore it.
+# Caches are ref-scoped; tag runs may restore from the default branch only.
+name: rust-cache-warm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "package-lock.json"
+      - ".github/workflows/rust-cache-warm.yml"
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          # Must match release.yml so tag jobs can restore this cache.
+          shared-key: helm-linux
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev
+
+      - name: Warm release build cache
+        run: cargo build --release
+        working-directory: src-tauri

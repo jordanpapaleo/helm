@@ -75,12 +75,10 @@ fi
 
 echo "→ Changelog updated"
 
-# Commit and tag
+# Commit version bump (tag after the DMG commit so the tag includes release artifacts)
 git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml CHANGELOG.md
 git commit -m "chore: release v$NEW_VERSION"
-git tag "v$NEW_VERSION"
 
-echo "→ Tagged v$NEW_VERSION"
 echo "→ Building (signing + notarization can take a few minutes)..."
 
 npm run tauri build
@@ -110,8 +108,40 @@ cp -r "$APP_PATH" "$RELEASE_DIR/" 2>/dev/null || true
 
 git add "$RELEASE_DIR/Helm_${NEW_VERSION}_aarch64.dmg"
 git commit -m "release: add Helm_${NEW_VERSION}_aarch64.dmg"
+git tag "v$NEW_VERSION"
 
 echo ""
 echo "✓ v$NEW_VERSION released"
 echo "  Artifacts: $RELEASE_DIR"
-echo "  Run 'git push && git push --tags' to publish"
+
+DMG_ASSET="$RELEASE_DIR/Helm_${NEW_VERSION}_aarch64.dmg"
+DMG_LATEST="$RELEASE_DIR/Helm_aarch64.dmg"
+cp "$DMG_ASSET" "$DMG_LATEST"
+
+if [[ -t 0 ]]; then
+  read -r -p "Push and create a draft GitHub Release now? [y/N] " CREATE_DRAFT
+  if [[ "$CREATE_DRAFT" =~ ^[Yy]$ ]]; then
+    if ! command -v gh >/dev/null 2>&1; then
+      echo "✗ gh not found — install GitHub CLI, then create the draft manually:"
+      echo "  gh release create \"v$NEW_VERSION\" --draft --title \"Helm v$NEW_VERSION\" --notes \"\" \"$DMG_LATEST\""
+      exit 1
+    fi
+    if ! gh auth status >/dev/null 2>&1; then
+      echo "✗ gh is not authenticated — run 'gh auth login', then create the draft manually."
+      exit 1
+    fi
+
+    # Tag push starts Linux CI. Create the draft immediately after so it exists
+    # by the time the job uploads (draft created events do not trigger Actions).
+    echo "→ Pushing commits and tags..."
+    git push && git push --tags
+
+    echo "→ Creating draft GitHub Release..."
+    gh release create "v$NEW_VERSION" --draft \
+      --title "Helm v$NEW_VERSION" \
+      --notes "" \
+      "$DMG_LATEST"
+
+    echo "✓ Draft v$NEW_VERSION created — Linux CI will upload packages and publish."
+  fi
+fi

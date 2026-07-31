@@ -1,10 +1,26 @@
 mod vault;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use vault::*;
 use tauri::menu::{
     AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+/// Label of the primary window.
+const MAIN_WINDOW: &str = "main";
+
+/// How long the backend waits for the frontend to finish its close handshake
+/// (flush debounced saves → `exit_app`) before quitting on its own.
+///
+/// The frontend bounds its own flush at 2s (`CLOSE_FLUSH_TIMEOUT_MS` in
+/// `src/lib/window-close.ts`) and then invokes `exit_app`, so a healthy close
+/// completes in ~2s plus an IPC round trip. 8s is several times that margin;
+/// if it elapses, the frontend is not coming back and no legitimate save is
+/// still in flight.
+const CLOSE_WATCHDOG: Duration = Duration::from_secs(8);
 
 /// Fully quit the process. Needed because the quick-capture window is only
 /// hidden (not destroyed) on dismiss — closing the main window alone would
@@ -12,6 +28,44 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 #[tauri::command]
 fn exit_app(app: AppHandle) {
     app.exit(0);
+}
+
+/// What the backend should do about a close request on the main window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CloseAction {
+    /// First request: give the frontend a chance to flush, but arm a watchdog.
+    AwaitFrontend,
+    /// The user asked again while the first request was still unresolved —
+    /// stop waiting on the frontend and quit now.
+    ForceExit,
+}
+
+/// Counts close requests for the main window.
+///
+/// Tauri auto-prevents the native close whenever the webview has a
+/// `tauri://close-requested` listener (`api.prevent_close()` in Tauri's own
+/// window manager, before any user handler runs). So with the frontend
+/// handler registered, closing depends *entirely* on JS invoking `exit_app`.
+/// If the webview is wedged — a dead dev server, a hung IPC bridge, a crashed
+/// renderer — the window becomes unclosable with no escape hatch. This
+/// counter is that escape hatch.
+///
+/// It never resets, because Helm's close handler never cancels a close: every
+/// close request is meant to end the process. If a "you have unsaved changes,
+/// cancel?" flow is ever added, this must gain a reset on the cancel path.
+#[derive(Default)]
+struct CloseTracker {
+    requests: AtomicUsize,
+}
+
+impl CloseTracker {
+    fn record_request(&self) -> CloseAction {
+        if self.requests.fetch_add(1, Ordering::SeqCst) == 0 {
+            CloseAction::AwaitFrontend
+        } else {
+            CloseAction::ForceExit
+        }
+    }
 }
 
 /// Show (or lazily create) the always-on-top quick-capture window.
@@ -37,12 +91,55 @@ fn open_capture_window(app: &AppHandle) {
     }
 }
 
+/// Backstop for a frontend that never completes the close handshake.
+///
+/// Two independent triggers, neither of which can fire during a normal close:
+///  1. A repeat close request. A healthy close ends with the process gone, so
+///     there is never a second request to see; one can only arrive from a
+///     fresh, deliberate user action after the first did nothing.
+///  2. A watchdog thread armed on the first request. A healthy close exits the
+///     process seconds before the timer elapses, taking the sleeping thread
+///     with it, so the timer can only ever fire on a close that has already
+///     failed.
+fn handle_main_window_close(tracker: &CloseTracker, app: &AppHandle) {
+    match tracker.record_request() {
+        CloseAction::ForceExit => {
+            eprintln!("Repeat close request; frontend did not quit — forcing exit.");
+            app.exit(0);
+        }
+        CloseAction::AwaitFrontend => {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(CLOSE_WATCHDOG);
+                eprintln!(
+                    "Frontend did not quit within {}s of the close request — forcing exit.",
+                    CLOSE_WATCHDOG.as_secs()
+                );
+                app.exit(0);
+            });
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Shared with the window-event handler below; see `CloseTracker`.
+    let close_tracker = Arc::new(CloseTracker::default());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(move |window, event| {
+            // Only the main window quits the app; closing quick-capture just
+            // dismisses it.
+            if window.label() != MAIN_WINDOW {
+                return;
+            }
+            if matches!(event, WindowEvent::CloseRequested { .. }) {
+                handle_main_window_close(&close_tracker, window.app_handle());
+            }
+        })
         .setup(|app| {
             // ── Global quick-capture shortcut (⌘⇧Space / Ctrl+Shift+Space) ─
             let capture_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space);
@@ -299,4 +396,64 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Only the decision logic is unit-testable here. `handle_main_window_close`
+    // itself needs a live `AppHandle` and an event loop (its two effects are
+    // `app.exit(0)` and sleeping a real thread), so it is exercised manually,
+    // not by a test that would only assert that a mock was called.
+
+    #[test]
+    fn first_close_request_waits_for_the_frontend() {
+        let tracker = CloseTracker::default();
+        assert_eq!(tracker.record_request(), CloseAction::AwaitFrontend);
+    }
+
+    #[test]
+    fn a_repeat_close_request_forces_the_exit() {
+        let tracker = CloseTracker::default();
+        tracker.record_request();
+        assert_eq!(tracker.record_request(), CloseAction::ForceExit);
+    }
+
+    #[test]
+    fn every_request_after_the_first_forces_the_exit() {
+        let tracker = CloseTracker::default();
+        assert_eq!(tracker.record_request(), CloseAction::AwaitFrontend);
+        for _ in 0..5 {
+            assert_eq!(tracker.record_request(), CloseAction::ForceExit);
+        }
+    }
+
+    #[test]
+    fn exactly_one_of_many_concurrent_requests_waits() {
+        let tracker = Arc::new(CloseTracker::default());
+        let waiters = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for _ in 0..16 {
+            let tracker = Arc::clone(&tracker);
+            let waiters = Arc::clone(&waiters);
+            handles.push(std::thread::spawn(move || {
+                if tracker.record_request() == CloseAction::AwaitFrontend {
+                    waiters.fetch_add(1, Ordering::SeqCst);
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        // Exactly one watchdog thread is ever armed, no matter the race.
+        assert_eq!(waiters.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn the_watchdog_outlasts_the_frontend_flush_budget() {
+        // Frontend bound: 2s flush timeout + an IPC round trip. The watchdog
+        // must be comfortably longer or a healthy close could be truncated.
+        assert!(CLOSE_WATCHDOG >= Duration::from_secs(5));
+    }
 }

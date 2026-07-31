@@ -13,6 +13,7 @@ import { ulid } from "ulid";
 import { NOTE_STATES } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
+import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
 import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
@@ -232,7 +233,7 @@ export function KanbanView() {
               ...note.frontmatter,
               state: col as NoteState,
               kanbanOrder: i,
-              updated: new Date().toISOString().split("T")[0],
+              updated: nowTimestamp(),
             },
           };
           updateNote(updated);
@@ -251,6 +252,7 @@ export function KanbanView() {
     if (!vault) return;
     const id = ulid();
     const filePath = noteFilePath(vault.path, id.toLowerCase());
+    const createdAt = nowTimestamp();
     const note: Note = {
       id,
       filePath,
@@ -260,8 +262,8 @@ export function KanbanView() {
       frontmatter: {
         id,
         title: "Untitled",
-        created: new Date().toISOString().split("T")[0],
-        updated: new Date().toISOString().split("T")[0],
+        created: createdAt,
+        updated: createdAt,
         tags: [],
         urgent: false,
         important: false,

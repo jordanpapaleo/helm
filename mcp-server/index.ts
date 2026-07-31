@@ -13,6 +13,7 @@ import {
 import matter from "gray-matter";
 import { buildBriefing } from "./briefing";
 import { listNoteHistory, snapshotNoteFile } from "./history";
+import { normalizeTimestamp, nowTimestamp, todayDate } from "./timestamps";
 
 // ── Vault resolution ──────────────────────────────────────────────────────────
 // Supports multiple vaults via HELM_VAULTS (comma-separated paths) or HELM_VAULT (single path)
@@ -65,6 +66,20 @@ interface Note {
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 
+/**
+ * Coerce raw YAML frontmatter into NoteData. js-yaml parses an *unquoted* ISO
+ * value into a `Date`, and `created` / `updated` are typed (and compared) as
+ * strings everywhere downstream, so they are normalized on the way in. Helm
+ * writes them quoted; a hand-edited file can still hand us a Date.
+ */
+function normalizeNoteData(data: Record<string, unknown>): NoteData {
+  const fm = data as NoteData;
+  const created = normalizeTimestamp(data.created);
+  const updated = normalizeTimestamp(data.updated);
+  if (created === fm.created && updated === fm.updated) return fm;
+  return { ...fm, created: created ?? "", updated: updated ?? "" };
+}
+
 function listAllNotes(): Note[] {
   const notes: Note[] = [];
   for (const vault of VAULTS) {
@@ -76,7 +91,7 @@ function listAllNotes(): Note[] {
         const raw = fs.readFileSync(filePath, "utf-8");
         const { data, content } = matter(raw);
         notes.push({
-          frontmatter: data as NoteData,
+          frontmatter: normalizeNoteData(data),
           content,
           filePath,
           fileName: file,
@@ -137,7 +152,8 @@ function extractWikiLinks(content: string): string[] {
 
 function isOverdue(deadline: string | undefined): boolean {
   if (!deadline) return false;
-  return deadline < new Date().toISOString().split("T")[0];
+  // `deadline` is a calendar date, not a timestamp — compared date-to-date.
+  return deadline < todayDate();
 }
 
 // ── Quadrant helper ───────────────────────────────────────────────────────────
@@ -831,7 +847,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const slug = slugify(title);
     const filePath = path.join(vault.path, `${slug}-${id.slice(-6).toLowerCase()}.md`);
-    const today = new Date().toISOString().split("T")[0];
+    const now = nowTimestamp();
 
     const content = String(args?.content ?? "");
     const inlineTags = extractInlineTags(content);
@@ -841,8 +857,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const frontmatter: NoteData = {
       id,
       title,
-      created: args?.created ? String(args.created) : today,
-      updated: today,
+      created: args?.created ? String(args.created) : now,
+      updated: now,
       tags: mergedTags,
       urgent: (args?.urgent as boolean) ?? false,
       important: (args?.important as boolean) ?? false,
@@ -910,7 +926,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       links: updatedLinks,
       id: note.frontmatter.id, // never overwrite
       locked: note.frontmatter.locked, // never overwrite
-      updated: new Date().toISOString().split("T")[0],
+      updated: nowTimestamp(),
     };
 
     const content = args?.content !== undefined ? String(args.content) : note.content;
@@ -1040,10 +1056,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const raw = fs.readFileSync(entry.path, "utf-8");
     const { data, content } = matter(raw);
     const restored: NoteData = {
-      ...(data as NoteData),
+      ...normalizeNoteData(data),
       id: note.frontmatter.id, // never restore a stale/foreign id
       locked: note.frontmatter.locked, // never restore lock state
-      updated: new Date().toISOString().split("T")[0],
+      updated: nowTimestamp(),
     };
     writeNote(note.filePath, restored, content);
 
@@ -1059,7 +1075,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── get_briefing ───────────────────────────────────────────────────────────
   if (name === "get_briefing") {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayDate();
     const b = buildBriefing(notes, today);
     return {
       content: [

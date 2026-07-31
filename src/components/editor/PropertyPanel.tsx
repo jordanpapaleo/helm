@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
+import { formatTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
 import type { NoteFrontmatter, NoteState } from "../../types/note";
 
@@ -410,12 +411,18 @@ export function PropertyPanel({
             </span>
           </Row>
 
+          {/* Stored as UTC; shown in the reader's local time. A legacy
+              date-only value renders as just a date — no invented midnight. */}
           <Row label="Created">
-            <span className="text-[var(--color-text-muted)]">{frontmatter.created}</span>
+            <span className="text-[var(--color-text-muted)]" title={frontmatter.created}>
+              {formatTimestamp(frontmatter.created)}
+            </span>
           </Row>
 
           <Row label="Updated">
-            <span className="text-[var(--color-text-muted)]">{frontmatter.updated}</span>
+            <span className="text-[var(--color-text-muted)]" title={frontmatter.updated}>
+              {formatTimestamp(frontmatter.updated)}
+            </span>
           </Row>
 
           <Row label="Deadline">

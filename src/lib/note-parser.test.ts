@@ -52,6 +52,80 @@ describe("parseNote", () => {
     expect(note.filePath).toBe("/notes/rule-builder.md");
     expect(note.fileName).toBe("rule-builder.md");
   });
+
+  it("defaults missing timestamps to a full UTC datetime", () => {
+    const note = parseNote("---\nid: abc\n---\nbody", "/notes/abc.md");
+    expect(note.frontmatter.created).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(note.frontmatter.updated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  });
+
+  it("preserves a legacy date-only value rather than migrating it on read", () => {
+    const note = parseNote(
+      "---\nid: abc\ncreated: '2026-07-01'\nupdated: '2026-07-01'\n---\nbody",
+      "/notes/abc.md",
+    );
+    expect(note.frontmatter.created).toBe("2026-07-01");
+    expect(note.frontmatter.updated).toBe("2026-07-01");
+  });
+
+  it("preserves a full timestamp verbatim", () => {
+    const note = parseNote(
+      "---\nid: abc\ncreated: '2026-07-31T18:23:05Z'\nupdated: '2026-07-31T18:23:05Z'\n---\nbody",
+      "/notes/abc.md",
+    );
+    expect(note.frontmatter.updated).toBe("2026-07-31T18:23:05Z");
+  });
+
+  // js-yaml turns an *unquoted* ISO value into a JS Date, which would break
+  // every string comparison in the app. Helm always writes them quoted, but a
+  // hand-edited file can still hand us one.
+  it("coerces unquoted YAML timestamps back to strings", () => {
+    const note = parseNote(
+      "---\nid: abc\ncreated: 2026-07-01\nupdated: 2026-07-31T18:23:05Z\n---\nbody",
+      "/notes/abc.md",
+    );
+    expect(typeof note.frontmatter.created).toBe("string");
+    expect(typeof note.frontmatter.updated).toBe("string");
+    expect(note.frontmatter.created).toBe("2026-07-01");
+    expect(note.frontmatter.updated).toBe("2026-07-31T18:23:05Z");
+  });
+});
+
+describe("serializeNote — timestamp round-trip", () => {
+  // The load-bearing guarantee for the whole datetime format: js-yaml would
+  // parse an unquoted ISO timestamp back as a Date, so `serializeNote` must
+  // emit it quoted and `parseNote` must hand back a string. Every sort and
+  // staleness comparison in the app depends on this.
+  it("emits timestamps quoted and reads them back as strings", () => {
+    const note = parseNote(RAW_NOTE, "/notes/rule-builder.md");
+    const withTimestamps = {
+      ...note,
+      frontmatter: {
+        ...note.frontmatter,
+        created: "2026-07-31T18:23:05Z",
+        updated: "2026-07-31T18:23:05Z",
+      },
+    };
+
+    const serialized = serializeNote(withTimestamps);
+    expect(serialized).toContain("created: '2026-07-31T18:23:05Z'");
+    expect(serialized).toContain("updated: '2026-07-31T18:23:05Z'");
+
+    const reparsed = parseNote(serialized, "/notes/rule-builder.md");
+    expect(typeof reparsed.frontmatter.created).toBe("string");
+    expect(typeof reparsed.frontmatter.updated).toBe("string");
+    expect(reparsed.frontmatter.updated).toBe("2026-07-31T18:23:05Z");
+  });
+
+  it("round-trips a legacy date-only value as a string too", () => {
+    const note = parseNote(RAW_NOTE, "/notes/rule-builder.md");
+    const serialized = serializeNote(note);
+    expect(serialized).toContain("updated: '2026-03-13'");
+
+    const reparsed = parseNote(serialized, "/notes/rule-builder.md");
+    expect(typeof reparsed.frontmatter.updated).toBe("string");
+    expect(reparsed.frontmatter.updated).toBe("2026-03-13");
+  });
 });
 
 describe("serializeNote", () => {

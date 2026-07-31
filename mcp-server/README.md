@@ -113,8 +113,8 @@ Built-in prompt templates for common workflows:
 ---
 id: 01JPMXYZ123          # ULID — stable, survives renames
 title: My Note
-created: 2026-03-13      # YYYY-MM-DD
-updated: 2026-03-13      # set automatically on every write
+created: '2026-03-13T09:14:22Z'   # UTC, seconds precision — sorts as a string
+updated: '2026-03-13T09:14:22Z'   # set automatically on every write
 tags: [work, work/project]  # hierarchical with /
 urgent: true
 important: true

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ulid } from "ulid";
 import { parseNote, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
+import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
 import type { Note, VaultConfig } from "../types/note";
 
@@ -16,7 +17,7 @@ const watchedVaultPaths = new Set<string>();
  * Only writes files that actually need changes.
  */
 async function repairVaultFrontmatter(vaultPath: string): Promise<void> {
-  const today = new Date().toISOString().split("T")[0];
+  const now = nowTimestamp();
   const files = await tauriCommands.listNotes(vaultPath).catch(() => null);
   if (!files) return;
 
@@ -35,11 +36,11 @@ async function repairVaultFrontmatter(vaultPath: string): Promise<void> {
       dirty = true;
     }
     if (!fm.created) {
-      fm.created = today;
+      fm.created = now;
       dirty = true;
     }
     if (!fm.updated) {
-      fm.updated = today;
+      fm.updated = now;
       dirty = true;
     }
 

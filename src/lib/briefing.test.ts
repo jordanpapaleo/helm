@@ -91,6 +91,30 @@ describe("buildBriefing", () => {
     expect(b.staleDoing.map((n) => n.id)).toEqual(["ancient", "exactly14"]);
   });
 
+  // The staleness cutoff is a date-only string, so a full timestamp must be
+  // compared by its date portion: raw string comparison makes
+  // "2026-06-26T10:00:00Z" <= "2026-06-26" false, and a boundary-day note would
+  // silently stop counting as stale.
+  it("treats a boundary-day datetime exactly like the date-only form", () => {
+    const notes = [
+      makeNote({ state: "Doing", updated: "2026-06-26T10:00:00Z" }, "exactly14"),
+      makeNote({ state: "Doing", updated: "2026-06-26T23:59:59Z" }, "endOfDay14"),
+      makeNote({ state: "Doing", updated: "2026-06-27T00:00:00Z" }, "thirteen"),
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.staleDoing.map((n) => n.id)).toEqual(["exactly14", "endOfDay14"]);
+  });
+
+  it("sorts a mix of date-only and datetime values chronologically", () => {
+    const notes = [
+      makeNote({ state: "Doing", updated: "2026-06-26T10:00:00Z" }, "later"),
+      makeNote({ state: "Doing", updated: "2026-06-26" }, "startOfDay"),
+      makeNote({ state: "Doing", updated: "2026-06-01T08:00:00Z" }, "ancient"),
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.staleDoing.map((n) => n.id)).toEqual(["ancient", "startOfDay", "later"]);
+  });
+
   it("is empty across the board for an empty vault", () => {
     const b = buildBriefing([], TODAY);
     expect(b.doing).toHaveLength(0);

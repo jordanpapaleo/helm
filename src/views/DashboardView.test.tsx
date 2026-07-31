@@ -133,6 +133,33 @@ describe("DashboardView — with notes", () => {
     expect(list.getByText("Beta Note")).toBeInTheDocument();
   });
 
+  // `updated` may be a full timestamp or a legacy date-only value; the stored
+  // format is chosen so a plain localeCompare orders both correctly, with
+  // date-only counting as that day's start.
+  it("sorts the note list newest first across mixed date-only and datetime values", () => {
+    const note = (id: string, title: string, updated: string) =>
+      makeNote({
+        id,
+        filePath: `/vault/${id}.md`,
+        frontmatter: { ...makeNote().frontmatter, id, title, updated },
+      });
+
+    useNoteStore.setState({
+      ...useNoteStore.getState(),
+      notes: [
+        note("n1", "Morning", "2026-07-31T09:00:00Z"),
+        note("n2", "Legacy", "2026-07-31"),
+        note("n3", "Evening", "2026-07-31T18:23:05Z"),
+        note("n4", "Yesterday", "2026-07-30T23:59:59Z"),
+      ],
+    });
+    render(<DashboardView />);
+
+    const list = within(screen.getByTestId("note-list"));
+    const titles = list.getAllByText(/Morning|Legacy|Evening|Yesterday/);
+    expect(titles.map((t) => t.textContent)).toEqual(["Evening", "Morning", "Legacy", "Yesterday"]);
+  });
+
   it("shows 'urgent' badge for urgent notes", () => {
     useNoteStore.setState({
       ...useNoteStore.getState(),

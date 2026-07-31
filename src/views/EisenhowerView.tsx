@@ -13,6 +13,7 @@ import { ulid } from "ulid";
 import { EISENHOWER_QUADRANTS } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
+import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
 import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
@@ -237,7 +238,7 @@ export function EisenhowerView() {
 
   async function persistDrop(currentItems: Record<string, string[]>, currentNotes: Note[]) {
     const byId = new Map(currentNotes.map((n) => [n.id, n]));
-    const today = new Date().toISOString().split("T")[0];
+    const now = nowTimestamp();
     const writes: Promise<void>[] = [];
     for (const q of ALL_QUADRANTS) {
       const qConfig = EISENHOWER_QUADRANTS[q];
@@ -257,7 +258,7 @@ export function EisenhowerView() {
             urgent: qConfig.urgent,
             important: qConfig.important,
             eisenhowerOrder: i,
-            ...(quadrantChanged ? { updated: today } : {}),
+            ...(quadrantChanged ? { updated: now } : {}),
           },
         };
         updateNote(updated);
@@ -276,6 +277,7 @@ export function EisenhowerView() {
     const q = EISENHOWER_QUADRANTS[quadrant];
     const id = ulid();
     const filePath = noteFilePath(vault.path, id.toLowerCase());
+    const createdAt = nowTimestamp();
     const note: Note = {
       id,
       filePath,
@@ -285,8 +287,8 @@ export function EisenhowerView() {
       frontmatter: {
         id,
         title: "Untitled",
-        created: new Date().toISOString().split("T")[0],
-        updated: new Date().toISOString().split("T")[0],
+        created: createdAt,
+        updated: createdAt,
         tags: [],
         urgent: q.urgent,
         important: q.important,

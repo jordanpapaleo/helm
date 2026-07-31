@@ -5,6 +5,7 @@
 import { ulid } from "ulid";
 import type { Note } from "../types/note";
 import { extractInlineTags, serializeNote, slugify } from "./note-parser";
+import { nowTimestamp } from "./timestamps";
 
 const TITLE_MAX = 60;
 
@@ -22,7 +23,7 @@ export function buildCaptureNote(
 
   const firstLine = text.split("\n").find((l) => l.trim()) ?? "";
   const title = firstLine.trim().slice(0, TITLE_MAX);
-  const today = new Date(nowMs).toISOString().split("T")[0];
+  const now = nowTimestamp(new Date(nowMs));
   const id = ulid();
 
   // Slug + timestamp keeps capture filenames unique even for repeated titles
@@ -38,8 +39,8 @@ export function buildCaptureNote(
     frontmatter: {
       id,
       title,
-      created: today,
-      updated: today,
+      created: now,
+      updated: now,
       tags: extractInlineTags(text),
       urgent: false,
       important: false,

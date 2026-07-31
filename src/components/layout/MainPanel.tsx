@@ -18,6 +18,7 @@ import {
 } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { tauriCommands } from "../../lib/tauri-commands";
+import { nowTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -368,7 +369,7 @@ export function MainPanel() {
         ...selectedNote.frontmatter,
         tags: inlineTags,
         links: linkedIds.length > 0 ? linkedIds : undefined,
-        updated: new Date().toISOString().split("T")[0],
+        updated: nowTimestamp(),
       },
     };
     updateNote(updated);
@@ -406,7 +407,7 @@ export function MainPanel() {
       frontmatter: {
         ...selectedNote.frontmatter,
         ...updates,
-        updated: new Date().toISOString().split("T")[0],
+        updated: nowTimestamp(),
       },
     };
     updateNote(updated);

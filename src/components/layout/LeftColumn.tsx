@@ -7,6 +7,7 @@ import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
+import { nowTimestamp } from "../../lib/timestamps";
 import { type TagNode, useNoteStore } from "../../store/notes";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
@@ -391,7 +392,7 @@ export function LeftColumn() {
   async function handleCreateNoteInFolder(folderPath: string) {
     if (!activeVault) return;
     const id = ulid();
-    const today = new Date().toISOString().split("T")[0];
+    const now = nowTimestamp();
     const slug = id.toLowerCase();
     const filePath = `${folderPath}/${slug}.md`;
     const note = {
@@ -403,8 +404,8 @@ export function LeftColumn() {
       frontmatter: {
         id,
         title: "Untitled",
-        created: today,
-        updated: today,
+        created: now,
+        updated: now,
         tags: [],
         urgent: false,
         important: false,

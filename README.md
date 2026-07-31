@@ -167,8 +167,8 @@ Every note is a plain `.md` file. Helm stores metadata in YAML frontmatter betwe
 ---
 id: 01ARZ3NDEKTSV4RRFFQ69G5FAV
 title: My Note
-created: 2025-03-13
-updated: 2025-03-13
+created: '2025-03-13T09:14:22Z'
+updated: '2025-03-13T09:14:22Z'
 tags:
   - work
   - work/project-x

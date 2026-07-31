@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NOTE_STATES } from "../../lib/constants";
+import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { useNoteStore } from "../../store/notes";
 import type { NoteFrontmatter, NoteState } from "../../types/note";
 
@@ -143,6 +143,8 @@ export function PropertyPanel({
     });
   }
   const { notes } = useNoteStore();
+
+  const unmanaged = frontmatter.unmanaged ?? false;
 
   // Extra unknown fields beyond the known set
   const extraFields = Object.entries(frontmatter).filter(([k]) => !KNOWN_FIELDS.has(k));
@@ -288,50 +290,58 @@ export function PropertyPanel({
 
       {/* Compact metadata row */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-[var(--color-text-muted)]">State</span>
-          <select
-            className="select select-ghost select-sm h-auto min-h-0 py-0.5"
-            value={frontmatter.state}
-            onChange={(e) => onChange({ state: e.target.value as NoteState })}
-          >
-            {NOTE_STATES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Workflow fields are meaningless for unmanaged notes — hidden and cleared */}
+        {!unmanaged && (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--color-text-muted)]">State</span>
+              <select
+                aria-label="State"
+                className="select select-ghost select-sm h-auto min-h-0 py-0.5"
+                value={frontmatter.state}
+                onChange={(e) => onChange({ state: e.target.value as NoteState })}
+              >
+                {/* Blank entry so a cleared state renders as empty, not as "Prepare" */}
+                <option value="" />
+                {NOTE_STATES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-          <input
-            type="checkbox"
-            checked={frontmatter.urgent}
-            onChange={(e) => onChange({ urgent: e.target.checked })}
-            className="rounded accent-[var(--color-accent)]"
-          />
-          Urgent
-        </label>
+            <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+              <input
+                type="checkbox"
+                checked={frontmatter.urgent}
+                onChange={(e) => onChange({ urgent: e.target.checked })}
+                className="rounded accent-[var(--color-accent)]"
+              />
+              Urgent
+            </label>
 
-        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-          <input
-            type="checkbox"
-            checked={frontmatter.important}
-            onChange={(e) => onChange({ important: e.target.checked })}
-            className="rounded accent-[var(--color-accent)]"
-          />
-          Important
-        </label>
+            <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+              <input
+                type="checkbox"
+                checked={frontmatter.important}
+                onChange={(e) => onChange({ important: e.target.checked })}
+                className="rounded accent-[var(--color-accent)]"
+              />
+              Important
+            </label>
 
-        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-          <input
-            type="checkbox"
-            checked={frontmatter.blocked}
-            onChange={(e) => onChange({ blocked: e.target.checked })}
-            className="rounded accent-[var(--color-accent)]"
-          />
-          Blocked
-        </label>
+            <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+              <input
+                type="checkbox"
+                checked={frontmatter.blocked}
+                onChange={(e) => onChange({ blocked: e.target.checked })}
+                className="rounded accent-[var(--color-accent)]"
+              />
+              Blocked
+            </label>
+          </>
+        )}
 
         <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
           <input
@@ -356,8 +366,15 @@ export function PropertyPanel({
         <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
           <input
             type="checkbox"
-            checked={frontmatter.unmanaged ?? false}
-            onChange={(e) => onChange({ unmanaged: e.target.checked })}
+            checked={unmanaged}
+            onChange={(e) =>
+              // Clearing rides along in the same update so it is one write, not five.
+              onChange(
+                e.target.checked
+                  ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS }
+                  : { unmanaged: false },
+              )
+            }
             className="rounded accent-[var(--color-accent)]"
           />
           Unmanaged

@@ -508,16 +508,21 @@ export function DashboardView() {
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <span
-                      className="badge badge-sm"
-                      style={{
-                        backgroundColor: `${stateColorMap[note.frontmatter.state] ?? "#6e6e73"}22`,
-                        color: stateColorMap[note.frontmatter.state] ?? "#6e6e73",
-                        borderColor: "transparent",
-                      }}
-                    >
-                      {note.frontmatter.state}
-                    </span>
+                    {/* An unmanaged note has a cleared state — no badge, rather
+                        than an empty pill */}
+                    {note.frontmatter.state && (
+                      <span
+                        data-testid="state-badge"
+                        className="badge badge-sm"
+                        style={{
+                          backgroundColor: `${stateColorMap[note.frontmatter.state] ?? "#6e6e73"}22`,
+                          color: stateColorMap[note.frontmatter.state] ?? "#6e6e73",
+                          borderColor: "transparent",
+                        }}
+                      >
+                        {note.frontmatter.state}
+                      </span>
+                    )}
                     {note.frontmatter.urgent && (
                       <span className="badge badge-error badge-soft badge-sm">urgent</span>
                     )}

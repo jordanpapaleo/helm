@@ -115,6 +115,32 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
     expect(onSave.mock.calls[0][0]).toContain("edited");
   });
 
+  it("saves wiki links with unescaped brackets", () => {
+    // The whole point of the fix: what reaches onSave is what lands on disk, and
+    // other tools reading the file must see [[Some Note]], not \[\[Some Note\]\].
+    const onSave = vi.fn();
+    const ref = createRef<NoteEditorHandle>();
+    render(
+      <NoteEditor
+        ref={ref}
+        note={makeNote({ content: "See [[Some Note]] here" })}
+        onSave={onSave}
+      />,
+    );
+
+    act(() => {
+      ref.current?.getEditor()?.commands.insertContent(" edited");
+    });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const saved: string = onSave.mock.calls[0][0];
+    expect(saved).toContain("See [[Some Note]] here");
+    expect(saved).not.toContain("\\[");
+  });
+
   it("still reloads the editor content on an external file change", () => {
     const onSave = vi.fn();
     const note = makeNote();

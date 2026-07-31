@@ -4,7 +4,12 @@ import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, Extension, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import { lowlight } from "../../lib/lowlight";
 import { CodeBlockView } from "./CodeBlockView";
-import { CodeBlockGapCursor, handleTextPaste, markdownExtensions } from "./extensions";
+import {
+  CodeBlockGapCursor,
+  getEditorMarkdown,
+  handleTextPaste,
+  markdownExtensions,
+} from "./extensions";
 
 // Convert a heading to a paragraph when Backspace is pressed at position 0.
 // Without this, pressing Backspace at the start of a heading is a no-op,
@@ -475,10 +480,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
 
     const triggerSave = useCallback(() => {
       if (!editor) return;
-      const md =
-        (
-          editor.storage as { markdown?: { getMarkdown?: () => string } }
-        ).markdown?.getMarkdown?.() ?? editor.getText();
+      const md = getEditorMarkdown(editor);
       lastSavedContentRef.current = md; // mark as our own save so the file watcher doesn't reload
       return onSave(md);
     }, [editor, onSave]);

@@ -165,6 +165,10 @@ function mergeTagsOnSave(
   return [...new Set(merged)];
 }
 
+// The unescape is a backward-compatibility shim: the app no longer writes
+// `\[\[…\]\]` (the TipTap serializer's bracket escaping is undone on save — see
+// unescapeWikiLinks in src/components/editor/extensions.ts), but notes written
+// before that fix keep their escaped brackets until they are next resaved.
 function extractWikiLinks(content: string): string[] {
   const seen = new Set<string>();
   const unescaped = content.replace(/\\\[/g, "[").replace(/\\\]/g, "]");

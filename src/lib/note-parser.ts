@@ -88,8 +88,14 @@ export function normalizeContent(content: string): string {
 
 /**
  * Extract wiki link targets from note content.
- * Searches for [[Note Title]] syntax. Unescapes escaped brackets from
- * tiptap-markdown serialization before matching.
+ * Searches for [[Note Title]] syntax.
+ *
+ * The unescape is a backward-compatibility shim, not an active workaround:
+ * saves no longer write `\[\[…\]\]` (see `unescapeWikiLinks` in
+ * components/editor/extensions.ts), but every note written before that fix
+ * still has escaped brackets on disk and only loses them when it is next
+ * resaved. Removing this would break wiki links in all of those notes, so it
+ * stays until the vault can be assumed clean.
  *
  * @param content - The markdown content to search
  * @returns Array of unique wiki link target titles (deduplicated)

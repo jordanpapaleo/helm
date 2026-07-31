@@ -209,8 +209,11 @@ export const TaskListMarkdown = TaskList.extend({
           setup(md: any) {
             if (!md.__taskListsAdded) {
               // Normalize escaped task list brackets \[ \] → [ ] before task list plugin runs.
-              // This fixes content that was previously serialized without task list support
-              // (tiptap-markdown escapes [ and ] in plain text, producing \[ \]).
+              // Backward-compatibility shim, not an active workaround: TaskItemMarkdown
+              // now writes "[ ] "/"[x] " unescaped, and `unescapeWikiLinks` deliberately
+              // leaves single brackets alone. Notes serialized before task-list support
+              // existed still carry `- \[ \]` on disk (tiptap-markdown escapes [ and ] in
+              // plain text), and this is what still turns them back into task lists.
               // biome-ignore lint/suspicious/noExplicitAny: markdown-it core ruler state not exported
               md.core.ruler.before("block", "unescape-task-list", (state: any) => {
                 state.src = state.src.replace(/^([-*+])\s+\\\[([xX ]?)\\\]/gm, "$1 [$2]");
@@ -256,6 +259,82 @@ export const TaskItemMarkdown = TaskItem.extend({
     };
   },
 });
+
+/**
+ * Undo the bracket escaping prosemirror-markdown applies to `[[Wiki Links]]`.
+ *
+ * `[[Wiki Links]]` are plain *text* in the document: WikiLink.ts contributes
+ * only a decoration plugin — no node, no mark — so the serializer sees ordinary
+ * characters and escapes them, exactly as it should for generic text. Its
+ * `esc()` (prosemirror-markdown/dist/index.js, ~line 820) escapes
+ * `` ` * \ ~ [ ] _ ``, which turns `[[Some Note]]` into `\[\[Some Note\]\]` on
+ * disk. Helm reads it back fine (re-parsing turns `\[` into `[`), but every
+ * other reader of the file — other markdown editors, Claude Code, the MCP
+ * server — sees the backslashes.
+ *
+ * Only the *doubled* pairs are unescaped, and that limit is load-bearing:
+ * - `\[\[` / `\]\]` can only come from the text `[[` / `]]`, which is wiki-link
+ *   syntax by this app's definition (see `extractWikiLinks`), so restoring them
+ *   round-trips to the same document text.
+ * - A single `\[` / `\]` protects literal prose. Unescaping `\[draft\]` or
+ *   `\[text\](url)` would make them parse back as link syntax on the next load,
+ *   silently rewriting the user's text. Leave them escaped.
+ * - `\*`, `\~`, `` \` `` and `\\` are correct markdown for literal characters
+ *   and are deliberately untouched.
+ *
+ * Code is skipped. prosemirror-markdown writes code-block and inline-code
+ * content verbatim, so a `\[\[` inside a fence or a code span is real user
+ * content (a regex, say) rather than an escape — rewriting it would corrupt it.
+ *
+ * @param markdown - Serializer output
+ * @returns The same markdown with `\[\[`/`\]\]` restored outside code
+ */
+export function unescapeWikiLinks(markdown: string): string {
+  // Non-global: `replace` with a global regex would be fine, but these run per
+  // segment and a plain pattern keeps the intent obvious.
+  const unescapeSegment = (segment: string) =>
+    segment.replace(/\\\[\\\[/g, "[[").replace(/\\\]\\\]/g, "]]");
+
+  // Odd indices of the split are code spans (the capture group), so only the
+  // even ones — the prose between them — get unescaped.
+  const unescapeOutsideCodeSpans = (line: string) =>
+    line
+      .split(/(`+[^`]*`+)/)
+      .map((part, i) => (i % 2 === 1 ? part : unescapeSegment(part)))
+      .join("");
+
+  let openFence: string | null = null;
+  return markdown
+    .split("\n")
+    .map((line) => {
+      const fence = line.match(/^ {0,3}(`{3,}|~{3,})/)?.[1];
+      if (fence) {
+        if (openFence === null) openFence = fence;
+        else if (fence[0] === openFence[0] && fence.length >= openFence.length) openFence = null;
+        return line;
+      }
+      return openFence === null ? unescapeOutsideCodeSpans(line) : line;
+    })
+    .join("\n");
+}
+
+/**
+ * Read the editor's content as the markdown that should land on disk.
+ *
+ * The single save-side entry point: every path that persists editor content
+ * goes through here, so the wiki-link unescape lives in exactly one place.
+ * (The raw markdown textarea in MainPanel is deliberately not a caller — its
+ * text never passes through the serializer, so it has nothing to unescape.)
+ *
+ * @param editor - The TipTap editor to serialize
+ * @returns Markdown for the document, or its plain text if tiptap-markdown is absent
+ */
+export function getEditorMarkdown(editor: Editor): string {
+  const markdown =
+    (editor.storage as { markdown?: { getMarkdown?: () => string } }).markdown?.getMarkdown?.() ??
+    editor.getText();
+  return unescapeWikiLinks(markdown);
+}
 
 /**
  * The extensions that determine the editor's *schema* and its markdown

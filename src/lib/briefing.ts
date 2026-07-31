@@ -28,7 +28,13 @@ function addDays(iso: string, n: number): string {
 }
 
 export function buildBriefing(notes: Note[], today: string): Briefing {
-  const open = notes.filter((n) => n.frontmatter.state !== "Done");
+  // The briefing is entirely workflow data, so unmanaged notes are outside it —
+  // the same rule Kanban and Eisenhower already apply. Filtered here, before
+  // `open`, so every bucket is consistent. Their state is cleared to "", which
+  // is `!== "Done"`, so without this they would count as open and a stale
+  // deadline would resurface as overdue.
+  const managed = notes.filter((n) => !n.frontmatter.unmanaged);
+  const open = managed.filter((n) => n.frontmatter.state !== "Done");
   const withDeadline = open.filter((n) => n.frontmatter.deadline);
   const byDeadline = (a: Note, b: Note) =>
     (a.frontmatter.deadline ?? "").localeCompare(b.frontmatter.deadline ?? "");

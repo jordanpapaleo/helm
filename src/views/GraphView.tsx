@@ -40,7 +40,9 @@ interface GraphLink {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const STATE_COLOR_VAR: Record<NoteState, string> = {
+// `""` (an unmanaged note's cleared state) has no color — it falls back to the
+// accent color in nodeColor below.
+const STATE_COLOR_VAR: Record<Exclude<NoteState, "">, string> = {
   Doing: "--color-primary",
   Prepare: "--color-secondary",
   Maintain: "--color-success",

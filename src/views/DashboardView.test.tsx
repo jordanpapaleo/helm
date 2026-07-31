@@ -148,6 +148,39 @@ describe("DashboardView — with notes", () => {
     expect(screen.getByText("urgent")).toBeInTheDocument();
   });
 
+  it("shows the state badge for a note with a state", () => {
+    useNoteStore.setState({
+      ...useNoteStore.getState(),
+      notes: [
+        makeNote({
+          id: "n1",
+          filePath: "/vault/a.md",
+          frontmatter: { ...makeNote().frontmatter, id: "n1", state: "Doing" },
+        }),
+      ],
+    });
+    render(<DashboardView />);
+    const list = within(screen.getByTestId("note-list"));
+    expect(list.getByTestId("state-badge")).toHaveTextContent("Doing");
+  });
+
+  it("renders no state badge at all for a cleared (unmanaged) state", () => {
+    useNoteStore.setState({
+      ...useNoteStore.getState(),
+      notes: [
+        makeNote({
+          id: "n1",
+          filePath: "/vault/a.md",
+          frontmatter: { ...makeNote().frontmatter, id: "n1", state: "", unmanaged: true },
+        }),
+      ],
+    });
+    render(<DashboardView />);
+    const list = within(screen.getByTestId("note-list"));
+    // An empty grey pill is a visual artifact — render nothing instead.
+    expect(list.queryByTestId("state-badge")).not.toBeInTheDocument();
+  });
+
   it("shows 'blocked' badge for blocked notes", () => {
     useNoteStore.setState({
       ...useNoteStore.getState(),

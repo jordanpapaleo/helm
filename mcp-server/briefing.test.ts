@@ -46,3 +46,48 @@ describe("MCP buildBriefing", () => {
     expect(b.dueSoon.map((n) => n.frontmatter.id)).toEqual(["today", "edge"]);
   });
 });
+
+// KEEP IN SYNC with the matching block in src/lib/briefing.test.ts
+describe("MCP buildBriefing — unmanaged notes", () => {
+  it("excludes an unmanaged note from every bucket", () => {
+    const notes = [
+      {
+        frontmatter: fm({
+          id: "unmanaged",
+          unmanaged: true,
+          state: "Doing",
+          blocked: true,
+          deadline: "2026-07-01",
+          updated: "2026-06-01",
+        }),
+      },
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.doing).toHaveLength(0);
+    expect(b.blocked).toHaveLength(0);
+    expect(b.overdue).toHaveLength(0);
+    expect(b.dueSoon).toHaveLength(0);
+    expect(b.staleDoing).toHaveLength(0);
+  });
+
+  // The specific regression: marking a Done note unmanaged clears state to "",
+  // which is `!== "Done"`, so without the unmanaged filter it would resurface
+  // as overdue.
+  it("keeps a cleared-state note with a past deadline out of overdue", () => {
+    const notes = [
+      { frontmatter: fm({ id: "cleared", unmanaged: true, state: "", deadline: "2020-01-01" }) },
+      { frontmatter: fm({ id: "managed", deadline: "2020-01-01" }) },
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.overdue.map((n) => n.frontmatter.id)).toEqual(["managed"]);
+  });
+
+  it("still includes managed notes alongside unmanaged ones", () => {
+    const notes = [
+      { frontmatter: fm({ id: "skip", unmanaged: true, state: "Doing" }) },
+      { frontmatter: fm({ id: "keep", state: "Doing" }) },
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.doing.map((n) => n.frontmatter.id)).toEqual(["keep"]);
+  });
+});

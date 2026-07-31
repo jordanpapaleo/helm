@@ -63,6 +63,38 @@ describe("serializeNote", () => {
     expect(reparsed.frontmatter.title).toBe(note.frontmatter.title);
     expect(reparsed.content.trim()).toBe(note.content.trim());
   });
+
+  // Unmanaged notes clear their workflow fields to "" / false rather than
+  // dropping the keys — the keys must survive a write/read cycle.
+  it("round-trips cleared workflow fields (state: '', urgent/important/blocked: false)", () => {
+    const note = parseNote(RAW_NOTE, "/notes/rule-builder.md");
+    const cleared = {
+      ...note,
+      frontmatter: {
+        ...note.frontmatter,
+        unmanaged: true,
+        state: "" as const,
+        urgent: false,
+        important: false,
+        blocked: false,
+      },
+    };
+
+    const serialized = serializeNote(cleared);
+    // serializeNote only drops `undefined`, so the keys stay in the YAML.
+    expect(serialized).toContain("state: ''");
+    expect(serialized).toContain("urgent: false");
+    expect(serialized).toContain("important: false");
+    expect(serialized).toContain("blocked: false");
+
+    // parseNote uses `?? "Prepare"`, and "" is not nullish, so it survives.
+    const reparsed = parseNote(serialized, "/notes/rule-builder.md");
+    expect(reparsed.frontmatter.state).toBe("");
+    expect(reparsed.frontmatter.urgent).toBe(false);
+    expect(reparsed.frontmatter.important).toBe(false);
+    expect(reparsed.frontmatter.blocked).toBe(false);
+    expect(reparsed.frontmatter.unmanaged).toBe(true);
+  });
 });
 
 describe("slugify", () => {

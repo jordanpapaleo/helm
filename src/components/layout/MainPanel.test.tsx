@@ -306,6 +306,137 @@ function textarea(): HTMLTextAreaElement {
   return el;
 }
 
+describe("MainPanel — the markdown view follows external writes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // An external write is anything that rewrites the open note's body without
+  // going through the textarea: the MCP server, Claude Code, the file watcher,
+  // or a bulk tag operation in the store.
+  function externalWrite(content: string) {
+    act(() => {
+      const note = useNoteStore.getState().notes[0];
+      useNoteStore.getState().updateNote({ ...note, content });
+    });
+  }
+
+  it("shows a body that was rewritten underneath it", () => {
+    setup(makeNote({ content: "Original body" }), true);
+
+    externalWrite("Rewritten by Claude Code");
+
+    expect(textarea().value).toBe("Rewritten by Claude Code");
+  });
+
+  it("does not write the stale body back on blur after an external write", async () => {
+    setup(makeNote({ content: "Original body" }), true);
+
+    externalWrite("Rewritten by Claude Code");
+    await act(async () => {
+      fireEvent.blur(textarea());
+    });
+
+    // Blur used to flush the pre-write text, silently reverting the change.
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes[0].content).toBe("Rewritten by Claude Code");
+  });
+
+  it("ignores its own save coming back around through the store", async () => {
+    setup(makeNote({ content: "Original body" }), true);
+
+    fireEvent.change(textarea(), { target: { value: "Original body, edited" } });
+    await act(async () => {
+      fireEvent.blur(textarea());
+    });
+
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
+    expect(textarea().value).toBe("Original body, edited");
+  });
+
+  it("adopts a bulk tag delete that rewrites the open note", async () => {
+    const note = makeNote({ content: "Plan #work today" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await act(async () => {
+      await useNoteStore.getState().deleteTag("work");
+    });
+
+    expect(textarea().value).toBe("Plan today");
+
+    vi.mocked(tauriCommands.writeNote).mockClear();
+    await act(async () => {
+      fireEvent.blur(textarea());
+    });
+
+    // The stale textarea used to blur "#work" straight back onto disk, which is
+    // what made the bulk tag delete impossible to validate by hand.
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes[0].content).toBe("Plan today");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+  });
+
+  it("keeps unsaved local edits rather than discarding them for an external write", () => {
+    setup(makeNote({ content: "Original body" }), true);
+
+    // Typing starts a 1s debounce; nothing has reached disk yet.
+    fireEvent.change(textarea(), { target: { value: "Half-typed sentence" } });
+    externalWrite("Rewritten by Claude Code");
+
+    expect(textarea().value).toBe("Half-typed sentence");
+  });
+
+  it("preserves the caret across an adopted external change", () => {
+    setup(makeNote({ content: "Original body" }), true);
+    const caret = "Original ".length;
+    const el = textarea();
+    el.focus();
+    el.setSelectionRange(caret, caret);
+
+    externalWrite("Original body with more text appended");
+
+    expect(textarea().selectionStart).toBe(caret);
+  });
+
+  it("clamps the caret when the external body is shorter", () => {
+    setup(makeNote({ content: "Original body" }), true);
+    const el = textarea();
+    el.focus();
+    el.setSelectionRange(13, 13);
+
+    externalWrite("Tiny");
+
+    expect(textarea().value).toBe("Tiny");
+    expect(textarea().selectionStart).toBe(4);
+  });
+
+  it("still loads the other note's body when switching notes", () => {
+    const first = makeNote({ content: "First body" });
+    const second = makeNote({
+      id: "01JPMXYZ456",
+      filePath: "/vault/other.md",
+      fileName: "other.md",
+      content: "Second body",
+      frontmatter: { ...makeNote().frontmatter, id: "01JPMXYZ456", title: "Other" },
+    });
+    setup(first, true);
+    act(() => {
+      useNoteStore.setState({ notes: [first, second] });
+    });
+
+    act(() => {
+      useNoteStore.getState().selectNote(second.id);
+    });
+    expect(textarea().value).toBe("Second body");
+
+    act(() => {
+      useNoteStore.getState().selectNote(first.id);
+    });
+    expect(textarea().value).toBe("First body");
+  });
+});
+
 describe("MainPanel — cursor position survives the markdown/editor toggle", () => {
   beforeEach(() => {
     vi.clearAllMocks();

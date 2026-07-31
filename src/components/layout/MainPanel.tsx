@@ -6,6 +6,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -74,20 +75,30 @@ const MarkdownTextarea = forwardRef<
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flusherId = useId();
 
-  const flush = useCallback(() => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    onSave(value);
-  }, [onSave, value]);
-
   // Read latest state through refs so the flusher registered on mount never
   // captures stale values.
   const valueRef = useRef(value);
   valueRef.current = value;
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+
+  // Tracks the last content we handed to onSave so we can tell our own saves
+  // apart from external file changes (Claude Code, the MCP server, the file
+  // watcher, a bulk tag rewrite in the store). Same device as NoteEditor's
+  // lastSavedContentRef — every onSave call site must go through commitSave.
+  const lastSavedContentRef = useRef(content);
+  const commitSave = useCallback((md: string) => {
+    lastSavedContentRef.current = md;
+    return onSaveRef.current(md);
+  }, []);
+
+  const flush = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    commitSave(value);
+  }, [commitSave, value]);
 
   // Flush edits still inside the debounce window if the window closes.
   useEffect(() => {
@@ -98,11 +109,11 @@ const MarkdownTextarea = forwardRef<
           clearTimeout(saveTimer.current);
           saveTimer.current = null;
         }
-        return onSaveRef.current(valueRef.current);
+        return commitSave(valueRef.current);
       },
     });
     return () => unregisterSaveFlusher(flusherId);
-  }, [flusherId]);
+  }, [flusherId, commitSave]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!e.metaKey && !e.ctrlKey) return;
@@ -132,7 +143,7 @@ const MarkdownTextarea = forwardRef<
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      onSave(next);
+      commitSave(next);
     }, 1000);
 
     // Restore selection inside the wrapping characters
@@ -149,7 +160,7 @@ const MarkdownTextarea = forwardRef<
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      onSave(next);
+      commitSave(next);
     }, 1000);
   };
 
@@ -159,6 +170,49 @@ const MarkdownTextarea = forwardRef<
     },
     [],
   );
+
+  // Caret index to reapply once an adopted external change has repainted the
+  // textarea — assigning a new `value` otherwise drops the caret to the end.
+  const pendingCaretRef = useRef<number | null>(null);
+
+  // Follow the file when it is rewritten underneath us (Claude Code, the MCP
+  // server, the file watcher, a bulk tag rename/delete in the store). Without
+  // this the textarea keeps showing the pre-write body and blurring flushes it
+  // back over the change. Mirrors NoteEditor's external-change effect.
+  useEffect(() => {
+    // Our own save coming back around through the store is not an external
+    // change. Normalize first: gray-matter reintroduces a leading "\n" on parse,
+    // so a strict === would reload on every save round trip.
+    if (normalizeContent(content) === normalizeContent(lastSavedContentRef.current)) return;
+    // Rule: only adopt when the text in the box still matches what we last wrote
+    // to disk. If the user has unsaved local edits, adopting would silently
+    // throw their typing away, so we keep the local text and let their next
+    // save win — and the external version is snapshotted to `.helm-history/`
+    // before that save overwrites it, so nothing becomes unrecoverable.
+    if (normalizeContent(valueRef.current) !== normalizeContent(lastSavedContentRef.current))
+      return;
+    // Cancel any pending auto-save so it cannot overwrite the external change.
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    // Best effort on the caret: the local text is unedited, so a raw index is
+    // still meaningful — hold it where it is, clamped to the new body. We do
+    // not diff the two bodies to chase the caret's semantic position.
+    pendingCaretRef.current = Math.min(textareaRef.current?.selectionStart ?? 0, content.length);
+    setValue(content);
+    lastSavedContentRef.current = content;
+  }, [content]);
+
+  // Runs before paint so the caret never visibly jumps. No-ops for ordinary
+  // typing, where the browser already keeps the caret in place.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `value` is the trigger, not an input — the caret must be reapplied on the render that paints the adopted content
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret === null) return;
+    pendingCaretRef.current = null;
+    textareaRef.current?.setSelectionRange(caret, caret);
+  }, [value]);
 
   // Read the caret through a ref so the mount effect and the imperative handle
   // always measure against the text currently in the box, not the mounted value.
@@ -192,7 +246,7 @@ const MarkdownTextarea = forwardRef<
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
           saveTimer.current = null;
-          onSave(newContent);
+          commitSave(newContent);
         }, 1000);
       },
       getCursorTextOffset: () => {
@@ -206,7 +260,7 @@ const MarkdownTextarea = forwardRef<
       getScrollFraction: () =>
         textareaRef.current ? getScrollFraction(textareaRef.current) : null,
     }),
-    [onSave, setCursorTextOffset],
+    [commitSave, setCursorTextOffset],
   );
 
   // Carry the cursor and the scroll position over from the rich-text editor. The

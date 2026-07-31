@@ -10,7 +10,7 @@ import { McpSetupModal } from "./components/McpSetupModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { addVault, useVault } from "./hooks/useVault";
 import { checkForUpdates, type UpdateCheckResult } from "./lib/check-for-updates";
-import { flushPendingSaves, hasPendingSaves } from "./lib/pending-saves";
+import { flushPendingSaves } from "./lib/pending-saves";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { tauriCommands } from "./lib/tauri-commands";
 import { useSettingsStore } from "./store/settings";

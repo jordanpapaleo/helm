@@ -69,6 +69,19 @@ export function serializeNote(note: Note): string {
 }
 
 /**
+ * Normalize note content for change detection.
+ * gray-matter reintroduces a leading "\n" when a file is parsed back off disk,
+ * and editors round-trip trailing blank lines inconsistently, so content that
+ * differs only at the edges is not a real modification.
+ *
+ * @param content - Raw note body
+ * @returns The body with leading/trailing newlines stripped
+ */
+export function normalizeContent(content: string): string {
+  return content.replace(/^\n+|\n+$/g, "");
+}
+
+/**
  * Extract wiki link targets from note content.
  * Searches for [[Note Title]] syntax. Unescapes escaped brackets from
  * tiptap-markdown serialization before matching.

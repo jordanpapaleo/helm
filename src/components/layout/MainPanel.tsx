@@ -9,7 +9,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { extractInlineTags, extractWikiLinks, serializeNote } from "../../lib/note-parser";
+import {
+  extractInlineTags,
+  extractWikiLinks,
+  normalizeContent,
+  serializeNote,
+} from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
@@ -249,6 +254,12 @@ export function MainPanel() {
 
   async function handleSave(content: string) {
     if (!selectedNote) return;
+
+    // Opening, focusing, or blurring a note is not a modification. Bail before
+    // touching disk so viewing a note never bumps `updated`. Edge newlines are
+    // normalized away because gray-matter reintroduces a leading "\n" on parse,
+    // so a strict === would let those phantom saves through.
+    if (normalizeContent(content) === normalizeContent(selectedNote.content)) return;
 
     // Time machine: snapshot the current on-disk content before overwriting.
     // Rust coalesces rapid autosaves (min 5 min between snapshots) and prunes

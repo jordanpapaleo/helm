@@ -14,6 +14,9 @@ export interface HistoryEntry {
 }
 
 export const tauriCommands = {
+  /** Quit the whole process (not just the current window). */
+  exitApp: (): Promise<void> => invoke("exit_app"),
+
   // Legacy — used only for migration from single-vault config
   getVaultPath: (): Promise<string | null> => invoke("get_vault_path"),
 

@@ -6,6 +6,14 @@ use tauri::menu::{
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+/// Fully quit the process. Needed because the quick-capture window is only
+/// hidden (not destroyed) on dismiss — closing the main window alone would
+/// leave a headless process alive.
+#[tauri::command]
+fn exit_app(app: AppHandle) {
+    app.exit(0);
+}
+
 /// Show (or lazily create) the always-on-top quick-capture window.
 fn open_capture_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("capture") {
@@ -260,6 +268,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            exit_app,
             get_vault_path,
             set_vault_path,
             get_vaults,

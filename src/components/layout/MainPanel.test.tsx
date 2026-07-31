@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
@@ -293,6 +293,24 @@ describe("MainPanel — cursor position survives the markdown/editor toggle", ()
     expect(tauriCommands.writeNote).not.toHaveBeenCalled();
   });
 
+  it("sets the selection before focusing, so the browser reveals the caret", () => {
+    // Focusing a text control reveals its *cached* selection. Focusing first and
+    // then moving the caret leaves the view at the top with the caret off-screen
+    // — the original bug. jsdom does no layout, so the ordering is the part that
+    // can be pinned here; the scrolling itself was verified in a real browser.
+    setup(makeNote({ content: MARKDOWN_CONTENT }), false);
+    const select = vi.spyOn(HTMLTextAreaElement.prototype, "setSelectionRange");
+    const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+
+    toggleToMarkdown();
+
+    expect(select).toHaveBeenCalled();
+    expect(focus).toHaveBeenCalled();
+    expect(select.mock.invocationCallOrder[0]).toBeLessThan(focus.mock.invocationCallOrder[0]);
+    select.mockRestore();
+    focus.mockRestore();
+  });
+
   it("keeps the find bar working across the toggle", () => {
     setup(makeNote({ content: MARKDOWN_CONTENT }), true);
     fireEvent.keyDown(document, { key: "f", metaKey: true });
@@ -303,5 +321,141 @@ describe("MainPanel — cursor position survives the markdown/editor toggle", ()
 
     toggleToMarkdown();
     expect(screen.getByPlaceholderText("Find")).toBeTruthy();
+  });
+});
+
+/**
+ * jsdom performs no layout: every element reports scrollHeight/clientHeight of 0,
+ * so nothing ever overflows and no real scrolling can be observed here. What these
+ * tests check is the handover *wiring* — that the outgoing surface's position is
+ * measured, carried across the toggle, and applied to the incoming surface's
+ * scroller using the arithmetic in `src/lib/scroll-fraction.ts`. The layout numbers
+ * are supplied by hand. Whether the resulting view looks right to a reader needs a
+ * human in the real app.
+ */
+function stubScroller(
+  el: Element,
+  { scrollHeight, clientHeight, scrollTop = 0 }: Record<string, number>,
+) {
+  let top = scrollTop;
+  Object.defineProperty(el, "scrollHeight", { get: () => scrollHeight, configurable: true });
+  Object.defineProperty(el, "clientHeight", { get: () => clientHeight, configurable: true });
+  Object.defineProperty(el, "scrollTop", {
+    get: () => top,
+    set: (v: number) => {
+      top = v;
+    },
+    configurable: true,
+  });
+}
+
+// The editor's own wrapper is the scroller, not MainPanel's outer div.
+function editorScroller(): Element {
+  const el = document.querySelector(".ProseMirror")?.closest(".overflow-y-auto");
+  if (!el) throw new Error("editor scroller is not mounted");
+  return el;
+}
+
+describe("MainPanel — scroll position survives the markdown/editor toggle", () => {
+  let frames: FrameRequestCallback[] = [];
+  const originalElementRects = Element.prototype.getClientRects;
+  const originalRangeRects = Range.prototype.getClientRects;
+  const originalRangeBox = Range.prototype.getBoundingClientRect;
+  const emptyRectList = () => Object.assign([], { item: () => null });
+  const zeroRect = () =>
+    ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0 }) as DOMRect;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    frames = [];
+    // The restore runs in a rAF so it lands after layout. Capture and flush it by
+    // hand rather than waiting on a real frame.
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    // jsdom implements neither Element.getClientRects nor the Range geometry
+    // ProseMirror uses to locate the caret. Supply the empty list / zero rect a
+    // browser returns for an unlaid-out node so the real code path runs rather
+    // than throwing.
+    Element.prototype.getClientRects = emptyRectList as unknown as typeof originalElementRects;
+    Range.prototype.getClientRects = emptyRectList as unknown as typeof originalRangeRects;
+    Range.prototype.getBoundingClientRect = zeroRect as unknown as typeof originalRangeBox;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    Element.prototype.getClientRects = originalElementRects;
+    Range.prototype.getClientRects = originalRangeRects;
+    Range.prototype.getBoundingClientRect = originalRangeBox;
+  });
+
+  function flushFrames() {
+    const pending = frames;
+    frames = [];
+    act(() => {
+      for (const cb of pending) cb(0);
+    });
+  }
+
+  it("carries the reading position from the markdown view into the editor", () => {
+    setup(makeNote({ content: MARKDOWN_CONTENT }), true);
+    // A quarter of the way through the markdown source.
+    stubScroller(textarea(), { scrollHeight: 3000, clientHeight: 300, scrollTop: 675 });
+
+    toggleToEditor();
+    // The rich-text view renders the same document much taller.
+    stubScroller(editorScroller(), { scrollHeight: 5100, clientHeight: 300 });
+    flushFrames();
+
+    // Same fraction through the document (0.25), not the same pixel offset.
+    expect(editorScroller().scrollTop).toBe(1200);
+  });
+
+  it("carries the reading position from the editor back into the markdown view", () => {
+    setup(makeNote({ content: MARKDOWN_CONTENT }), false);
+    stubScroller(editorScroller(), { scrollHeight: 5100, clientHeight: 300, scrollTop: 1200 });
+
+    toggleToMarkdown();
+    stubScroller(textarea(), { scrollHeight: 3000, clientHeight: 300 });
+    flushFrames();
+
+    expect(textarea().scrollTop).toBe(675);
+  });
+
+  it("leaves the incoming view alone when the outgoing content did not overflow", () => {
+    setup(makeNote({ content: MARKDOWN_CONTENT }), true);
+    // Content fits: there is no reading position worth restoring.
+    stubScroller(textarea(), { scrollHeight: 300, clientHeight: 300, scrollTop: 0 });
+
+    toggleToEditor();
+    stubScroller(editorScroller(), { scrollHeight: 5100, clientHeight: 300, scrollTop: 0 });
+    flushFrames();
+
+    expect(editorScroller().scrollTop).toBe(0);
+  });
+
+  it("does not carry a scroll position across a note switch", () => {
+    const first = makeNote({ content: MARKDOWN_CONTENT });
+    const second = makeNote({
+      id: "01JPMXYZ456",
+      filePath: "/vault/other.md",
+      fileName: "other.md",
+      content: "Another note entirely",
+      frontmatter: { ...makeNote().frontmatter, id: "01JPMXYZ456", title: "Other" },
+    });
+    setup(first, true);
+    act(() => {
+      useNoteStore.setState({ notes: [first, second] });
+    });
+    stubScroller(textarea(), { scrollHeight: 3000, clientHeight: 300, scrollTop: 675 });
+    toggleToEditor();
+
+    act(() => {
+      useNoteStore.getState().selectNote(second.id);
+    });
+    const other = textarea();
+    stubScroller(other, { scrollHeight: 3000, clientHeight: 300, scrollTop: 0 });
+    flushFrames();
+
+    expect(other.scrollTop).toBe(0);
   });
 });

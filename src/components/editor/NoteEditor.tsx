@@ -198,6 +198,7 @@ import {
 import { docPositionToTextOffset, textOffsetToDocPosition } from "../../lib/cursor-position";
 import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
@@ -223,6 +224,8 @@ export interface NoteEditorHandle {
   getCursorTextOffset: () => number | null;
   /** Move the caret to a text offset and focus the editor. Never throws. */
   setCursorTextOffset: (offset: number) => void;
+  /** How far through the document the view is scrolled, 0…1 (see scroll-fraction.ts). */
+  getScrollFraction: () => number | null;
 }
 
 interface NoteEditorProps {
@@ -235,14 +238,28 @@ interface NoteEditorProps {
    * from the markdown textarea. Applied once, then ignored.
    */
   initialCursorOffset?: number | null;
+  /** Scroll fraction to restore on mount, so the view keeps its place. */
+  initialScrollFraction?: number | null;
 }
 
 export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
-  ({ note, onSave, locked = false, findOpen = false, initialCursorOffset = null }, ref) => {
+  (
+    {
+      note,
+      onSave,
+      locked = false,
+      findOpen = false,
+      initialCursorOffset = null,
+      initialScrollFraction = null,
+    },
+    ref,
+  ) => {
     const { vaults, notes } = useNoteStore();
     const { settings } = useSettingsStore();
     const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path ?? null;
     const [popup, setPopup] = useState<SuggestionPopup | null>(null);
+    // The element that actually scrolls in editor mode (see scroll-fraction.ts).
+    const scrollerRef = useRef<HTMLDivElement>(null);
 
     // Refs prevent stale closures inside the TipTap extension config
     const notesRef = useRef(notes);
@@ -449,8 +466,13 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // Placing the caret is a selection-only transaction. TipTap emits `update`
     // only when the doc actually changed, so restoring a cursor can never wake
     // the debounced auto-save.
-    const setCursorTextOffset = useCallback(
-      (offset: number) => {
+    //
+    // `reveal` controls whether focusing also scrolls the caret into view. The
+    // toggle-restore path passes false because it is about to position the view
+    // by scroll fraction instead, and letting focus reveal the caret first would
+    // fight that.
+    const placeCursor = useCallback(
+      (offset: number, reveal: boolean) => {
         if (!editor || editor.isDestroyed) return;
         try {
           const { doc } = editor.state;
@@ -462,7 +484,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         }
         // Focus regardless: a caret in the wrong place still beats an editor the
         // user has to click before they can type.
-        editor.commands.focus();
+        editor.commands.focus(null, { scrollIntoView: reveal });
       },
       [editor],
     );
@@ -476,9 +498,13 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           editor && !editor.isDestroyed
             ? docPositionToTextOffset(editor.state.doc, editor.state.selection.head)
             : null,
-        setCursorTextOffset,
+        setCursorTextOffset: (offset: number) => placeCursor(offset, true),
+        // The editor's own wrapper is the element that scrolls, not the MainPanel
+        // wrapper around it.
+        getScrollFraction: () =>
+          scrollerRef.current ? getScrollFraction(scrollerRef.current) : null,
       }),
-      [editor, setCursorTextOffset],
+      [editor, placeCursor],
     );
 
     // Reset editor when switching to a different note.
@@ -512,17 +538,41 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       lastSavedContentRef.current = note.content;
     }, [note.content]);
 
-    // Carry a cursor over from the markdown textarea. The editor mounts fresh on
-    // every toggle, so this runs exactly once — a ref guard keeps a later re-render
-    // from yanking the caret back. It must sit after the content effects above,
-    // whose `setContent` would otherwise reset the selection we just placed.
+    // Carry the cursor and the scroll position over from the markdown textarea.
+    // The editor mounts fresh on every toggle, so this runs exactly once — a ref
+    // guard keeps a later re-render from yanking the caret back. It must sit after
+    // the content effects above, whose `setContent` would otherwise reset the
+    // selection we just placed.
     const restoredCursorRef = useRef(false);
     useEffect(() => {
       if (!editor || restoredCursorRef.current) return;
       if (initialCursorOffset === null || initialCursorOffset === undefined) return;
       restoredCursorRef.current = true;
-      setCursorTextOffset(initialCursorOffset);
-    }, [editor, initialCursorOffset, setCursorTextOffset]);
+      placeCursor(initialCursorOffset, initialScrollFraction === null);
+      if (initialScrollFraction === null) return;
+
+      // Wait for layout — node views (code blocks) render after mount, so
+      // scrollHeight is not trustworthy until the next frame.
+      const frame = requestAnimationFrame(() => {
+        const scroller = scrollerRef.current;
+        if (!scroller || editor.isDestroyed) return;
+        applyScrollFraction(scroller, initialScrollFraction);
+
+        // Safety net: the same fraction through two views of very different
+        // heights can still leave the caret off-screen. `coordsAtPos` is a real
+        // ProseMirror measurement, so this needs no font bookkeeping of our own.
+        try {
+          const caret = editor.view.coordsAtPos(editor.state.selection.head);
+          const box = scroller.getBoundingClientRect();
+          if (caret.top < box.top || caret.bottom > box.bottom) {
+            editor.commands.scrollIntoView();
+          }
+        } catch {
+          /* the caret has no measurable position — leave the fraction as-is */
+        }
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [editor, initialCursorOffset, initialScrollFraction, placeCursor]);
 
     useEffect(() => {
       if (editor) editor.setEditable(!locked);
@@ -594,6 +644,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     return (
       // biome-ignore lint/a11y/noStaticElementInteractions: onBlur bubbles from TipTap's focusable editor content
       <div
+        ref={scrollerRef}
         onBlur={locked ? undefined : handleBlur}
         className={`relative flex-1 overflow-y-auto px-12 py-6 ${locked ? "opacity-75 cursor-not-allowed select-none" : ""}`}
       >

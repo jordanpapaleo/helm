@@ -102,6 +102,37 @@ export function extractWikiLinks(content: string): string[] {
 }
 
 /**
+ * Matches 3- or 6-digit hex color values (e.g. fff, ff0000), so `#fff` reads
+ * as a color rather than a tag.
+ *
+ * Safe to share as a single instance: it has no `g` flag, so `test()` never
+ * advances `lastIndex` and callers cannot interfere with each other.
+ */
+export const HEX_COLOR_RE = /^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/;
+
+/**
+ * Build a fresh global pattern matching an inline tag and the boundary
+ * character in front of it. Capture group 1 is the tag name.
+ *
+ * A factory rather than a shared constant on purpose: the pattern carries the
+ * `g` flag and is driven by `exec`/`matchAll` loops, so a single shared
+ * instance would let one caller's `lastIndex` leak into another's iteration.
+ * Every caller gets its own object.
+ *
+ * This is the single source of truth for what the app considers a tag —
+ * `extractInlineTags` (storage) and the editor's inline-tag decorations
+ * (presentation) both build from it, so the two can never disagree.
+ *
+ * @returns A new global RegExp; never reuse one across concurrent loops
+ */
+export function createTagPattern(): RegExp {
+  return /(?:^|[^a-zA-Z0-9])#([a-zA-Z][a-zA-Z0-9/_-]*)/g;
+}
+
+// KEEP IN SYNC with mcp-server/index.ts extractInlineTags — the app and the
+// MCP server must agree on what counts as a tag or vault writes will drift.
+// (The MCP server keeps its own copy deliberately: it never imports from src/.)
+/**
  * Extract Bear-style inline tags from note content.
  * Searches for #tag or #parent/child syntax. Ignores markdown headings
  * by requiring a letter immediately after #. Deduplicates results.
@@ -112,17 +143,12 @@ export function extractWikiLinks(content: string): string[] {
  * extractInlineTags("Plan #work/project and #personal")
  * // => ["work/project", "personal"]
  */
-// Matches 3- or 6-digit hex color values (e.g. fff, ff0000)
-const HEX_COLOR_RE = /^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/;
-
-// KEEP IN SYNC with mcp-server/index.ts extractInlineTags — the app and the
-// MCP server must agree on what counts as a tag or vault writes will drift.
 export function extractInlineTags(content: string): string[] {
   // Strip fenced code blocks and inline code so their content never produces tags
   const stripped = content.replace(/```[\s\S]*?```/g, "").replace(/`[^`]*`/g, "");
 
   const seen = new Set<string>();
-  for (const match of stripped.matchAll(/(?:^|[^a-zA-Z0-9])#([a-zA-Z][a-zA-Z0-9/_-]*)/g)) {
+  for (const match of stripped.matchAll(createTagPattern())) {
     if (!HEX_COLOR_RE.test(match[1])) {
       seen.add(match[1]);
     }

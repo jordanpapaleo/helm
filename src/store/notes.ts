@@ -6,8 +6,18 @@
 import { create } from "zustand";
 import { serializeNote, slugify } from "../lib/note-parser";
 import { buildIndex, type NoteIndex, searchNotes } from "../lib/search";
+import {
+  isValidTagName,
+  normalizeTagName,
+  noteMatchesTag,
+  removeInlineTag,
+  removeTagFromList,
+  renameInlineTag,
+  renameTagInList,
+} from "../lib/tags";
 import { tauriCommands } from "../lib/tauri-commands";
 import type { Note, VaultConfig } from "../types/note";
+import { reportError } from "./toast";
 
 /**
  * A node in the hierarchical tag tree structure.
@@ -116,6 +126,66 @@ interface NoteStore {
    * unchanged.
    */
   renameFolder: (oldPath: string, newName: string) => Promise<void>;
+  /**
+   * Rename a tag across every note that carries it, including its descendants
+   * (`work` → `client` also moves `work/project` → `client/project`).
+   * Rewrites the inline `#tag` occurrences in each body as well as the
+   * frontmatter list — the editor derives `frontmatter.tags` from the body on
+   * every save, so a frontmatter-only rewrite would be reverted.
+   * No-ops when the new name is empty, unchanged, or not a representable tag.
+   */
+  renameTag: (oldTag: string, newTag: string) => Promise<void>;
+  /**
+   * Delete a tag and all its descendants from every note that carries it,
+   * rewriting bodies as well as frontmatter (see renameTag).
+   */
+  deleteTag: (tag: string) => Promise<void>;
+}
+
+/** Today as YYYY-MM-DD, the format used by note frontmatter. */
+function today(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+/**
+ * Write every rewritten note to disk, returning the ones that made it. A failed
+ * write never aborts the batch — the remaining notes are still processed and
+ * one toast summarizes the failures.
+ *
+ * Each note is snapshotted to `.helm-history/` before it is overwritten, the
+ * same guarantee the editor's save path gives, so a bulk rewrite is always
+ * recoverable from the time machine. The snapshot is awaited (it must land
+ * before the overwrite) but never blocks the write: a failure is swallowed, and
+ * a note whose vault path can't be resolved is simply written without one.
+ * Rust coalesces to one snapshot per note per 5 minutes and prunes to 50.
+ * @internal
+ */
+async function writeRewrittenNotes(
+  updates: Note[],
+  vaults: VaultConfig[],
+  operation: string,
+): Promise<Note[]> {
+  const written: Note[] = [];
+  let lastError: unknown;
+  for (const note of updates) {
+    const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path;
+    if (vaultPath) {
+      await tauriCommands.snapshotNote(vaultPath, note.id, note.filePath).catch(() => {
+        /* snapshotting must never block a save */
+      });
+    }
+    try {
+      await tauriCommands.writeNote(note.filePath, serializeNote(note));
+      written.push(note);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  const failed = updates.length - written.length;
+  if (failed > 0) {
+    reportError(`${operation}: ${failed} of ${updates.length} notes could not be saved`, lastError);
+  }
+  return written;
 }
 
 /**
@@ -235,6 +305,70 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
             : fp,
       );
       return { notes, knownFolderPaths, tagTree: buildTagTree(notes) };
+    });
+  },
+
+  renameTag: async (oldTagInput, newTagInput) => {
+    const oldTag = normalizeTagName(oldTagInput);
+    const newTag = normalizeTagName(newTagInput);
+    if (!oldTag || !newTag || oldTag === newTag) return;
+    if (!isValidTagName(newTag)) {
+      reportError(
+        "Cannot rename tag",
+        new Error(
+          `"${newTag}" is not a valid tag name — use letters, digits, "-", "_" and "/" only, starting with a letter`,
+        ),
+      );
+      return;
+    }
+
+    const stamp = today();
+    const updates = get()
+      .notes.filter((n) => noteMatchesTag(n, oldTag))
+      .map<Note>((n) => ({
+        ...n,
+        content: renameInlineTag(n.content, oldTag, newTag),
+        frontmatter: {
+          ...n.frontmatter,
+          tags: renameTagInList(n.frontmatter.tags ?? [], oldTag, newTag),
+          updated: stamp,
+        },
+      }));
+
+    const written = await writeRewrittenNotes(updates, get().vaults, `Failed to rename #${oldTag}`);
+    if (written.length === 0) return;
+
+    const byPath = new Map(written.map((n) => [n.filePath, n]));
+    set((state) => {
+      const notes = state.notes.map((n) => byPath.get(n.filePath) ?? n);
+      return { notes, tagTree: buildTagTree(notes), searchIndex: buildIndex(notes) };
+    });
+  },
+
+  deleteTag: async (tagInput) => {
+    const tag = normalizeTagName(tagInput);
+    if (!tag) return;
+
+    const stamp = today();
+    const updates = get()
+      .notes.filter((n) => noteMatchesTag(n, tag))
+      .map<Note>((n) => ({
+        ...n,
+        content: removeInlineTag(n.content, tag),
+        frontmatter: {
+          ...n.frontmatter,
+          tags: removeTagFromList(n.frontmatter.tags ?? [], tag),
+          updated: stamp,
+        },
+      }));
+
+    const written = await writeRewrittenNotes(updates, get().vaults, `Failed to delete #${tag}`);
+    if (written.length === 0) return;
+
+    const byPath = new Map(written.map((n) => [n.filePath, n]));
+    set((state) => {
+      const notes = state.notes.map((n) => byPath.get(n.filePath) ?? n);
+      return { notes, tagTree: buildTagTree(notes), searchIndex: buildIndex(notes) };
     });
   },
 }));

@@ -1,4 +1,4 @@
-import { Editor } from "@tiptap/core";
+import { type AnyExtension, Editor } from "@tiptap/core";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { markdownExtensions } from "../components/editor/extensions";
 import { lowlight } from "../lib/lowlight";
@@ -14,10 +14,14 @@ import { lowlight } from "../lib/lowlight";
  * editor that does not exist.
  *
  * Build editors through this helper. Do not re-declare the extension list.
+ *
+ * @param extra - Additional extensions to register on top of the shared set,
+ *   used to prove that NoteEditor's interaction-only extensions leave the parsed
+ *   text alone.
  */
-export function makeEditor(content: string): Editor {
+export function makeEditor(content: string, extra: AnyExtension[] = []): Editor {
   return new Editor({
-    extensions: markdownExtensions(CodeBlockLowlight.configure({ lowlight })),
+    extensions: [...markdownExtensions(CodeBlockLowlight.configure({ lowlight })), ...extra],
     content,
     element: document.createElement("div"),
   });

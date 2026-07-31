@@ -384,6 +384,18 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
   background: color-mix(in srgb, var(--color-accent) 15%, transparent);
 }
 
+/* ── Inline tags #tag ───────────────────────────────────────── */
+/* Purely visual chip — deliberately a filled pill (no underline, no pointer)
+   so tags never read as wiki links. */
+.inline-tag {
+  color: color-mix(in oklab, var(--color-accent) 75%, var(--color-base-content));
+  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  border-radius: 0.75em;
+  padding: 0.05em 0.4em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 /* ── Images ─────────────────────────────────────────────────── */
 .prose img {
   max-width: 100%;

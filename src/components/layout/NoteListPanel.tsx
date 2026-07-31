@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState } from "react";
 import { ulid } from "ulid";
+import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -149,9 +150,13 @@ export function NoteListPanel() {
   }
 
   async function handleFrontmatterToggle(note: Note, field: "locked" | "unmanaged") {
+    const next = !note.frontmatter[field];
+    // Marking a note unmanaged clears the workflow fields it no longer uses.
+    // Unmarking only flips the flag — the values are already cleared.
+    const cleared = field === "unmanaged" && next ? UNMANAGED_CLEARED_FIELDS : {};
     const updated = {
       ...note,
-      frontmatter: { ...note.frontmatter, [field]: !note.frontmatter[field] },
+      frontmatter: { ...note.frontmatter, [field]: next, ...cleared },
     };
     try {
       await tauriCommands.writeNote(note.filePath, serializeNote(updated));

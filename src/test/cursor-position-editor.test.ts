@@ -1,4 +1,9 @@
+import type { AnyExtension } from "@tiptap/core";
+import Placeholder from "@tiptap/extension-placeholder";
 import { describe, expect, it } from "vitest";
+import { FindReplaceExtension } from "../components/editor/findReplaceExtension";
+import { InlineTagExtension } from "../components/editor/InlineTag";
+import { WikiLinkExtension } from "../components/editor/WikiLink";
 import {
   docPositionToTextOffset,
   docTextLength,
@@ -118,6 +123,56 @@ const CORPUS: Record<string, string> = {
   "soft break after link": "[text](https://x.com)\nnext line",
   "soft break after plain text": "plain text\nnext line",
 };
+
+/**
+ * `markdownExtensions()` deliberately omits NoteEditor's interaction-only
+ * extensions, on the stated grounds that none of them registers a node, a mark,
+ * or a markdown spec and so none can change the text of a parsed document.
+ *
+ * That claim is what makes the shared harness trustworthy, so it is tested
+ * rather than asserted in a comment — an unnoticed schema contribution here is
+ * exactly how the harness silently stopped matching the app once before.
+ *
+ * Keep this list in step with NoteEditor's extensions array.
+ */
+const INTERACTION_ONLY: AnyExtension[] = [
+  Placeholder.configure({ placeholder: "Start writing…" }),
+  InlineTagExtension,
+  WikiLinkExtension.configure({ suggestion: {} }),
+  FindReplaceExtension,
+];
+
+describe("markdownExtensions — the excluded extensions cannot affect text", () => {
+  it("registers no nodes, marks, or markdown specs", () => {
+    for (const extension of INTERACTION_ONLY) {
+      expect(extension.type).toBe("extension");
+      // biome-ignore lint/suspicious/noExplicitAny: addStorage's `this` is per-extension
+      const addStorage = extension.config.addStorage as undefined | ((this: any) => unknown);
+      const storage = addStorage?.call({
+        name: extension.name,
+        options: extension.options,
+        storage: {},
+      });
+      expect((storage as { markdown?: unknown } | undefined)?.markdown).toBeUndefined();
+    }
+  });
+
+  it("leaves the parsed text of every corpus document unchanged", () => {
+    for (const [name, markdown] of Object.entries(CORPUS)) {
+      const bare = makeEditor(markdown);
+      const withInteraction = makeEditor(markdown, INTERACTION_ONLY);
+      try {
+        expect(
+          docTextLength(withInteraction.state.doc),
+          `${name} changed length when interaction extensions were added`,
+        ).toBe(docTextLength(bare.state.doc));
+      } finally {
+        bare.destroy();
+        withInteraction.destroy();
+      }
+    }
+  });
+});
 
 describe("cursor-position — agreement with the real editor", () => {
   for (const [name, markdown] of Object.entries(CORPUS)) {

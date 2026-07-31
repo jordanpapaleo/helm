@@ -83,6 +83,7 @@ import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import type { Note } from "../../types/note";
 import { FindReplaceExtension } from "./findReplaceExtension";
+import { InlineTagExtension } from "./InlineTag";
 import { WikiLinkExtension } from "./WikiLink";
 
 interface SuggestionPopup {
@@ -186,11 +187,17 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
             },
           }).configure({ lowlight }),
         ),
-        // Interaction only — none of these adds a node, mark, or markdown spec.
+        // Interaction only — none of these adds a node, mark, or markdown spec,
+        // so none can change the text of a parsed document. InlineTagExtension
+        // only draws decorations over #tags, so it stays out of the shared
+        // markdown set that the cursor-mapping tests build from.
+        // Adding to this group? Mirror it in INTERACTION_ONLY in
+        // src/test/cursor-position-editor.test.ts, which proves the claim above.
         Placeholder.configure({ placeholder: "Start writing…" }),
         ClearMarksOnEnter,
         HeadingKeyboardFix,
         CodeBlockGapCursor,
+        InlineTagExtension,
         WikiLinkExtension.configure({
           suggestion: {
             items: ({ query }: { query: string }) =>

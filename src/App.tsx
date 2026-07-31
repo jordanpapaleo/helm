@@ -1,21 +1,59 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ask, message } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppShell } from "./components/layout/AppShell";
 import { McpSetupModal } from "./components/McpSetupModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { addVault, useVault } from "./hooks/useVault";
-import { flushPendingSaves } from "./lib/pending-saves";
+import { checkForUpdates, type UpdateCheckResult } from "./lib/check-for-updates";
+import { flushPendingSaves, hasPendingSaves } from "./lib/pending-saves";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { tauriCommands } from "./lib/tauri-commands";
 import { useSettingsStore } from "./store/settings";
 import { useThemeStore } from "./store/theme";
-import { reportError } from "./store/toast";
+import { reportError, useToastStore } from "./store/toast";
 import { useUIStore } from "./store/ui";
 
 const FONT_MIN = 12;
 const FONT_MAX = 24;
+
+/** Ignore overlapping Check for Updates clicks. */
+let checkForUpdatesInFlight = false;
+
+async function presentUpdateResult(result: UpdateCheckResult) {
+  if (result.status === "up-to-date") {
+    await message(`You're up to date (v${result.current}).`, { title: "Check for Updates" });
+    return;
+  }
+  if (result.status === "update-available") {
+    const open = await ask(
+      `Helm v${result.latest} is available (you have v${result.current}).\n\nOpen the release page?`,
+      { title: "Check for Updates", kind: "info" },
+    );
+    if (open) await openUrl(result.htmlUrl);
+    return;
+  }
+  await message(result.message, { title: "Check for Updates", kind: "error" });
+}
+
+async function handleCheckForUpdates() {
+  if (checkForUpdatesInFlight) return;
+  checkForUpdatesInFlight = true;
+  const { showToast, dismissToast } = useToastStore.getState();
+  const toastId = showToast("Checking for updates…", "info", { persist: true });
+  try {
+    const result = await checkForUpdates(getVersion);
+    dismissToast(toastId);
+    await presentUpdateResult(result);
+  } finally {
+    dismissToast(toastId);
+    checkForUpdatesInFlight = false;
+  }
+}
 
 export default function App() {
   const { loading, error } = useVault();
@@ -31,6 +69,11 @@ export default function App() {
       fns.push(await listen("show-mcp-setup", () => setShowMcpSetup(true)));
       fns.push(await listen("open-settings", () => useUIStore.getState().setSettingsOpen(true)));
       fns.push(await listen("toggle-markdown", () => useUIStore.getState().toggleMarkdownMode()));
+      fns.push(
+        await listen("check-for-updates", () => {
+          void handleCheckForUpdates().catch((e) => reportError("Failed to check for updates", e));
+        }),
+      );
       fns.push(
         await listen("add-vault", async () => {
           try {

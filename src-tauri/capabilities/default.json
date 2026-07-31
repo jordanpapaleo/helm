@@ -11,6 +11,8 @@
     "store:allow-save",
     "store:allow-load",
     "dialog:allow-open",
-    "dialog:allow-confirm"
+    "dialog:allow-confirm",
+    "dialog:allow-message",
+    "dialog:allow-ask"
   ]
 }

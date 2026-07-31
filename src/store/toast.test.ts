@@ -53,4 +53,25 @@ describe("useToastStore", () => {
     act(() => vi.advanceTimersByTime(4000));
     expect(result.current.toasts).toHaveLength(0);
   });
+
+  it("returns the toast id from showToast", () => {
+    const { result } = renderHook(() => useToastStore());
+    let id = -1;
+    act(() => {
+      id = result.current.showToast("hi", "info");
+    });
+    expect(id).toBe(result.current.toasts[0].id);
+  });
+
+  it("persist toasts do not auto-dismiss", () => {
+    const { result } = renderHook(() => useToastStore());
+    let id = -1;
+    act(() => {
+      id = result.current.showToast("Checking…", "info", { persist: true });
+    });
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(result.current.toasts).toHaveLength(1);
+    act(() => result.current.dismissToast(id));
+    expect(result.current.toasts).toHaveLength(0);
+  });
 });

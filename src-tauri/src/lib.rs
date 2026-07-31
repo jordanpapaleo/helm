@@ -42,6 +42,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // ── Global quick-capture shortcut (⌘⇧Space / Ctrl+Shift+Space) ─
             let capture_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space);
@@ -64,6 +65,8 @@ pub fn run() {
             let about_metadata = AboutMetadataBuilder::new()
                 .version(Some(app.package_info().version.to_string()))
                 .copyright(Some("© 2026 Jordan Papaleo".to_string()))
+                .website(Some("https://github.com/jordanpapaleo/helm".to_string()))
+                .website_label(Some("GitHub".to_string()))
                 .build();
 
             let settings_item = MenuItemBuilder::new("Settings…")
@@ -71,8 +74,13 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+,")
                 .build(app)?;
 
+            let check_updates_item = MenuItemBuilder::new("Check for Updates…")
+                .id("check_for_updates")
+                .build(app)?;
+
             let app_menu = SubmenuBuilder::new(app, "Helm")
                 .item(&PredefinedMenuItem::about(app, Some("About Helm"), Some(about_metadata))?)
+                .item(&check_updates_item)
                 .separator()
                 .item(&settings_item)
                 .item(&PredefinedMenuItem::services(app, None)?)
@@ -245,6 +253,7 @@ pub fn run() {
                     "new_note" => { let _ = app_handle.emit("new-note", ()); }
                     "toggle_markdown" => { let _ = app_handle.emit("toggle-markdown", ()); }
                     "open_settings" => { let _ = app_handle.emit("open-settings", ()); }
+                    "check_for_updates" => { let _ = app_handle.emit("check-for-updates", ()); }
                     "add_vault" => { let _ = app_handle.emit("add-vault", ()); }
                     "mcp_setup" => { let _ = app_handle.emit("show-mcp-setup", ()); }
                     "font_size_increase" => { let _ = app_handle.emit("font-size-change", "increase"); }

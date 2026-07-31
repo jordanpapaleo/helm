@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tauriCommands } from "../lib/tauri-commands";
 import type { Note, VaultConfig } from "../types/note";
 import { useNoteStore } from "./notes";
+import { useToastStore } from "./toast";
 
 vi.mock("../lib/tauri-commands", () => ({
   tauriCommands: {
@@ -532,6 +533,229 @@ describe("renameNote", () => {
 
     expect(result.current.notes[0].filePath).toBe("/vault/old-title.md");
     expect(result.current.notes[0].frontmatter.title).toBe("Test Note");
+  });
+});
+
+describe("renameTag / deleteTag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useToastStore.setState({ toasts: [] });
+    useNoteStore.setState({
+      notes: [],
+      selectedNoteId: null,
+      vaults: [],
+      activeVaultId: null,
+      tagTree: {},
+      searchIndex: null,
+      searchQuery: "",
+      searchResults: [],
+      knownFolderPaths: [],
+    });
+  });
+
+  function tagged(id: string, tags: string[], content: string): Note {
+    return makeNote({
+      id,
+      filePath: `/vault/${id}.md`,
+      fileName: `${id}.md`,
+      content,
+      frontmatter: { ...makeNote().frontmatter, id, tags },
+    });
+  }
+
+  it("rewrites the body, not just the frontmatter", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["work"], "Plan #work today")]));
+
+    await act(async () => {
+      await result.current.renameTag("work", "client");
+    });
+
+    expect(result.current.notes[0].content).toBe("Plan #client today");
+    expect(result.current.notes[0].frontmatter.tags).toEqual(["client"]);
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/n1.md",
+      expect.stringContaining("Plan #client today"),
+    );
+  });
+
+  it("renames descendants but not tags that merely share a prefix", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() =>
+      result.current.setNotes([
+        tagged("n1", ["work", "work/project"], "#work and #work/project"),
+        tagged("n2", ["workflow"], "#workflow only"),
+      ]),
+    );
+
+    await act(async () => {
+      await result.current.renameTag("work", "client");
+    });
+
+    expect(result.current.notes[0].content).toBe("#client and #client/project");
+    expect(result.current.notes[0].frontmatter.tags).toEqual(["client", "client/project"]);
+    // Untouched note is never written
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
+    expect(result.current.notes[1].content).toBe("#workflow only");
+  });
+
+  it("bumps the updated date on every rewritten note", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["work"], "#work")]));
+
+    await act(async () => {
+      await result.current.renameTag("work", "client");
+    });
+
+    expect(result.current.notes[0].frontmatter.updated).toBe(
+      new Date().toISOString().split("T")[0],
+    );
+  });
+
+  it("rebuilds the tag tree and the search index", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["work", "work/project"], "#work/project")]));
+
+    await act(async () => {
+      await result.current.renameTag("work", "client");
+    });
+
+    expect(result.current.tagTree.work).toBeUndefined();
+    expect(result.current.tagTree.client).toBeDefined();
+    expect(result.current.tagTree.client.children.project).toBeDefined();
+
+    act(() => result.current.search("client"));
+    expect(result.current.searchResults.map((n) => n.id)).toContain("n1");
+  });
+
+  it("finds notes whose tag only exists inline (not yet in frontmatter)", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", [], "body has #work inline")]));
+
+    await act(async () => {
+      await result.current.renameTag("work", "client");
+    });
+
+    expect(result.current.notes[0].content).toBe("body has #client inline");
+  });
+
+  it("continues past a failed write and reports one summary error", async () => {
+    vi.mocked(tauriCommands.writeNote)
+      .mockRejectedValueOnce(new Error("disk full"))
+      .mockResolvedValue(undefined);
+    const { result } = renderHook(() => useNoteStore());
+    act(() =>
+      result.current.setNotes([tagged("n1", ["work"], "#work"), tagged("n2", ["work"], "#work")]),
+    );
+
+    await act(async () => {
+      await result.current.renameTag("work", "client");
+    });
+
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2);
+    // The failed note keeps its old state, the successful one is updated
+    expect(result.current.notes[0].content).toBe("#work");
+    expect(result.current.notes[1].content).toBe("#client");
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+    expect(useToastStore.getState().toasts[0].message).toContain("1 of 2");
+  });
+
+  it("no-ops on an empty, unchanged, or identical-after-normalization name", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["work"], "#work")]));
+
+    await act(async () => {
+      await result.current.renameTag("work", "   ");
+      await result.current.renameTag("work", "work");
+      await result.current.renameTag("work", "#work");
+      await result.current.renameTag("", "client");
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a leading hash and surrounding whitespace in the new name", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["work"], "#work")]));
+
+    await act(async () => {
+      await result.current.renameTag("work", "  #client/eu ");
+    });
+
+    expect(result.current.notes[0].content).toBe("#client/eu");
+    expect(result.current.notes[0].frontmatter.tags).toEqual(["client/eu"]);
+  });
+
+  it("rejects a name the tag grammar cannot represent", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["work"], "#work")]));
+
+    await act(async () => {
+      await result.current.renameTag("work", "my client!");
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(result.current.notes[0].content).toBe("#work");
+    expect(useToastStore.getState().toasts.at(-1)?.message).toContain("not a valid tag name");
+  });
+
+  it("deleteTag strips the tag and its descendants from body and frontmatter", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() =>
+      result.current.setNotes([
+        tagged("n1", ["work", "work/ops", "home"], "Plan #work and #work/ops but keep #home"),
+        tagged("n2", ["workflow"], "#workflow only"),
+      ]),
+    );
+
+    await act(async () => {
+      await result.current.deleteTag("work");
+    });
+
+    expect(result.current.notes[0].content).toBe("Plan and but keep #home");
+    expect(result.current.notes[0].frontmatter.tags).toEqual(["home"]);
+    expect(result.current.notes[1].content).toBe("#workflow only");
+    expect(result.current.tagTree.work).toBeUndefined();
+    expect(result.current.tagTree.home).toBeDefined();
+    expect(result.current.tagTree.workflow).toBeDefined();
+  });
+
+  it("deleteTag leaves fenced code blocks alone", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() =>
+      result.current.setNotes([tagged("n1", ["work"], "Drop #work\n\n```\nkeep #work\n```")]),
+    );
+
+    await act(async () => {
+      await result.current.deleteTag("work");
+    });
+
+    expect(result.current.notes[0].content).toBe("Drop\n\n```\nkeep #work\n```");
+  });
+
+  it("deleteTag no-ops on an empty name", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["work"], "#work")]));
+
+    await act(async () => {
+      await result.current.deleteTag("  ");
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+  });
+
+  it("deleteTag rebuilds the search index so the tag is no longer searchable", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([tagged("n1", ["zebrafish"], "#zebrafish")]));
+
+    await act(async () => {
+      await result.current.deleteTag("zebrafish");
+    });
+
+    act(() => result.current.search("zebrafish"));
+    expect(result.current.searchResults).toHaveLength(0);
   });
 });
 

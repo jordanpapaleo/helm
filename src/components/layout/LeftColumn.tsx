@@ -5,6 +5,7 @@ import { ulid } from "ulid";
 import { addVault, removeVault } from "../../hooks/useVault";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
+import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { type TagNode, useNoteStore } from "../../store/notes";
 import { reportError } from "../../store/toast";
@@ -160,11 +161,20 @@ function TagGroupings({
   parentPath = "",
   depth = 0,
   onNavigate,
+  onContextMenu,
+  renamingTag,
+  onRenameCommit,
+  onRenameCancel,
 }: {
   tags: Record<string, TagNode>;
   parentPath?: string;
   depth?: number;
   onNavigate: (grouping: Grouping) => void;
+  onContextMenu: (e: React.MouseEvent, tagPath: string) => void;
+  renamingTag: string | null;
+  /** `newName` is the leaf name; the parent path is preserved by the caller. */
+  onRenameCommit: (tagPath: string, newName: string) => void;
+  onRenameCancel: () => void;
 }) {
   const { selectedGrouping } = useUIStore();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -189,9 +199,12 @@ function TagGroupings({
         const isOpen = !collapsed.has(fullPath);
         const count = totalNotes(node);
 
+        const isRenaming = renamingTag === fullPath;
+
         return (
           <React.Fragment key={fullPath}>
             <li>
+              {/* biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a supplementary affordance; all primary actions are reachable via the buttons inside this row */}
               <div
                 className={`flex w-full items-center gap-1 py-1 text-sm transition-colors ${
                   isActive
@@ -199,6 +212,7 @@ function TagGroupings({
                     : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
                 }`}
                 style={{ paddingLeft: depth * 12 + 8 }}
+                onContextMenu={(e) => onContextMenu(e, fullPath)}
               >
                 <button
                   type="button"
@@ -222,15 +236,27 @@ function TagGroupings({
                     />
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate({ type: "tag", id: fullPath })}
-                  className="flex flex-1 min-w-0 items-center gap-1.5 pr-2"
-                >
-                  <span className="text-base-content/40">#</span>
-                  <span className="flex-1 truncate text-left">{name}</span>
-                  {count > 0 && <span className="shrink-0 text-xs opacity-40">{count}</span>}
-                </button>
+                {isRenaming ? (
+                  <div className="flex flex-1 min-w-0 items-center gap-1.5 pr-2">
+                    <span className="text-base-content/40">#</span>
+                    <RenameInput
+                      initial={name}
+                      onCommit={(value) => onRenameCommit(fullPath, value)}
+                      onCancel={onRenameCancel}
+                      className="flex-1 rounded bg-base-100 px-1 text-sm text-base-content outline outline-1 outline-primary"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate({ type: "tag", id: fullPath })}
+                    className="flex flex-1 min-w-0 items-center gap-1.5 pr-2"
+                  >
+                    <span className="text-base-content/40">#</span>
+                    <span className="flex-1 truncate text-left">{name}</span>
+                    {count > 0 && <span className="shrink-0 text-xs opacity-40">{count}</span>}
+                  </button>
+                )}
               </div>
             </li>
             {isOpen && hasChildren && (
@@ -239,6 +265,10 @@ function TagGroupings({
                 parentPath={fullPath}
                 depth={depth + 1}
                 onNavigate={onNavigate}
+                onContextMenu={onContextMenu}
+                renamingTag={renamingTag}
+                onRenameCommit={onRenameCommit}
+                onRenameCancel={onRenameCancel}
               />
             )}
           </React.Fragment>
@@ -285,6 +315,7 @@ type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
 export function LeftColumn() {
   const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
   const [renamingFolderPath, setRenamingFolderPath] = useState<string | null>(null);
+  const [renamingTag, setRenamingTag] = useState<string | null>(null);
   const [folderMenu, setFolderMenu] = useState<MenuState>(null);
   const {
     activeView,
@@ -442,6 +473,80 @@ export function LeftColumn() {
     } catch (e) {
       reportError("Failed to delete folder", e);
     }
+  }
+
+  /**
+   * Commit an inline tag rename. Like folder rename, the input holds the *leaf*
+   * name, so the parent path is preserved: renaming the "project" row under
+   * "work" to "alpha" produces "work/alpha". Descendants follow automatically
+   * (see renameTag in the notes store).
+   */
+  async function handleRenameTag(tagPath: string, newLeafName: string) {
+    setRenamingTag(null);
+    const leaf = normalizeTagName(newLeafName);
+    if (!leaf) return;
+    const parent = tagPath.split("/").slice(0, -1).join("/");
+    const newTag = parent ? `${parent}/${leaf}` : leaf;
+    if (newTag === tagPath) return;
+
+    try {
+      await useNoteStore.getState().renameTag(tagPath, newTag);
+    } catch (e) {
+      reportError("Failed to rename tag", e);
+      return;
+    }
+
+    // Follow the renamed tag if it (or one of its descendants) was selected.
+    const current = useUIStore.getState().selectedGrouping;
+    if (current.type === "tag" && current.id && tagMatches(current.id, tagPath)) {
+      setSelectedGrouping({ type: "tag", id: newTag + current.id.slice(tagPath.length) });
+    }
+  }
+
+  async function handleDeleteTag(tagPath: string) {
+    const affected = useNoteStore.getState().notes.filter((n) => noteMatchesTag(n, tagPath)).length;
+    const ok = await confirm(
+      `Remove #${tagPath} — and any tags nested under it — from ${affected} note${
+        affected === 1 ? "" : "s"
+      }? The tag is deleted from the note text as well. This cannot be undone.`,
+      { title: "Delete Tag", kind: "warning" },
+    );
+    if (!ok) return;
+
+    try {
+      await useNoteStore.getState().deleteTag(tagPath);
+    } catch (e) {
+      reportError("Failed to delete tag", e);
+      return;
+    }
+
+    const current = useUIStore.getState().selectedGrouping;
+    if (current.type === "tag" && current.id && tagMatches(current.id, tagPath)) {
+      setSelectedGrouping({ type: "all", id: null });
+    }
+  }
+
+  function handleTagContextMenu(e: React.MouseEvent, tagPath: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setFolderMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        {
+          kind: "action",
+          label: "Rename Tag",
+          onClick: () => setRenamingTag(tagPath),
+        },
+        { kind: "separator" },
+        {
+          kind: "action",
+          label: "Delete Tag",
+          danger: true,
+          onClick: () => handleDeleteTag(tagPath),
+        },
+      ],
+    });
   }
 
   function handleFolderContextMenu(e: React.MouseEvent, folderPath: string) {
@@ -684,6 +789,10 @@ export function LeftColumn() {
                     onNavigate={(grouping) =>
                       navigate({ view: "notes", selectedNoteId, selectedGrouping: grouping })
                     }
+                    onContextMenu={handleTagContextMenu}
+                    renamingTag={renamingTag}
+                    onRenameCommit={handleRenameTag}
+                    onRenameCancel={() => setRenamingTag(null)}
                   />
                 </ul>
               </>

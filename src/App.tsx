@@ -9,7 +9,7 @@ import { AppShell } from "./components/layout/AppShell";
 import { McpSetupModal } from "./components/McpSetupModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { addVault, useVault } from "./hooks/useVault";
-import { checkForUpdates } from "./lib/check-for-updates";
+import { checkForUpdates, type UpdateCheckResult } from "./lib/check-for-updates";
 import { flushPendingSaves, hasPendingSaves } from "./lib/pending-saves";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { tauriCommands } from "./lib/tauri-commands";
@@ -21,8 +21,24 @@ import { useUIStore } from "./store/ui";
 const FONT_MIN = 12;
 const FONT_MAX = 24;
 
-/** Prevents stacked dialogs when Check for Updates is clicked again while a check is running. */
+/** Ignore overlapping Check for Updates clicks. */
 let checkForUpdatesInFlight = false;
+
+async function presentUpdateResult(result: UpdateCheckResult) {
+  if (result.status === "up-to-date") {
+    await message(`You're up to date (v${result.current}).`, { title: "Check for Updates" });
+    return;
+  }
+  if (result.status === "update-available") {
+    const open = await ask(
+      `Helm v${result.latest} is available (you have v${result.current}).\n\nOpen the release page?`,
+      { title: "Check for Updates", kind: "info" },
+    );
+    if (open) await openUrl(result.htmlUrl);
+    return;
+  }
+  await message(result.message, { title: "Check for Updates", kind: "error" });
+}
 
 async function handleCheckForUpdates() {
   if (checkForUpdatesInFlight) return;
@@ -32,19 +48,7 @@ async function handleCheckForUpdates() {
   try {
     const result = await checkForUpdates(getVersion);
     dismissToast(toastId);
-    if (result.status === "up-to-date") {
-      await message(`You're up to date (v${result.current}).`, { title: "Check for Updates" });
-      return;
-    }
-    if (result.status === "update-available") {
-      const open = await ask(
-        `Helm v${result.latest} is available (you have v${result.current}).\n\nOpen the release page?`,
-        { title: "Check for Updates", kind: "info" },
-      );
-      if (open) await openUrl(result.htmlUrl);
-      return;
-    }
-    await message(result.message, { title: "Check for Updates", kind: "error" });
+    await presentUpdateResult(result);
   } finally {
     dismissToast(toastId);
     checkForUpdatesInFlight = false;

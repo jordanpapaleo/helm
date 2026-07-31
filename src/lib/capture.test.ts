@@ -30,11 +30,13 @@ describe("buildCaptureNote", () => {
     expect(result?.filePath).toMatch(/^\/vault\/capture-\d+\.md$/);
   });
 
+  // Quoting is load-bearing: unquoted, js-yaml would read these back as Date
+  // objects and every string comparison in the app would break.
   it("keeps the full text as content and stamps created/updated from now", () => {
     const result = buildCaptureNote("Buy milk\nand eggs", "/vault", NOW);
     expect(result?.raw).toContain("Buy milk\nand eggs");
-    expect(result?.raw).toContain("created: '2026-07-10'");
-    expect(result?.raw).toContain("updated: '2026-07-10'");
+    expect(result?.raw).toContain("created: '2026-07-10T15:30:00Z'");
+    expect(result?.raw).toContain("updated: '2026-07-10T15:30:00Z'");
   });
 
   it("extracts inline tags into frontmatter", () => {

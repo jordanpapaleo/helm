@@ -3,6 +3,8 @@
  * KEEP IN SYNC with src/lib/briefing.ts — same buckets, windows, and ordering.
  */
 
+import { timestampDate } from "./timestamps";
+
 interface BriefingFrontmatter {
   id: string;
   state: string;
@@ -63,7 +65,21 @@ export function buildBriefing<N extends BriefingNote>(notes: N[], today: string)
       })
       .sort(byDeadline),
     staleDoing: open
-      .filter((n) => n.frontmatter.state === "Doing" && n.frontmatter.updated <= staleCutoff)
+      // `updated` may be a full timestamp or a legacy date-only value, while
+      // the cutoff is always date-only. Compare date portions: a raw
+      // "2026-06-26T10:00:00Z" <= "2026-06-26" is false, which would silently
+      // drop boundary-day notes that the date-only form counted as stale.
+      .filter((n) => {
+        if (n.frontmatter.state !== "Doing") return false;
+        // A note with no `updated` at all is not stale — the old comparison
+        // against `undefined` was false, and this keeps it that way (and keeps
+        // `timestampDate` off a non-string).
+        const updated = n.frontmatter.updated;
+        return typeof updated === "string" && timestampDate(updated) <= staleCutoff;
+      })
+      // Sorting is safe on the raw values: the stored format is chosen so that
+      // string order is chronological order, with date-only sorting as the
+      // start of its day.
       .sort((a, b) => a.frontmatter.updated.localeCompare(b.frontmatter.updated)),
   };
 }

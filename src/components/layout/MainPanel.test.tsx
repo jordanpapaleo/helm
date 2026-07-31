@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
+import { todayDate } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { useUIStore } from "../../store/ui";
@@ -128,8 +129,11 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     expect(filePath).toBe("/vault/test.md");
     expect(serialized).toContain("Test content plus a real edit");
 
-    const today = new Date().toISOString().split("T")[0];
-    expect(useNoteStore.getState().notes[0].frontmatter.updated).toBe(today);
+    // `updated` is a full UTC timestamp now, so assert the shape plus today's
+    // date rather than a bare YYYY-MM-DD equality.
+    const stamp = useNoteStore.getState().notes[0].frontmatter.updated;
+    expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(stamp.slice(0, 10)).toBe(todayDate());
     expect(tauriCommands.snapshotNote).toHaveBeenCalledTimes(1);
   });
 
@@ -142,8 +146,9 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     });
 
     expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
-    const today = new Date().toISOString().split("T")[0];
-    expect(useNoteStore.getState().notes[0].frontmatter.updated).toBe(today);
+    const stamp = useNoteStore.getState().notes[0].frontmatter.updated;
+    expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(stamp.slice(0, 10)).toBe(todayDate());
     expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
   });
 });

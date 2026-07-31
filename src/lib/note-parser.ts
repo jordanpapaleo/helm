@@ -5,11 +5,12 @@
  */
 import matter from "gray-matter";
 import type { Note, NoteFrontmatter } from "../types/note";
+import { normalizeTimestamp, nowTimestamp } from "./timestamps";
 
 /**
  * Parse a raw markdown file into a Note object with frontmatter and content.
  * Uses gray-matter to extract YAML frontmatter and provides sensible defaults
- * for missing fields (generated ULIDs, current date, empty arrays).
+ * for missing fields (generated ULIDs, current timestamp, empty arrays).
  *
  * @param raw - The full markdown file content (with frontmatter)
  * @param filePath - Absolute path to the markdown file on disk
@@ -36,8 +37,6 @@ export function parseNote(raw: string, filePath: string): Note {
   const frontmatter: NoteFrontmatter = {
     id: data.id ?? "",
     title: data.title || extractH1(content) || derivetitleFromFilename(fileName),
-    created: data.created ?? new Date().toISOString().split("T")[0],
-    updated: data.updated ?? new Date().toISOString().split("T")[0],
     urgent: data.urgent ?? false,
     important: data.important ?? false,
     state: data.state ?? "Prepare",
@@ -48,6 +47,12 @@ export function parseNote(raw: string, filePath: string): Note {
     team: data.team,
     links: data.links ?? [],
     ...data, // preserve unknown fields
+    // After the spread: js-yaml parses an *unquoted* ISO value into a Date, and
+    // the raw `...data` copy would put that Date straight into a field typed as
+    // string. Existing values (either form) pass through untouched — migration
+    // to a full timestamp is lazy and only happens on write.
+    created: normalizeTimestamp(data.created) ?? nowTimestamp(),
+    updated: normalizeTimestamp(data.updated) ?? nowTimestamp(),
     tags: mergedTags, // must be after ...data spread to include inline tags
   };
 

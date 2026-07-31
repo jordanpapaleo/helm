@@ -17,8 +17,8 @@ Example note file (`vault/my-note.md`):
 ---
 id: 01ARZ3NDEKTSV4RRFFQ69G5FAV
 title: My Important Project
-created: 2025-03-13
-updated: 2025-03-13
+created: '2025-03-13T09:14:22Z'
+updated: '2025-03-13T09:14:22Z'
 tags:
   - work
   - work/project-x
@@ -299,8 +299,8 @@ Notes are markdown files with YAML frontmatter (delimited by `---`). The structu
 ---
 id: 01ARZ3NDEKTSV4RRFFQ69G5FAV
 title: Example Note
-created: 2025-03-13
-updated: 2025-03-13
+created: '2025-03-13T09:14:22Z'
+updated: '2025-03-13T09:14:22Z'
 tags:
   - category/type
   - another-tag

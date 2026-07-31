@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tauriCommands } from "../lib/tauri-commands";
+import { todayDate } from "../lib/timestamps";
 import type { Note, VaultConfig } from "../types/note";
 import { useNoteStore } from "./notes";
 import { useToastStore } from "./toast";
@@ -603,7 +604,7 @@ describe("renameTag / deleteTag", () => {
     expect(result.current.notes[1].content).toBe("#workflow only");
   });
 
-  it("bumps the updated date on every rewritten note", async () => {
+  it("bumps `updated` to a full UTC timestamp on every rewritten note", async () => {
     const { result } = renderHook(() => useNoteStore());
     act(() => result.current.setNotes([tagged("n1", ["work"], "#work")]));
 
@@ -611,9 +612,9 @@ describe("renameTag / deleteTag", () => {
       await result.current.renameTag("work", "client");
     });
 
-    expect(result.current.notes[0].frontmatter.updated).toBe(
-      new Date().toISOString().split("T")[0],
-    );
+    const stamp = result.current.notes[0].frontmatter.updated;
+    expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(stamp.slice(0, 10)).toBe(todayDate());
   });
 
   it("rebuilds the tag tree and the search index", async () => {

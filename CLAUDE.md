@@ -67,8 +67,8 @@ Each note is a `.md` file with YAML frontmatter:
 ---
 id: 01JPMXYZ123        # ULID — stable, survives renames
 title: My Note
-created: 2026-03-13
-updated: 2026-03-13
+created: '2026-03-13T09:14:22Z'   # UTC datetime, seconds precision
+updated: '2026-03-13T09:14:22Z'   # bumped on every write
 tags: [work, work/project]
 urgent: true
 important: true

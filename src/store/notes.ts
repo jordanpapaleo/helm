@@ -16,6 +16,7 @@ import {
   renameTagInList,
 } from "../lib/tags";
 import { tauriCommands } from "../lib/tauri-commands";
+import { nowTimestamp } from "../lib/timestamps";
 import type { Note, VaultConfig } from "../types/note";
 import { reportError } from "./toast";
 
@@ -140,11 +141,6 @@ interface NoteStore {
    * rewriting bodies as well as frontmatter (see renameTag).
    */
   deleteTag: (tag: string) => Promise<void>;
-}
-
-/** Today as YYYY-MM-DD, the format used by note frontmatter. */
-function today(): string {
-  return new Date().toISOString().split("T")[0];
 }
 
 /**
@@ -322,7 +318,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       return;
     }
 
-    const stamp = today();
+    const stamp = nowTimestamp();
     const updates = get()
       .notes.filter((n) => noteMatchesTag(n, oldTag))
       .map<Note>((n) => ({
@@ -349,7 +345,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const tag = normalizeTagName(tagInput);
     if (!tag) return;
 
-    const stamp = today();
+    const stamp = nowTimestamp();
     const updates = get()
       .notes.filter((n) => noteMatchesTag(n, tag))
       .map<Note>((n) => ({

@@ -133,3 +133,32 @@ describe("PropertyPanel unmanaged notes", () => {
     expect(select.options).toHaveLength(NOTE_STATES.length + 1);
   });
 });
+
+describe("PropertyPanel timestamp display", () => {
+  function renderExpanded(fm: Partial<NoteFrontmatter>) {
+    render(<PropertyPanel frontmatter={makeFrontmatter(fm)} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+  }
+
+  it("renders a full timestamp as a readable local date and time", () => {
+    renderExpanded({ updated: "2026-07-31T18:23:05Z" });
+
+    // Locale and timezone vary by machine, so assert on shape: the raw stored
+    // value must not leak into the UI, but must survive as the tooltip.
+    const cell = screen.getByTitle("2026-07-31T18:23:05Z");
+    expect(cell.textContent).not.toBe("2026-07-31T18:23:05Z");
+    expect(cell.textContent).toMatch(/2026/);
+    expect(cell.textContent).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it("renders a legacy date-only value without inventing a midnight time", () => {
+    renderExpanded({ created: "2026-07-01", updated: "2026-07-01" });
+
+    const cells = screen.getAllByTitle("2026-07-01");
+    expect(cells).toHaveLength(2);
+    for (const cell of cells) {
+      expect(cell.textContent).toMatch(/2026/);
+      expect(cell.textContent).not.toMatch(/\d{1,2}:\d{2}/);
+    }
+  });
+});

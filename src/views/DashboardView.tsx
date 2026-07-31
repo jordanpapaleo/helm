@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { buildBriefing } from "../lib/briefing";
 import { NOTE_STATES } from "../lib/constants";
+import { timestampDate, todayDate } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
 import { useThemeStore } from "../store/theme";
 import { useUIStore } from "../store/ui";
@@ -167,7 +168,7 @@ function BriefingSection({
  * @internal
  */
 function BriefingCard({ notes, onNoteClick }: { notes: Note[]; onNoteClick: (n: Note) => void }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayDate();
   const b = buildBriefing(notes, today);
   const allClear =
     b.overdue.length === 0 &&
@@ -214,7 +215,9 @@ function BriefingCard({ notes, onNoteClick }: { notes: Note[]; onNoteClick: (n: 
               label="Stale (14d+)"
               color="var(--color-secondary)"
               notes={b.staleDoing}
-              detail={(n) => `(last touched ${n.frontmatter.updated})`}
+              // Staleness is a day-level concept, so the day is the useful
+              // detail here even though `updated` now carries a time.
+              detail={(n) => `(last touched ${timestampDate(n.frontmatter.updated)})`}
               onNoteClick={onNoteClick}
             />
           </>

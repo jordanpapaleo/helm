@@ -1,6 +1,7 @@
 import { ulid } from "ulid";
 import { noteFilePath, serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
+import { nowTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
 import { reportError } from "../../store/toast";
 import { useUIStore } from "../../store/ui";
@@ -20,6 +21,7 @@ export function NewNoteButton() {
     const title = "Untitled";
     const filePath = noteFilePath(vault.path, id.toLowerCase());
     const fileName = filePath.split("/").at(-1) ?? "";
+    const now = nowTimestamp();
 
     const note: Note = {
       id,
@@ -30,8 +32,8 @@ export function NewNoteButton() {
       frontmatter: {
         id,
         title,
-        created: new Date().toISOString().split("T")[0],
-        updated: new Date().toISOString().split("T")[0],
+        created: now,
+        updated: now,
         tags: [],
         urgent: false,
         important: false,

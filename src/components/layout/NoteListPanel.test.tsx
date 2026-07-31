@@ -113,3 +113,62 @@ describe("NoteListPanel — Mark Unmanaged", () => {
     });
   });
 });
+
+describe("NoteListPanel — sorting by last modified", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function note(id: string, title: string, updated: string, pinned = false): Note {
+    return {
+      ...makeNote({ id, title, updated, pinned }),
+      id,
+      filePath: `/vault/${id}.md`,
+      fileName: `${id}.md`,
+    };
+  }
+
+  function setNotes(notes: Note[]) {
+    resetStores(notes[0]);
+    useNoteStore.setState({ notes });
+  }
+
+  // The stored format is chosen so plain string comparison sorts correctly
+  // across both forms — a legacy date-only value counts as that day's start.
+  it("sorts a mix of date-only and datetime values newest first", () => {
+    setNotes([
+      note("a", "Morning", "2026-07-31T09:00:00Z"),
+      note("b", "Legacy midday", "2026-07-31"),
+      note("c", "Evening", "2026-07-31T18:23:05Z"),
+      note("d", "Yesterday", "2026-07-30T23:59:59Z"),
+    ]);
+    render(<NoteListPanel />);
+
+    const titles = screen.getAllByText(/Morning|Legacy midday|Evening|Yesterday/);
+    expect(titles.map((t) => t.textContent)).toEqual([
+      "Evening",
+      "Morning",
+      "Legacy midday",
+      "Yesterday",
+    ]);
+  });
+
+  it("still floats pinned notes above a newer unpinned one", () => {
+    setNotes([
+      note("a", "Newest", "2026-07-31T18:23:05Z"),
+      note("b", "Pinned old", "2026-07-01", true),
+    ]);
+    render(<NoteListPanel />);
+
+    const titles = screen.getAllByText(/Newest|Pinned old/);
+    expect(titles.map((t) => t.textContent)).toEqual(["Pinned old", "Newest"]);
+  });
+
+  it("shows only the day in the list row, with the full stamp as a tooltip", () => {
+    setNotes([note("a", "Evening", "2026-07-31T18:23:05Z")]);
+    render(<NoteListPanel />);
+
+    const stamp = screen.getByTitle("2026-07-31T18:23:05Z");
+    expect(stamp.textContent).toBe("2026-07-31");
+  });
+});

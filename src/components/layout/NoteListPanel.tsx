@@ -6,6 +6,7 @@ import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
+import { nowTimestamp, timestampDate } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
@@ -83,7 +84,7 @@ export function NoteListPanel() {
     const contextTag =
       selectedGrouping.type === "tag" && selectedGrouping.id ? selectedGrouping.id : null;
     const id = ulid();
-    const today = new Date().toISOString().split("T")[0];
+    const now = nowTimestamp();
     const slug = id.toLowerCase();
     const filePath = `${folderPath}/${slug}.md`;
     const note: Note = {
@@ -95,8 +96,8 @@ export function NoteListPanel() {
       frontmatter: {
         id,
         title: "Untitled",
-        created: today,
-        updated: today,
+        created: now,
+        updated: now,
         tags: contextTag ? [contextTag] : [],
         urgent: false,
         important: false,
@@ -347,7 +348,11 @@ export function NoteListPanel() {
                           aria-label="Pinned"
                         />
                       )}
-                      <span className="opacity-40">{note.frontmatter.updated}</span>
+                      {/* Dense list — just the day. The full stored timestamp
+                          is in the tooltip and in the property panel. */}
+                      <span className="opacity-40" title={note.frontmatter.updated}>
+                        {timestampDate(note.frontmatter.updated)}
+                      </span>
                     </span>
                     {note.frontmatter.tags.length > 0 && (
                       <div className="mt-0.5 flex flex-wrap gap-1">

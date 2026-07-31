@@ -45,6 +45,29 @@ describe("MCP buildBriefing", () => {
     const b = buildBriefing(notes, TODAY);
     expect(b.dueSoon.map((n) => n.frontmatter.id)).toEqual(["today", "edge"]);
   });
+
+  // KEEP IN SYNC with the matching cases in src/lib/briefing.test.ts.
+  // The staleness cutoff is date-only, so a full timestamp must be compared by
+  // its date portion or a boundary-day note silently stops counting as stale.
+  it("treats a boundary-day datetime exactly like the date-only form", () => {
+    const notes = [
+      { frontmatter: fm({ id: "exactly14", state: "Doing", updated: "2026-06-26T10:00:00Z" }) },
+      { frontmatter: fm({ id: "endOfDay14", state: "Doing", updated: "2026-06-26T23:59:59Z" }) },
+      { frontmatter: fm({ id: "thirteen", state: "Doing", updated: "2026-06-27T00:00:00Z" }) },
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.staleDoing.map((n) => n.frontmatter.id)).toEqual(["exactly14", "endOfDay14"]);
+  });
+
+  it("sorts a mix of date-only and datetime values chronologically", () => {
+    const notes = [
+      { frontmatter: fm({ id: "later", state: "Doing", updated: "2026-06-26T10:00:00Z" }) },
+      { frontmatter: fm({ id: "startOfDay", state: "Doing", updated: "2026-06-26" }) },
+      { frontmatter: fm({ id: "ancient", state: "Doing", updated: "2026-06-01T08:00:00Z" }) },
+    ];
+    const b = buildBriefing(notes, TODAY);
+    expect(b.staleDoing.map((n) => n.frontmatter.id)).toEqual(["ancient", "startOfDay", "later"]);
+  });
 });
 
 // KEEP IN SYNC with the matching block in src/lib/briefing.test.ts

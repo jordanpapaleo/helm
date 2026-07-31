@@ -206,6 +206,30 @@ describe("renameInlineTag", () => {
   });
 });
 
+// The rewriters must classify code regions exactly the way extractInlineTags
+// does, or a body ends up disagreeing with the tag list derived from it. These
+// are the inputs where a naive single-pass alternation diverges from
+// extractInlineTags' strip-fences-then-strip-inline-code order.
+describe("code-region classification matches extractInlineTags", () => {
+  const samples = [
+    "` ```x``` ` #work",
+    "#work ` unclosed #work",
+    "``` #work ``` #work",
+    "a`b```c#work```d`e #work",
+    "`#work",
+    "#work`",
+    "```\n#work\n``` #work ```\n#work\n```",
+  ];
+
+  for (const sample of samples) {
+    it(`agrees on ${JSON.stringify(sample)}`, () => {
+      const before = extractInlineTags(sample);
+      const after = extractInlineTags(renameInlineTag(sample, "work", "client"));
+      expect(after.sort()).toEqual(before.map((t) => (t === "work" ? "client" : t)).sort());
+    });
+  }
+});
+
 describe("removeInlineTag", () => {
   it("removes a mid-sentence tag without leaving a double space", () => {
     expect(removeInlineTag("Plan #work today", "work")).toBe("Plan today");
@@ -235,6 +259,37 @@ describe("removeInlineTag", () => {
     expect(removeInlineTag("a\n#work\nb", "work")).toBe("a\nb");
     expect(removeInlineTag("Notes here.\n\n#work\n", "work")).toBe("Notes here.\n\n");
     expect(removeInlineTag("#work", "work")).toBe("");
+  });
+
+  it("removes an indented tag-only line entirely", () => {
+    expect(removeInlineTag("a\n  #work\nb", "work")).toBe("a\nb");
+    expect(removeInlineTag("a\n\t#work\nb", "work")).toBe("a\nb");
+  });
+
+  it("removes a list item that held nothing but the tag", () => {
+    expect(removeInlineTag("- #work\n- keep", "work")).toBe("- keep");
+    expect(removeInlineTag("* #work\n* keep", "work")).toBe("* keep");
+    expect(removeInlineTag("+ #work\n+ keep", "work")).toBe("+ keep");
+    expect(removeInlineTag("1. #work\n2. keep", "work")).toBe("2. keep");
+    expect(removeInlineTag("  - #work/ops\n  - keep", "work")).toBe("  - keep");
+  });
+
+  it("removes a task checkbox item that held nothing but the tag", () => {
+    expect(removeInlineTag("- [ ] #work\n- [x] keep", "work")).toBe("- [x] keep");
+  });
+
+  it("keeps a list item that still has content", () => {
+    expect(removeInlineTag("- #work ship it\n- keep", "work")).toBe("- ship it\n- keep");
+    expect(removeInlineTag("- ship #work\n- keep", "work")).toBe("- ship\n- keep");
+  });
+
+  it("does not remove a blank or empty-bullet line it did not create", () => {
+    expect(removeInlineTag("a\n\n#work b\n\nc", "work")).toBe("a\n\nb\n\nc");
+    expect(removeInlineTag("- \n- #work\n- keep", "work")).toBe("- \n- keep");
+  });
+
+  it("removes a tag-only line with CRLF endings", () => {
+    expect(removeInlineTag("a\r\n  #work\r\nb", "work")).toBe("a\r\nb");
   });
 
   it("removes descendants too", () => {

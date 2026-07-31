@@ -151,12 +151,29 @@ function today(): string {
  * Write every rewritten note to disk, returning the ones that made it. A failed
  * write never aborts the batch — the remaining notes are still processed and
  * one toast summarizes the failures.
+ *
+ * Each note is snapshotted to `.helm-history/` before it is overwritten, the
+ * same guarantee the editor's save path gives, so a bulk rewrite is always
+ * recoverable from the time machine. The snapshot is awaited (it must land
+ * before the overwrite) but never blocks the write: a failure is swallowed, and
+ * a note whose vault path can't be resolved is simply written without one.
+ * Rust coalesces to one snapshot per note per 5 minutes and prunes to 50.
  * @internal
  */
-async function writeRewrittenNotes(updates: Note[], operation: string): Promise<Note[]> {
+async function writeRewrittenNotes(
+  updates: Note[],
+  vaults: VaultConfig[],
+  operation: string,
+): Promise<Note[]> {
   const written: Note[] = [];
   let lastError: unknown;
   for (const note of updates) {
+    const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path;
+    if (vaultPath) {
+      await tauriCommands.snapshotNote(vaultPath, note.id, note.filePath).catch(() => {
+        /* snapshotting must never block a save */
+      });
+    }
     try {
       await tauriCommands.writeNote(note.filePath, serializeNote(note));
       written.push(note);
@@ -318,7 +335,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
         },
       }));
 
-    const written = await writeRewrittenNotes(updates, `Failed to rename #${oldTag}`);
+    const written = await writeRewrittenNotes(updates, get().vaults, `Failed to rename #${oldTag}`);
     if (written.length === 0) return;
 
     const byPath = new Map(written.map((n) => [n.filePath, n]));
@@ -345,7 +362,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
         },
       }));
 
-    const written = await writeRewrittenNotes(updates, `Failed to delete #${tag}`);
+    const written = await writeRewrittenNotes(updates, get().vaults, `Failed to delete #${tag}`);
     if (written.length === 0) return;
 
     const byPath = new Map(written.map((n) => [n.filePath, n]));

@@ -32,8 +32,9 @@ const TAG_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*(?:\/[a-zA-Z0-9_-]+)*$/;
 /** Matches 3- or 6-digit hex color values. Mirrors note-parser.ts. */
 const HEX_COLOR_RE = /^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/;
 
-/** Fenced code blocks and inline code, in the same precedence extractInlineTags uses. */
-const CODE_RE = /```[\s\S]*?```|`[^`]*`/g;
+/** Fenced code blocks and inline code — stripped, in this order, by extractInlineTags. */
+const FENCE_RE = /```[\s\S]*?```/g;
+const INLINE_CODE_RE = /`[^`]*`/g;
 
 /**
  * True when `tag` is `target` itself or a descendant of it.
@@ -94,20 +95,61 @@ export function noteMatchesTag(
   return inFrontmatter || extractInlineTags(note.content).some((t) => tagMatches(t, target));
 }
 
-/** Byte ranges of the content that must never be rewritten. */
+/**
+ * Character ranges of the content that must never be rewritten.
+ *
+ * Two passes in the same order extractInlineTags strips them — fenced blocks
+ * first, inline code second. The fenced blocks are blanked out (same length, so
+ * offsets stay valid) rather than deleted, which reproduces the one thing the
+ * ordering buys: a backtick inside a fence can never pair with one outside it.
+ * Deleting is not an option here, since the code has to survive into the output.
+ */
 function codeRanges(content: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
-  CODE_RE.lastIndex = 0;
-  let m = CODE_RE.exec(content);
-  while (m) {
+  let masked = content;
+  for (const m of content.matchAll(FENCE_RE)) {
+    const start = m.index;
+    const end = start + m[0].length;
+    ranges.push([start, end]);
+    masked = masked.slice(0, start) + " ".repeat(m[0].length) + masked.slice(end);
+  }
+  for (const m of masked.matchAll(INLINE_CODE_RE)) {
     ranges.push([m.index, m.index + m[0].length]);
-    m = CODE_RE.exec(content);
   }
   return ranges;
 }
 
 function inRanges(ranges: Array<[number, number]>, index: number): boolean {
   return ranges.some(([start, end]) => index >= start && index < end);
+}
+
+/**
+ * A line with nothing left on it but whitespace, a list marker (`-`, `*`, `+`,
+ * `1.`) and/or a task checkbox — i.e. debris left behind by removing a tag that
+ * was the only content on the line.
+ */
+const DEBRIS_LINE_RE = /^[ \t]*(?:[-*+]|\d+[.)])?[ \t]*(?:\[[ xX]\])?[ \t]*\r?$/;
+
+/**
+ * Drop lines that a removal emptied out. `marks` holds offsets *into `text`* at
+ * the points where a tag was removed, so lines that were already blank (or an
+ * already-empty bullet) are left alone — only debris we created is cleaned up.
+ */
+function dropEmptiedLines(text: string, marks: number[]): string {
+  if (marks.length === 0) return text;
+  const lines = text.split("\n");
+  const drop = new Set<number>();
+  let start = 0;
+  for (const [i, line] of lines.entries()) {
+    // `end` is the offset of this line's newline (or the end of the text); a
+    // removal at exactly that offset still belongs to this line.
+    const end = start + line.length;
+    if (DEBRIS_LINE_RE.test(line) && marks.some((p) => p >= start && p <= end)) drop.add(i);
+    start = end + 1;
+  }
+  if (drop.size === 0) return text;
+  // Joining the survivors with "\n" removes each dropped line's newline too.
+  return lines.filter((_, i) => !drop.has(i)).join("\n");
 }
 
 /**
@@ -151,13 +193,17 @@ export function renameInlineTag(content: string, oldTag: string, newTag: string)
  *   (`"Plan the #work."` → `"Plan the."`)
  * - first thing on a line → the following spaces go, the newline before stays
  *   (`"#work is first"` → `"is first"`)
- * - alone on its line → the whole line, including its newline, is removed
- * - blank lines are never collapsed
+ * - nothing left on the line but whitespace, a list marker and/or a task
+ *   checkbox → the whole line, including its newline, is removed
+ *   (`"- #work\n- keep"` → `"- keep"`)
+ * - blank lines and empty bullets that were already there are left alone
  */
 export function removeInlineTag(content: string, target: string): string {
   const skip = codeRanges(content);
   let out = "";
   let last = 0;
+  // Offsets in `out` where a tag was removed, used to find emptied lines.
+  const marks: number[] = [];
 
   INLINE_TAG_RE.lastIndex = 0;
   let m = INLINE_TAG_RE.exec(content);
@@ -190,11 +236,7 @@ export function removeInlineTag(content: string, target: string): string {
         out += prefix + (hadTrailing && !endsLine ? " " : "");
       }
 
-      // The tag was the only thing on its line — take the line's newline too.
-      if (atLineStart && endsLine) {
-        if (content.startsWith("\r\n", cut)) cut += 2;
-        else if (next === "\n" || next === "\r") cut += 1;
-      }
+      marks.push(out.length);
       last = cut;
     }
 
@@ -202,5 +244,5 @@ export function removeInlineTag(content: string, target: string): string {
     m = INLINE_TAG_RE.exec(content);
   }
 
-  return out + content.slice(last);
+  return dropEmptiedLines(out + content.slice(last), marks);
 }

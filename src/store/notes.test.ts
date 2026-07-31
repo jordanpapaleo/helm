@@ -10,6 +10,7 @@ vi.mock("../lib/tauri-commands", () => ({
     renameFolder: vi.fn().mockResolvedValue(undefined),
     renameNote: vi.fn().mockResolvedValue(undefined),
     writeNote: vi.fn().mockResolvedValue(undefined),
+    snapshotNote: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -540,6 +541,7 @@ describe("renameTag / deleteTag", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    vi.mocked(tauriCommands.snapshotNote).mockResolvedValue(undefined);
     vi.spyOn(console, "error").mockImplementation(() => {});
     useToastStore.setState({ toasts: [] });
     useNoteStore.setState({
@@ -733,6 +735,77 @@ describe("renameTag / deleteTag", () => {
     });
 
     expect(result.current.notes[0].content).toBe("Drop\n\n```\nkeep #work\n```");
+  });
+
+  it("snapshots each note to history before overwriting it", async () => {
+    const order: string[] = [];
+    vi.mocked(tauriCommands.snapshotNote).mockImplementation(async (_v, id) => {
+      order.push(`snapshot:${id}`);
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (path) => {
+      order.push(`write:${path}`);
+    });
+
+    const { result } = renderHook(() => useNoteStore());
+    act(() => {
+      result.current.setVaults([{ id: "vault-1", name: "Vault", path: "/vault" }]);
+      result.current.setNotes([tagged("n1", ["work"], "#work"), tagged("n2", ["work"], "#work")]);
+    });
+
+    await act(async () => {
+      await result.current.renameTag("work", "client");
+    });
+
+    expect(order).toEqual([
+      "snapshot:n1",
+      "write:/vault/n1.md",
+      "snapshot:n2",
+      "write:/vault/n2.md",
+    ]);
+    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", "n1", "/vault/n1.md");
+  });
+
+  it("deleteTag snapshots before rewriting bodies", async () => {
+    const { result } = renderHook(() => useNoteStore());
+    act(() => {
+      result.current.setVaults([{ id: "vault-1", name: "Vault", path: "/vault" }]);
+      result.current.setNotes([tagged("n1", ["work"], "#work")]);
+    });
+
+    await act(async () => {
+      await result.current.deleteTag("work");
+    });
+
+    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", "n1", "/vault/n1.md");
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("still writes when the snapshot fails or the vault path is unknown", async () => {
+    vi.mocked(tauriCommands.snapshotNote).mockRejectedValue(new Error("history unwritable"));
+    const { result } = renderHook(() => useNoteStore());
+    act(() => {
+      result.current.setVaults([{ id: "vault-1", name: "Vault", path: "/vault" }]);
+      result.current.setNotes([
+        tagged("n1", ["work"], "#work"),
+        // vaultId that resolves to no vault — no snapshot is possible
+        makeNote({
+          id: "n2",
+          filePath: "/elsewhere/n2.md",
+          content: "#work",
+          vaultId: "gone",
+          frontmatter: { ...makeNote().frontmatter, id: "n2", tags: ["work"] },
+        }),
+      ]);
+    });
+
+    await act(async () => {
+      await result.current.deleteTag("work");
+    });
+
+    expect(tauriCommands.snapshotNote).toHaveBeenCalledTimes(1); // only the resolvable one
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2);
+    expect(result.current.notes[0].content).toBe("");
+    expect(result.current.notes[1].content).toBe("");
   });
 
   it("deleteTag no-ops on an empty name", async () => {

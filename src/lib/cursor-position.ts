@@ -16,15 +16,24 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
  *
  * Exact fidelity is impossible at the margins — a caret between the asterisks of
  * `**bold**` has no rich-text counterpart. `src/test/cursor-position-editor.test.ts`
- * pins agreement with the real editor across a wide corpus; the scanner is known to
- * drift only on:
+ * pins agreement with the real editor across a wide corpus, and the scanner has
+ * been checked against every caret position of every note in a real vault.
+ *
+ * Known remaining drift, none of which the editor itself produces:
  *   - an image *inside* a paragraph (the parser splits the paragraph around it,
  *     costing one character);
  *   - link reference definitions / `[^1]`-style labels (markdown-it resolves them,
  *     we treat them as literal text);
  *   - ragged tables whose rows are shorter than the header (each missing cell is
- *     one character).
- * None of these are shapes the editor itself produces.
+ *     one character);
+ *   - HTML5 *legacy* entity references written without their semicolon, where the
+ *     browser still decodes a prefix (`&notanentity;` renders as `¬anentity;`).
+ *     Entities with a semicolon are handled.
+ *
+ * Because drift can never be fully eliminated, callers must not treat a mapped
+ * position as authoritative: `resolveTextOffset` reports when an offset fell
+ * outside the document so the caller can fall back rather than confidently
+ * jumping to the far end of the note.
  *
  * Nothing here may import React or Tauri — this module is pure and unit tested.
  */
@@ -82,7 +91,9 @@ const RE_HEADING = /^ {0,3}#{1,6}(?:[ \t]+|$)/;
 const RE_HEADING_TRAILING_HASHES = /[ \t]+#+[ \t]*$/;
 const RE_BLOCKQUOTE = /^ {0,3}>[ \t]?/;
 const RE_LIST_ITEM = /^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+|$)/;
-const RE_TASK_MARKER = /^\\?\[[xX ]?\\?\](?:[ \t]+|$)/;
+// markdown-it-task-lists only converts a checkbox that is followed by a space
+// *and* actual content — `- [ ]` on its own stays the literal text "[ ]".
+const RE_TASK_MARKER = /^\\?\[[xX ]?\\?\][ \t]+(?=\S)/;
 const RE_IMAGE_ONLY = /^!\[[^\]]*\]\([^\s)]*(?:[ \t]+"[^"]*")?\)$/;
 const RE_TABLE_ROW = /^ {0,3}\|/;
 const RE_TABLE_DELIMITER = /^ {0,3}\|?(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*:?-*:?[ \t]*\|?[ \t]*$/;
@@ -90,6 +101,206 @@ const RE_TRAILING_WS = /[ \t]+$/;
 const RE_LEADING_WS = /^[ \t]+/;
 const RE_SETEXT_UNDERLINE = /^ {0,3}=+[ \t]*$/;
 const RE_AUTOLINK = /^<[a-zA-Z][a-zA-Z0-9+.-]*:[^<>\s]*>/;
+
+/**
+ * Named HTML entities worth decoding. Every one of these collapses to a single
+ * character, so only membership matters, not the character itself.
+ *
+ * This is deliberately a list rather than a blanket `&\w+;` match: an unknown
+ * sequence like `&notarealentity;` stays literal text, and treating it as one
+ * character would be a far larger error than leaving it alone.
+ */
+const NAMED_ENTITIES = new Set([
+  "amp",
+  "lt",
+  "gt",
+  "quot",
+  "apos",
+  "nbsp",
+  "ensp",
+  "emsp",
+  "thinsp",
+  "ndash",
+  "mdash",
+  "hellip",
+  "bull",
+  "middot",
+  "dagger",
+  "Dagger",
+  "permil",
+  "lsquo",
+  "rsquo",
+  "sbquo",
+  "ldquo",
+  "rdquo",
+  "bdquo",
+  "laquo",
+  "raquo",
+  "prime",
+  "Prime",
+  "times",
+  "divide",
+  "plusmn",
+  "minus",
+  "frac12",
+  "frac14",
+  "frac34",
+  "sup1",
+  "sup2",
+  "sup3",
+  "deg",
+  "micro",
+  "para",
+  "sect",
+  "copy",
+  "reg",
+  "trade",
+  "euro",
+  "pound",
+  "yen",
+  "cent",
+  "curren",
+  "larr",
+  "rarr",
+  "uarr",
+  "darr",
+  "harr",
+  "lArr",
+  "rArr",
+  "uArr",
+  "dArr",
+  "hArr",
+  "ne",
+  "le",
+  "ge",
+  "asymp",
+  "equiv",
+  "infin",
+  "radic",
+  "sum",
+  "prod",
+  "int",
+  "part",
+  "nabla",
+  "isin",
+  "notin",
+  "cap",
+  "cup",
+  "sub",
+  "sup",
+  "sube",
+  "supe",
+  "oplus",
+  "otimes",
+  "perp",
+  "ang",
+  "and",
+  "or",
+  "not",
+  "there4",
+  "alpha",
+  "beta",
+  "gamma",
+  "delta",
+  "epsilon",
+  "zeta",
+  "eta",
+  "theta",
+  "iota",
+  "kappa",
+  "lambda",
+  "mu",
+  "nu",
+  "xi",
+  "pi",
+  "rho",
+  "sigma",
+  "tau",
+  "upsilon",
+  "phi",
+  "chi",
+  "psi",
+  "omega",
+  "Alpha",
+  "Beta",
+  "Gamma",
+  "Delta",
+  "Theta",
+  "Lambda",
+  "Pi",
+  "Sigma",
+  "Phi",
+  "Psi",
+  "Omega",
+  "hearts",
+  "diams",
+  "clubs",
+  "spades",
+  "loz",
+  "szlig",
+  "agrave",
+  "aacute",
+  "acirc",
+  "atilde",
+  "auml",
+  "aring",
+  "aelig",
+  "ccedil",
+  "egrave",
+  "eacute",
+  "ecirc",
+  "euml",
+  "igrave",
+  "iacute",
+  "icirc",
+  "iuml",
+  "ntilde",
+  "ograve",
+  "oacute",
+  "ocirc",
+  "otilde",
+  "ouml",
+  "oslash",
+  "ugrave",
+  "uacute",
+  "ucirc",
+  "uuml",
+  "yacute",
+  "yuml",
+  "shy",
+  "iquest",
+  "iexcl",
+  "ordf",
+  "ordm",
+  "brvbar",
+  "uml",
+  "macr",
+  "acute",
+  "cedil",
+  "sup",
+  "star",
+  "check",
+  "cross",
+  "dash",
+  "lowast",
+  "oline",
+]);
+
+const RE_NUMERIC_ENTITY = /^&#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6});/;
+const RE_NAMED_ENTITY = /^&([a-zA-Z][a-zA-Z0-9]{1,31});/;
+
+/**
+ * Length of the HTML entity reference starting at `index`, or 0 if there is
+ * none. The whole reference renders as a single character.
+ */
+function matchEntity(md: string, index: number, to: number): number {
+  const slice = md.slice(index, to);
+  const numeric = RE_NUMERIC_ENTITY.exec(slice);
+  if (numeric) return numeric[0].length;
+  const named = RE_NAMED_ENTITY.exec(slice);
+  if (named && NAMED_ENTITIES.has(named[1])) return named[0].length;
+  return 0;
+}
 
 function isAlphaNumeric(ch: string | undefined): boolean {
   return ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
@@ -114,6 +325,15 @@ function classifyMarkdown(md: string): Uint8Array {
   let openParagraph = false;
   let hardBreakPending = false;
   let wasBlank = false;
+  // Whitespace runs collapse when the rendered HTML is parsed into a document,
+  // so only the first space of a run survives. Tracked across a whole line
+  // (including into nested emphasis/link scans) rather than per token.
+  let pendingSpace = false;
+  // tiptap-markdown's parser strips a leading "\n" from any text node that
+  // directly follows an element, so a soft break loses its space when the
+  // previous line ended with emphasis, code, a link or an image.
+  let lastTokenWasElement = false;
+  let previousLineEndedWithElement = false;
   let inFence = false;
   let fenceChar = "`";
   let fenceLength = 0;
@@ -141,17 +361,44 @@ function classifyMarkdown(md: string): Uint8Array {
     seenTextBlock = true;
   };
 
+  /** Emit one content character, collapsing it away if it continues a space run. */
+  const emit = (index: number, isSpace: boolean) => {
+    set(index, isSpace && pendingSpace ? SYNTAX : CONTENT);
+    pendingSpace = isSpace;
+  };
+
   /** Mark [from, to) as content, skipping markdown inline syntax. */
   const scanInline = (from: number, to: number) => {
     let i = from;
     while (i < to) {
       const ch = md[i];
 
+      // Runs of spaces/tabs collapse to a single character.
+      if (ch === " " || ch === "\t") {
+        emit(i, true);
+        lastTokenWasElement = false;
+        i += 1;
+        continue;
+      }
+
       // Backslash escape: `\[` renders as `[`.
       if (ch === "\\" && i + 1 < to && ESCAPABLE.has(md[i + 1])) {
-        set(i + 1, CONTENT);
+        emit(i + 1, false);
+        lastTokenWasElement = false;
         i += 2;
         continue;
+      }
+
+      // HTML entity reference — decodes to a single character.
+      if (ch === "&") {
+        const length = matchEntity(md, i, to);
+        if (length > 0) {
+          emit(i, false);
+          for (let k = i + 1; k < i + length; k++) set(k, SYNTAX);
+          lastTokenWasElement = false;
+          i += length;
+          continue;
+        }
       }
 
       // Inline code span — closed by a backtick run of the same length.
@@ -174,11 +421,17 @@ function classifyMarkdown(md: string): Uint8Array {
             innerStart += 1;
             innerEnd -= 1;
           }
-          for (let k = innerStart; k < innerEnd; k++) set(k, CONTENT);
+          // Whitespace collapses inside a code *span* (it is ordinary inline
+          // HTML); only a fenced block preserves it.
+          for (let k = innerStart; k < innerEnd; k++) {
+            emit(k, md[k] === " " || md[k] === "\t");
+          }
+          lastTokenWasElement = true;
           i = close + runLength;
           continue;
         }
-        for (let k = i; k < runEnd; k++) set(k, CONTENT);
+        for (let k = i; k < runEnd; k++) emit(k, false);
+        lastTokenWasElement = false;
         i = runEnd;
         continue;
       }
@@ -187,6 +440,7 @@ function classifyMarkdown(md: string): Uint8Array {
       if (ch === "!" && md[i + 1] === "[") {
         const span = matchLink(md, i + 1, to);
         if (span) {
+          lastTokenWasElement = true;
           i = span.end;
           continue;
         }
@@ -198,6 +452,7 @@ function classifyMarkdown(md: string): Uint8Array {
         const span = matchLink(md, i, to);
         if (span) {
           scanInline(span.labelStart, span.labelEnd);
+          lastTokenWasElement = true;
           i = span.end;
           continue;
         }
@@ -207,7 +462,8 @@ function classifyMarkdown(md: string): Uint8Array {
       if (ch === "<") {
         const match = RE_AUTOLINK.exec(md.slice(i, to));
         if (match) {
-          for (let k = i + 1; k < i + match[0].length - 1; k++) set(k, CONTENT);
+          for (let k = i + 1; k < i + match[0].length - 1; k++) emit(k, false);
+          lastTokenWasElement = true;
           i += match[0].length;
           continue;
         }
@@ -217,14 +473,30 @@ function classifyMarkdown(md: string): Uint8Array {
       if (ch === "*" || ch === "_" || ch === "~") {
         const consumed = scanEmphasis(md, i, to, scanInline);
         if (consumed > 0) {
+          lastTokenWasElement = true;
           i = consumed;
           continue;
         }
       }
 
-      set(i, CONTENT);
+      emit(i, false);
+      lastTokenWasElement = false;
       i++;
     }
+  };
+
+  /** Scan one line's inline content, resetting the per-line collapsing state. */
+  const scanLine = (from: number, to: number) => {
+    pendingSpace = false;
+    lastTokenWasElement = false;
+    scanInline(from, to);
+    previousLineEndedWithElement = lastTokenWasElement;
+  };
+
+  /** Each table cell is its own text block, so space collapsing restarts. */
+  const scanCell = (from: number, to: number) => {
+    pendingSpace = false;
+    scanInline(from, to);
   };
 
   for (let li = 0; li < lines.length; li++) {
@@ -335,7 +607,7 @@ function classifyMarkdown(md: string): Uint8Array {
         const nextText = next ? md.slice(next.start, next.end) : "";
         if (next && RE_TABLE_DELIMITER.test(nextText)) {
           tableState = "header";
-          scanTableRow(md, contentStart, end, start, startTextBlock, scanInline);
+          scanTableRow(md, contentStart, end, start, startTextBlock, scanCell);
           openParagraph = false;
           hardBreakPending = false;
           continue;
@@ -344,7 +616,7 @@ function classifyMarkdown(md: string): Uint8Array {
         tableState = "body";
         continue; // delimiter row is pure syntax
       } else {
-        scanTableRow(md, contentStart, end, start, startTextBlock, scanInline);
+        scanTableRow(md, contentStart, end, start, startTextBlock, scanCell);
         openParagraph = false;
         hardBreakPending = false;
         continue;
@@ -361,7 +633,7 @@ function classifyMarkdown(md: string): Uint8Array {
       let bodyEnd = trimTrailing(md, bodyStart, end);
       const closing = RE_HEADING_TRAILING_HASHES.exec(md.slice(bodyStart, bodyEnd));
       if (closing) bodyEnd -= closing[0].length;
-      scanInline(bodyStart, bodyEnd);
+      scanLine(bodyStart, bodyEnd);
       openParagraph = false;
       hardBreakPending = false;
       continue;
@@ -375,7 +647,7 @@ function classifyMarkdown(md: string): Uint8Array {
       if (task) bodyStart += task[0].length;
       startTextBlock(start - 1);
       const { bodyEnd, hardBreak } = trimParagraphTail(md, bodyStart, end);
-      scanInline(bodyStart, bodyEnd);
+      scanLine(bodyStart, bodyEnd);
       openParagraph = true;
       hardBreakPending = hardBreak;
       continue;
@@ -390,16 +662,20 @@ function classifyMarkdown(md: string): Uint8Array {
 
     // --- paragraph --------------------------------------------------------
     if (openParagraph) {
-      // A soft break renders as a single space; a hard break is a leaf node
-      // and renders as nothing at all.
-      markPrecedingNewline(start, hardBreakPending ? SYNTAX : CONTENT);
+      // A soft break renders as a single space — unless the previous line ended
+      // with an element (its leading "\n" is stripped from the following text
+      // node) or with a hard break (a leaf node, which renders as nothing).
+      markPrecedingNewline(
+        start,
+        hardBreakPending || previousLineEndedWithElement ? SYNTAX : CONTENT,
+      );
     } else {
       startTextBlock(start - 1);
     }
     const leading = RE_LEADING_WS.exec(rest);
     const bodyStart = contentStart + (leading ? leading[0].length : 0);
     const { bodyEnd, hardBreak } = trimParagraphTail(md, bodyStart, end);
-    scanInline(bodyStart, bodyEnd);
+    scanLine(bodyStart, bodyEnd);
     openParagraph = true;
     hardBreakPending = hardBreak;
   }
@@ -564,7 +840,7 @@ function scanTableRow(
   to: number,
   lineStart: number,
   startTextBlock: (anchor: number) => void,
-  scanInline: (from: number, to: number) => void,
+  scanCell: (from: number, to: number) => void,
 ): void {
   const pipes: number[] = [];
   for (let i = from; i < to; i++) {
@@ -589,7 +865,7 @@ function scanTableRow(
     const innerStart = cellStart + (leading ? leading[0].length : 0);
     const innerEnd = trimTrailing(md, innerStart, cellEnd);
     startTextBlock(boundaries[c] >= from ? boundaries[c] : lineStart - 1);
-    scanInline(innerStart, innerEnd);
+    scanCell(innerStart, innerEnd);
   }
 }
 
@@ -696,6 +972,31 @@ function inlinePosition(block: ProseMirrorNode, textOffset: number): number {
     pos += child.nodeSize;
   });
   return found >= 0 ? found : Math.min(pos, block.content.size);
+}
+
+/** A document position, and whether the requested offset had to be clamped to reach it. */
+export interface ResolvedPosition {
+  pos: number;
+  /**
+   * True when the offset fell outside the document's text. The caller should
+   * treat `pos` as a guess: silently clamping an overshoot to the end of the
+   * document is how a small mapping error becomes a caret at the far end of the
+   * note, so a caller that has a better fallback should use it.
+   */
+  clamped: boolean;
+}
+
+/**
+ * Convert a text offset to a ProseMirror document position, reporting whether
+ * the offset was out of range. Always returns a position inside `doc`.
+ */
+export function resolveTextOffset(doc: ProseMirrorNode, offset: number): ResolvedPosition {
+  const total = docTextLength(doc);
+  const requested = Number.isFinite(offset) ? Math.trunc(offset) : 0;
+  return {
+    pos: textOffsetToDocPosition(doc, offset),
+    clamped: requested < 0 || requested > total,
+  };
 }
 
 /**

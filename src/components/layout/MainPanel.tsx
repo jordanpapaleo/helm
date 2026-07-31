@@ -208,18 +208,29 @@ const MarkdownTextarea = forwardRef<
   );
 
   // Carry the cursor and the scroll position over from the rich-text editor. The
-  // textarea mounts fresh on every toggle, so this runs exactly once.
-  const restoredCursorRef = useRef(false);
+  // textarea mounts fresh on every toggle, so this happens exactly once.
+  //
+  // Order is load-bearing, and was measured rather than assumed:
+  //   1. restore the reading position while the textarea is still unfocused
+  //   2. set the selection, then focus
+  // Focusing a text control reveals its cached selection with a *minimal* scroll,
+  // so step 2 leaves the view exactly where step 1 put it when the caret is
+  // already visible, and rescues the caret when it is not. That is what keeps the
+  // invariant — caret visible after a restore — even if the mapping drifted.
+  //
+  // The "done" guard is set inside the frame so that a re-render which cancels
+  // the frame reschedules the restore instead of dropping it.
+  const restoreDoneRef = useRef(false);
   useEffect(() => {
-    if (restoredCursorRef.current) return;
+    if (restoreDoneRef.current) return;
     if (initialCursorOffset === null || initialCursorOffset === undefined) return;
-    restoredCursorRef.current = true;
-    setCursorTextOffset(initialCursorOffset);
-    if (initialScrollFraction === null) return;
     // Wait for layout: scrollHeight is meaningless until the textarea has one.
     const frame = requestAnimationFrame(() => {
       const el = textareaRef.current;
-      if (el) applyScrollFraction(el, initialScrollFraction);
+      if (!el) return;
+      restoreDoneRef.current = true;
+      applyScrollFraction(el, initialScrollFraction);
+      setCursorTextOffset(initialCursorOffset);
     });
     return () => cancelAnimationFrame(frame);
   }, [initialCursorOffset, initialScrollFraction, setCursorTextOffset]);

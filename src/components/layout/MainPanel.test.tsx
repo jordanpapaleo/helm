@@ -150,18 +150,72 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
 
 const MARKDOWN_CONTENT = "# Title\n\nSome **bold** words here.";
 
+/**
+ * The restore runs inside a requestAnimationFrame so it lands after layout.
+ * Frames are captured and flushed by hand rather than waiting on a real one.
+ * jsdom also implements none of the geometry ProseMirror reads when it reveals
+ * the caret, so the empty list / zero rect a browser returns for an unlaid-out
+ * node is supplied — otherwise the real code path throws instead of running.
+ */
+let frames: FrameRequestCallback[] = [];
+const originalElementRects = Element.prototype.getClientRects;
+const originalRangeRects = Range.prototype.getClientRects;
+const originalRangeBox = Range.prototype.getBoundingClientRect;
+const emptyRectList = () => Object.assign([], { item: () => null });
+const zeroRect = () =>
+  ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0 }) as DOMRect;
+
+function installFrameHarness() {
+  frames = [];
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+  vi.stubGlobal("cancelAnimationFrame", () => {});
+  Element.prototype.getClientRects = emptyRectList as unknown as typeof originalElementRects;
+  Range.prototype.getClientRects = emptyRectList as unknown as typeof originalRangeRects;
+  Range.prototype.getBoundingClientRect = zeroRect as unknown as typeof originalRangeBox;
+}
+
+function removeFrameHarness() {
+  vi.unstubAllGlobals();
+  Element.prototype.getClientRects = originalElementRects;
+  Range.prototype.getClientRects = originalRangeRects;
+  Range.prototype.getBoundingClientRect = originalRangeBox;
+}
+
+function flushFrames() {
+  // Restoring can schedule follow-up work, so drain until quiet.
+  for (let guard = 0; guard < 10 && frames.length > 0; guard++) {
+    const pending = frames;
+    frames = [];
+    act(() => {
+      for (const cb of pending) cb(0);
+    });
+  }
+}
+
 // TipTap re-renders asynchronously once the editor mounts and takes focus, so the
 // toggles are wrapped to keep React's act() bookkeeping quiet.
-function toggleToEditor() {
+function clickToggleToEditor() {
   act(() => {
     fireEvent.click(screen.getByTitle("Switch to editor"));
   });
 }
 
-function toggleToMarkdown() {
+function clickToggleToMarkdown() {
   act(() => {
     fireEvent.click(screen.getByTitle("Switch to Markdown"));
   });
+}
+
+// Most tests want the whole restore to have happened; the scroll tests need to
+// supply layout numbers to the incoming surface first, so they flush by hand.
+function toggleToEditor() {
+  clickToggleToEditor();
+  flushFrames();
+}
+
+function toggleToMarkdown() {
+  clickToggleToMarkdown();
+  flushFrames();
 }
 
 // getByDisplayValue collapses whitespace, so it cannot match multi-line markdown.
@@ -174,7 +228,10 @@ function textarea(): HTMLTextAreaElement {
 describe("MainPanel — cursor position survives the markdown/editor toggle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    installFrameHarness();
   });
+
+  afterEach(removeFrameHarness);
 
   it("returns the caret to the same word after a markdown → editor → markdown round trip", () => {
     setup(makeNote({ content: MARKDOWN_CONTENT }), true);
@@ -336,6 +393,7 @@ describe("MainPanel — cursor position survives the markdown/editor toggle", ()
 function stubScroller(
   el: Element,
   { scrollHeight, clientHeight, scrollTop = 0 }: Record<string, number>,
+  onScroll?: (value: number) => void,
 ) {
   let top = scrollTop;
   Object.defineProperty(el, "scrollHeight", { get: () => scrollHeight, configurable: true });
@@ -344,6 +402,7 @@ function stubScroller(
     get: () => top,
     set: (v: number) => {
       top = v;
+      onScroll?.(v);
     },
     configurable: true,
   });
@@ -357,51 +416,19 @@ function editorScroller(): Element {
 }
 
 describe("MainPanel — scroll position survives the markdown/editor toggle", () => {
-  let frames: FrameRequestCallback[] = [];
-  const originalElementRects = Element.prototype.getClientRects;
-  const originalRangeRects = Range.prototype.getClientRects;
-  const originalRangeBox = Range.prototype.getBoundingClientRect;
-  const emptyRectList = () => Object.assign([], { item: () => null });
-  const zeroRect = () =>
-    ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0 }) as DOMRect;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    frames = [];
-    // The restore runs in a rAF so it lands after layout. Capture and flush it by
-    // hand rather than waiting on a real frame.
-    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
-    vi.stubGlobal("cancelAnimationFrame", () => {});
-    // jsdom implements neither Element.getClientRects nor the Range geometry
-    // ProseMirror uses to locate the caret. Supply the empty list / zero rect a
-    // browser returns for an unlaid-out node so the real code path runs rather
-    // than throwing.
-    Element.prototype.getClientRects = emptyRectList as unknown as typeof originalElementRects;
-    Range.prototype.getClientRects = emptyRectList as unknown as typeof originalRangeRects;
-    Range.prototype.getBoundingClientRect = zeroRect as unknown as typeof originalRangeBox;
+    installFrameHarness();
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    Element.prototype.getClientRects = originalElementRects;
-    Range.prototype.getClientRects = originalRangeRects;
-    Range.prototype.getBoundingClientRect = originalRangeBox;
-  });
-
-  function flushFrames() {
-    const pending = frames;
-    frames = [];
-    act(() => {
-      for (const cb of pending) cb(0);
-    });
-  }
+  afterEach(removeFrameHarness);
 
   it("carries the reading position from the markdown view into the editor", () => {
     setup(makeNote({ content: MARKDOWN_CONTENT }), true);
     // A quarter of the way through the markdown source.
     stubScroller(textarea(), { scrollHeight: 3000, clientHeight: 300, scrollTop: 675 });
 
-    toggleToEditor();
+    clickToggleToEditor();
     // The rich-text view renders the same document much taller.
     stubScroller(editorScroller(), { scrollHeight: 5100, clientHeight: 300 });
     flushFrames();
@@ -414,7 +441,7 @@ describe("MainPanel — scroll position survives the markdown/editor toggle", ()
     setup(makeNote({ content: MARKDOWN_CONTENT }), false);
     stubScroller(editorScroller(), { scrollHeight: 5100, clientHeight: 300, scrollTop: 1200 });
 
-    toggleToMarkdown();
+    clickToggleToMarkdown();
     stubScroller(textarea(), { scrollHeight: 3000, clientHeight: 300 });
     flushFrames();
 
@@ -426,11 +453,42 @@ describe("MainPanel — scroll position survives the markdown/editor toggle", ()
     // Content fits: there is no reading position worth restoring.
     stubScroller(textarea(), { scrollHeight: 300, clientHeight: 300, scrollTop: 0 });
 
-    toggleToEditor();
+    clickToggleToEditor();
     stubScroller(editorScroller(), { scrollHeight: 5100, clientHeight: 300, scrollTop: 0 });
     flushFrames();
 
     expect(editorScroller().scrollTop).toBe(0);
+  });
+
+  it("restores the view before placing the caret, so the caret reveal wins", () => {
+    // The invariant depends on this order: the view is put back first, then the
+    // caret is placed, so the browser/ProseMirror only scrolls if the restored
+    // view does not already show the caret. Reversing it is what left the user
+    // looking at the top of the note with the caret at the bottom.
+    setup(makeNote({ content: MARKDOWN_CONTENT }), false);
+    stubScroller(editorScroller(), { scrollHeight: 5100, clientHeight: 300, scrollTop: 1200 });
+
+    clickToggleToMarkdown();
+    const ta = textarea();
+    const order: string[] = [];
+    // Record against the element's own scrollTop, which is what the stub defines.
+    stubScroller(ta, { scrollHeight: 3000, clientHeight: 300 }, (v) =>
+      order.push(`scrollTop=${v}`),
+    );
+    const select = vi
+      .spyOn(HTMLTextAreaElement.prototype, "setSelectionRange")
+      .mockImplementation(() => {
+        order.push("setSelectionRange");
+      });
+    const focus = vi.spyOn(HTMLTextAreaElement.prototype, "focus").mockImplementation(() => {
+      order.push("focus");
+    });
+
+    flushFrames();
+
+    expect(order).toEqual(["scrollTop=675", "setSelectionRange", "focus"]);
+    select.mockRestore();
+    focus.mockRestore();
   });
 
   it("does not carry a scroll position across a note switch", () => {
@@ -447,7 +505,7 @@ describe("MainPanel — scroll position survives the markdown/editor toggle", ()
       useNoteStore.setState({ notes: [first, second] });
     });
     stubScroller(textarea(), { scrollHeight: 3000, clientHeight: 300, scrollTop: 675 });
-    toggleToEditor();
+    clickToggleToEditor();
 
     act(() => {
       useNoteStore.getState().selectNote(second.id);

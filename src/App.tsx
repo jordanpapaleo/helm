@@ -13,6 +13,7 @@ import { checkForUpdates, type UpdateCheckResult } from "./lib/check-for-updates
 import { flushPendingSaves } from "./lib/pending-saves";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { tauriCommands } from "./lib/tauri-commands";
+import { createCloseHandler } from "./lib/window-close";
 import { useSettingsStore } from "./store/settings";
 import { useThemeStore } from "./store/theme";
 import { reportError, useToastStore } from "./store/toast";
@@ -116,24 +117,19 @@ export default function App() {
 
   // Flush debounced autosaves, then exit the whole process. Destroying only
   // the main window leaves the hidden quick-capture window (and the process)
-  // alive after the first ⌘⇧Space use.
+  // alive after the first ⌘⇧Space use. See src/lib/window-close.ts for why the
+  // flush is time-bounded — a wedged save must never trap the user in the app.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    let closing = false;
+
+    const handleCloseRequested = createCloseHandler({
+      flush: flushPendingSaves,
+      exit: tauriCommands.exitApp,
+      onError: reportError,
+    });
 
     getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        event.preventDefault();
-        if (closing) return;
-        closing = true;
-        try {
-          await flushPendingSaves();
-          await tauriCommands.exitApp();
-        } catch (e) {
-          closing = false;
-          reportError("Failed to quit Helm", e);
-        }
-      })
+      .onCloseRequested(handleCloseRequested)
       .then((fn) => {
         unlisten = fn;
       })

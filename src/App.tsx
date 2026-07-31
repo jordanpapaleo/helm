@@ -114,21 +114,24 @@ export default function App() {
     };
   }, []);
 
-  // Flush any debounced autosaves before the window closes so edits made in
-  // the last second are never lost on quit.
+  // Flush debounced autosaves, then exit the whole process. Destroying only
+  // the main window leaves the hidden quick-capture window (and the process)
+  // alive after the first ⌘⇧Space use.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let closing = false;
 
     getCurrentWindow()
       .onCloseRequested(async (event) => {
-        if (closing || !hasPendingSaves()) return;
         event.preventDefault();
+        if (closing) return;
         closing = true;
         try {
           await flushPendingSaves();
-        } finally {
-          void getCurrentWindow().destroy();
+          await tauriCommands.exitApp();
+        } catch (e) {
+          closing = false;
+          reportError("Failed to quit Helm", e);
         }
       })
       .then((fn) => {

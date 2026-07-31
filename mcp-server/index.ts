@@ -710,7 +710,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       Done: [],
     };
     for (const n of notes) {
-      const state = n.frontmatter.state ?? "Prepare";
+      // `||` not `??` — an unmanaged note has state "" and must not fall through
+      // as its own (empty) column.
+      const state = n.frontmatter.state || "Prepare";
       if (state in columns) columns[state].push(noteSummary(n));
     }
     return {

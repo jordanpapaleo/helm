@@ -16,8 +16,14 @@ export interface VaultConfig {
   path: string;
 }
 
-/** Kanban/workflow state of a note */
-export type NoteState = "Prepare" | "Doing" | "Maintain" | "Done";
+/**
+ * Kanban/workflow state of a note.
+ *
+ * `""` means "no state" — set when a note is marked `unmanaged`, which clears
+ * the workflow fields (state/urgent/important/blocked) while keeping the keys
+ * in the frontmatter so toggling back to managed needs no re-adding.
+ */
+export type NoteState = "Prepare" | "Doing" | "Maintain" | "Done" | "";
 
 /**
  * YAML frontmatter metadata for a note.

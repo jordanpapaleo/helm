@@ -89,17 +89,6 @@ export function extractWikiLinks(content: string): string[] {
 }
 
 /**
- * Extract Bear-style inline tags from note content.
- * Searches for #tag or #parent/child syntax. Ignores markdown headings
- * by requiring a letter immediately after #. Deduplicates results.
- *
- * @param content - The markdown content to search
- * @returns Array of unique tag names (deduplicated)
- * @example
- * extractInlineTags("Plan #work/project and #personal")
- * // => ["work/project", "personal"]
- */
-/**
  * Matches 3- or 6-digit hex color values (e.g. fff, ff0000), so `#fff` reads
  * as a color rather than a tag.
  *
@@ -130,6 +119,17 @@ export function createTagPattern(): RegExp {
 // KEEP IN SYNC with mcp-server/index.ts extractInlineTags — the app and the
 // MCP server must agree on what counts as a tag or vault writes will drift.
 // (The MCP server keeps its own copy deliberately: it never imports from src/.)
+/**
+ * Extract Bear-style inline tags from note content.
+ * Searches for #tag or #parent/child syntax. Ignores markdown headings
+ * by requiring a letter immediately after #. Deduplicates results.
+ *
+ * @param content - The markdown content to search
+ * @returns Array of unique tag names (deduplicated)
+ * @example
+ * extractInlineTags("Plan #work/project and #personal")
+ * // => ["work/project", "personal"]
+ */
 export function extractInlineTags(content: string): string[] {
   // Strip fenced code blocks and inline code so their content never produces tags
   const stripped = content.replace(/```[\s\S]*?```/g, "").replace(/`[^`]*`/g, "");

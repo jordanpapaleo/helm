@@ -19,6 +19,18 @@ describe("htmlDocumentTitle", () => {
   it("strips inner markup and collapses whitespace", () => {
     expect(htmlDocumentTitle("<h1>A <em>styled</em>\n  title</h1>")).toBe("A styled title");
   });
+
+  it("falls back to h1 when title is empty", () => {
+    expect(htmlDocumentTitle("<title></title><h1>Real</h1>")).toBe("Real");
+  });
+
+  it("falls back to h1 when title is whitespace-only", () => {
+    expect(htmlDocumentTitle("<title>   </title><h1>Real</h1>")).toBe("Real");
+  });
+
+  it("falls back to h1 when title contains only markup", () => {
+    expect(htmlDocumentTitle("<title><span></span></title><h1>Real</h1>")).toBe("Real");
+  });
 });
 
 describe("htmlToText", () => {

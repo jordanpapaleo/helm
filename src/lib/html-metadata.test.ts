@@ -95,18 +95,69 @@ describe("writeHtmlMetadata", () => {
     expect(out).toContain(`<div class="c">hi</div>`);
   });
 
-  it("changes nothing but the helm block on rewrite", () => {
-    const original = `<html>\n<head>\n  <meta charset="utf-8">\n  <style>body{color:red}</style>\n</head>\n<body>\n  <h1>Title</h1>\n</body>\n</html>`;
-    const withMeta = writeHtmlMetadata(original, { title: "A" });
-    const stripped = withMeta.replace(/\s*<meta name="helm:[^>]*>/g, "");
-    expect(stripped).toBe(original);
-  });
-
   it("omits undefined fields", () => {
     const out = writeHtmlMetadata(`<html><head></head><body></body></html>`, {
       title: "A",
       deadline: undefined,
     });
     expect(out).not.toContain("helm:deadline");
+  });
+});
+
+// A whole-document normalizer (collapsing blank lines, trimming trailing
+// whitespace, converting CRLF to LF, dropping comments, re-indenting) would
+// still pass a fixture that has none of those things to disturb. Each
+// fixture below exists to make one specific kind of over-reach visible.
+const BYTE_PRESERVATION_FIXTURES: Record<string, string> = {
+  "original: indented head with charset/style": `<html>\n<head>\n  <meta charset="utf-8">\n  <style>body{color:red}</style>\n</head>\n<body>\n  <h1>Title</h1>\n</body>\n</html>`,
+  "compact head with no surrounding whitespace": `<html><head><title>x</title></head><body>b</body></html>`,
+  "blank lines and trailing whitespace": [
+    "<html>",
+    "<head>",
+    '  <meta charset="utf-8">   ',
+    "",
+    "",
+    "  <style>body{color:red}</style>",
+    "</head>",
+    "<body>",
+    "  <h1>Title</h1>   ",
+    "",
+    "</body>",
+    "</html>",
+  ].join("\n"),
+  "HTML comments": `<html>\n<head>\n  <!-- keep me -->\n  <title>x</title>\n</head>\n<body>b</body>\n</html>`,
+  "mixed tab/space indentation": `<html>\n<head>\n\t<meta charset="utf-8">\n    <title>x</title>\n</head>\n<body>b</body>\n</html>`,
+  "CRLF line endings":
+    '<html>\r\n<head>\r\n  <meta charset="utf-8">\r\n</head>\r\n<body>\r\n  <h1>Title</h1>\r\n</body>\r\n</html>',
+};
+
+describe("writeHtmlMetadata: byte preservation across document shapes", () => {
+  it.each(
+    Object.entries(BYTE_PRESERVATION_FIXTURES),
+  )("changes nothing but the helm block on rewrite: %s", (_name, original) => {
+    const withMeta = writeHtmlMetadata(original, { title: "A" });
+    const stripped = withMeta.replace(/\s*<meta name="helm:[^>]*>/g, "");
+    expect(stripped).toBe(original);
+  });
+
+  // The reader (`\s*` in the assertion above) is generous about what counts
+  // as "just the inserted block". Idempotence is the sharper check: writing
+  // the same fields twice must produce byte-identical output both times,
+  // which fails if the first write leaves any residue (e.g. a leftover
+  // newline) that the second write's tag-removal doesn't fully undo.
+  it.each(Object.entries(BYTE_PRESERVATION_FIXTURES))("is idempotent: %s", (_name, original) => {
+    const fields = { title: "A", pinned: true };
+    const once = writeHtmlMetadata(original, fields);
+    const twice = writeHtmlMetadata(once, fields);
+    expect(twice).toBe(once);
+  });
+
+  it("preserves CRLF line endings exactly -- no bare LF is introduced", () => {
+    const original =
+      '<html>\r\n<head>\r\n  <meta charset="utf-8">\r\n</head>\r\n<body>b</body>\r\n</html>';
+    const out = writeHtmlMetadata(original, { title: "A", pinned: true });
+    // Every newline in the output must be part of a \r\n pair -- if any bare
+    // \n remains after stripping every \r\n pair, a lone LF was introduced.
+    expect(out.replace(/\r\n/g, "")).not.toContain("\n");
   });
 });

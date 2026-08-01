@@ -73,8 +73,20 @@ function escapeAttr(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-/** A helm meta tag and any whitespace that precedes it on its own line. */
-const HELM_TAG_RE = /[ \t]*<meta\b[^>]*\bname\s*=\s*["']helm:[^"']+["'][^>]*>\n?/gi;
+/**
+ * A helm meta tag and the newline (+ indentation) immediately preceding it.
+ *
+ * The leading part matches *before* the tag, not after, because insertion
+ * always prepends a newline to the block (see `writeHtmlMetadata`). Matching
+ * on the same side as insertion is what makes removal the exact inverse of
+ * insertion: `write(write(doc, f), f) === write(doc, f)`. An earlier version
+ * consumed a trailing `\n` instead, which is *not* the inverse of a leading
+ * insertion — on a `<head>` with no pre-existing whitespace, that left a
+ * stray `\n` behind on every write after the first (see html-impl task-2
+ * review, finding 2). `\r?` makes the match CRLF-aware so the same tag is
+ * removed cleanly regardless of the document's line-ending style.
+ */
+const HELM_TAG_RE = /(?:\r?\n)?[ \t]*<meta\b[^>]*\bname\s*=\s*["']helm:[^"']+["'][^>]*>/gi;
 
 const HEAD_OPEN_RE = /<head\b[^>]*>/i;
 const HTML_OPEN_RE = /<html\b[^>]*>/i;
@@ -91,29 +103,49 @@ const HTML_OPEN_RE = /<html\b[^>]*>/i;
  * A document with no `<head>` gains one, and a bare fragment is wrapped, which
  * matches how a markdown file without frontmatter gains frontmatter.
  *
+ * The document's own line-ending style (CRLF vs LF) is detected and reused
+ * for every newline this function inserts, so a CRLF document never gains a
+ * stray bare `\n`.
+ *
+ * @warning `fields` is treated as the **complete** metadata set, not a patch.
+ * Every existing `helm:*` tag is removed before the new block is written, and
+ * only the keys present in `fields` are written back — a `helm:*` field that
+ * exists on disk but is missing from `fields` is silently deleted, with no
+ * warning. This mirrors `serializeNote`'s YAML frontmatter contract
+ * (`src/lib/note-parser.ts`), which likewise always serializes the complete
+ * frontmatter object rather than patching it. Callers must read-merge-write:
+ * load the current metadata (`parseHtmlMetadata`), merge in only the changed
+ * fields, and pass the full merged result here. Passing a partial field set
+ * (e.g. `{ title: "New" }` meant as an update to just one field) reproduces
+ * the exact shape of the frontmatter data-loss bug this module exists to
+ * avoid — it does not raise or warn, it just erases the omitted fields.
+ *
  * @param html - Full HTML source
- * @param fields - Field names without the `helm:` prefix; undefined values are omitted
+ * @param fields - The complete field set to write, without the `helm:`
+ *   prefix; undefined values are omitted. Not merged with what's on disk —
+ *   see the warning above.
  * @returns The document with its helm metadata block replaced
  */
 export function writeHtmlMetadata(html: string, fields: Record<string, unknown>): string {
+  const cleaned = html.replace(HELM_TAG_RE, "");
+  const nl = cleaned.includes("\r\n") ? "\r\n" : "\n";
+
   const block = Object.entries(fields)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `<meta name="helm:${k}" content='${escapeAttr(JSON.stringify(v))}'>`)
-    .join("\n");
-
-  const cleaned = html.replace(HELM_TAG_RE, "");
+    .join(nl);
 
   const headMatch = HEAD_OPEN_RE.exec(cleaned);
   if (headMatch) {
     const at = headMatch.index + headMatch[0].length;
-    return `${cleaned.slice(0, at)}\n${block}${cleaned.slice(at)}`;
+    return `${cleaned.slice(0, at)}${nl}${block}${cleaned.slice(at)}`;
   }
 
   const htmlMatch = HTML_OPEN_RE.exec(cleaned);
   if (htmlMatch) {
     const at = htmlMatch.index + htmlMatch[0].length;
-    return `${cleaned.slice(0, at)}\n<head>\n${block}\n</head>${cleaned.slice(at)}`;
+    return `${cleaned.slice(0, at)}${nl}<head>${nl}${block}${nl}</head>${cleaned.slice(at)}`;
   }
 
-  return `<html>\n<head>\n${block}\n</head>\n<body>\n${cleaned}\n</body>\n</html>`;
+  return `<html>${nl}<head>${nl}${block}${nl}</head>${nl}<body>${nl}${cleaned}${nl}</body>${nl}</html>`;
 }

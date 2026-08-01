@@ -39,6 +39,14 @@ describe("parseHtmlMetadata", () => {
     expect(parseHtmlMetadata(html)).toEqual({ title: "A & B" });
   });
 
+  it("unescapes &amp; last so a nested &amp;quot; is not double-decoded into a quote", () => {
+    // If &amp; were unescaped before &quot;, "&amp;quot;" would become
+    // "&quot;" and then get decoded again into a literal `"` character.
+    // Decoding &amp; last leaves the inner entity text alone: "&quot;".
+    const html = `<meta name="helm:title" content='&amp;quot;'>`;
+    expect(parseHtmlMetadata(html)).toEqual({ title: "&quot;" });
+  });
+
   it("returns an empty object for a document with no helm meta", () => {
     expect(parseHtmlMetadata("<html><body>nothing</body></html>")).toEqual({});
   });

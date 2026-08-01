@@ -175,6 +175,11 @@ pub fn run() {
                 .id("check_for_updates")
                 .build(app)?;
 
+            let quit_item = MenuItemBuilder::new("Quit Helm")
+                .id("quit")
+                .accelerator("CmdOrCtrl+Q")
+                .build(app)?;
+
             let app_menu = SubmenuBuilder::new(app, "Helm")
                 .item(&PredefinedMenuItem::about(app, Some("About Helm"), Some(about_metadata))?)
                 .item(&check_updates_item)
@@ -186,7 +191,7 @@ pub fn run() {
                 .item(&PredefinedMenuItem::hide_others(app, None)?)
                 .item(&PredefinedMenuItem::show_all(app, None)?)
                 .separator()
-                .item(&PredefinedMenuItem::quit(app, Some("Quit Helm"))?)
+                .item(&quit_item)
                 .build()?;
 
             // ── File menu ─────────────────────────────────────────────────
@@ -347,6 +352,7 @@ pub fn run() {
             app.on_menu_event(move |_app, event| {
                 let id = event.id().as_ref();
                 match id {
+                    "quit" => { let _ = app_handle.emit("quit-app", ()); }
                     "new_note" => { let _ = app_handle.emit("new-note", ()); }
                     "toggle_markdown" => { let _ = app_handle.emit("toggle-markdown", ()); }
                     "open_settings" => { let _ = app_handle.emit("open-settings", ()); }

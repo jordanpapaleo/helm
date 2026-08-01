@@ -177,10 +177,16 @@ modifies existing files on first load, and that should be stated in release note
 - HTML embedded inside markdown notes (`html: false` stays as-is)
 - Converting HTML notes to markdown or vice versa
 
-## Open question for review
+## Resolved: encoding uniformity
 
-Encoding uniformity: every value JSON-encoded, including plain strings, so `helm:title` reads
-`content='"Q3 Report"'`. The alternative — raw strings, JSON for everything else — reads more
-naturally by hand but requires a shared field type table and cannot round-trip unknown fields.
-Tolerant parsing removes the usability objection to the uniform rule. Flagged because it is a wire
-contract the app and the MCP server must match exactly.
+**Decided — every value is JSON-encoded, including plain strings**, so `helm:title` reads
+`content='"Q3 Report"'`.
+
+The alternative (raw strings, JSON for everything else) reads more naturally by hand but requires a
+field type table shared identically by the app and the MCP server, and cannot round-trip the
+unknown fields `NoteFrontmatter`'s index signature preserves. Hand-authoring HTML metadata is not
+an anticipated workflow, so the readability advantage buys little.
+
+Tolerant parsing is retained as a cheap safety net rather than a critical path. Note its one
+wrinkle: a hand-written `content="2026"` parses as the *number* 2026, so known-string fields are
+coerced to string after parsing.

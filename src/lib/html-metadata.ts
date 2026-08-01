@@ -57,3 +57,63 @@ export function parseHtmlMetadata(html: string): Record<string, unknown> {
   }
   return out;
 }
+
+/**
+ * Escape a value for a single-quoted HTML attribute. Exact inverse of
+ * `unescapeAttr`. `&` is escaped first so entities introduced by the later
+ * replacements are not themselves re-escaped. `>` must be escaped (not just
+ * `<`): `parseHtmlMetadata`'s tag matcher stops at the first raw `>`, so an
+ * unescaped `>` inside a value truncates the tag and silently drops content.
+ */
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** A helm meta tag and any whitespace that precedes it on its own line. */
+const HELM_TAG_RE = /[ \t]*<meta\b[^>]*\bname\s*=\s*["']helm:[^"']+["'][^>]*>\n?/gi;
+
+const HEAD_OPEN_RE = /<head\b[^>]*>/i;
+const HTML_OPEN_RE = /<html\b[^>]*>/i;
+
+/**
+ * Rewrite the `helm:*` metadata of an HTML document, touching nothing else.
+ *
+ * Only two edits are ever made: existing `helm:*` meta tags are removed, and a
+ * fresh block is inserted immediately after the opening `<head>` tag. The rest
+ * of the document — formatting, indentation, comments, scripts, styles — is
+ * preserved byte for byte. Do not "improve" this by parsing the document and
+ * re-serializing it; that is precisely the failure mode this avoids.
+ *
+ * A document with no `<head>` gains one, and a bare fragment is wrapped, which
+ * matches how a markdown file without frontmatter gains frontmatter.
+ *
+ * @param html - Full HTML source
+ * @param fields - Field names without the `helm:` prefix; undefined values are omitted
+ * @returns The document with its helm metadata block replaced
+ */
+export function writeHtmlMetadata(html: string, fields: Record<string, unknown>): string {
+  const block = Object.entries(fields)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `<meta name="helm:${k}" content='${escapeAttr(JSON.stringify(v))}'>`)
+    .join("\n");
+
+  const cleaned = html.replace(HELM_TAG_RE, "");
+
+  const headMatch = HEAD_OPEN_RE.exec(cleaned);
+  if (headMatch) {
+    const at = headMatch.index + headMatch[0].length;
+    return `${cleaned.slice(0, at)}\n${block}${cleaned.slice(at)}`;
+  }
+
+  const htmlMatch = HTML_OPEN_RE.exec(cleaned);
+  if (htmlMatch) {
+    const at = htmlMatch.index + htmlMatch[0].length;
+    return `${cleaned.slice(0, at)}\n<head>\n${block}\n</head>${cleaned.slice(at)}`;
+  }
+
+  return `<html>\n<head>\n${block}\n</head>\n<body>\n${cleaned}\n</body>\n</html>`;
+}

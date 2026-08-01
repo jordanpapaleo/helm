@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHtmlMetadata } from "./html-metadata";
+import { parseHtmlMetadata, writeHtmlMetadata } from "./html-metadata";
 
 describe("parseHtmlMetadata", () => {
   it("reads JSON-encoded values of every type", () => {
@@ -49,5 +49,64 @@ describe("parseHtmlMetadata", () => {
 
   it("returns an empty object for a document with no helm meta", () => {
     expect(parseHtmlMetadata("<html><body>nothing</body></html>")).toEqual({});
+  });
+});
+
+describe("writeHtmlMetadata", () => {
+  it("inserts a helm block into an existing head", () => {
+    const html = `<html>\n<head>\n<title>Q3</title>\n</head>\n<body>\n<p>x</p>\n</body>\n</html>`;
+    const out = writeHtmlMetadata(html, { title: "Q3 Report", pinned: true });
+    expect(out).toContain(`<meta name="helm:title" content='"Q3 Report"'>`);
+    expect(out).toContain(`<meta name="helm:pinned" content='true'>`);
+    // everything else survives byte for byte
+    expect(out).toContain(`<title>Q3</title>`);
+    expect(out).toContain(`<body>\n<p>x</p>\n</body>`);
+  });
+
+  it("replaces existing helm tags rather than duplicating them", () => {
+    const first = writeHtmlMetadata(`<html><head></head><body>b</body></html>`, { title: "A" });
+    const second = writeHtmlMetadata(first, { title: "B" });
+    expect(second.match(/name="helm:title"/g)).toHaveLength(1);
+    expect(parseHtmlMetadata(second).title).toBe("B");
+  });
+
+  it("round-trips every value type", () => {
+    const fields = {
+      id: "01KX6HDM2Q4WJAB7DD0JE0R68N",
+      title: "A & B's <report>",
+      tags: ["rfl", "rfl/reports"],
+      pinned: true,
+      kanbanOrder: 3,
+      links: [],
+    };
+    const out = writeHtmlMetadata(`<html><head></head><body></body></html>`, fields);
+    expect(parseHtmlMetadata(out)).toEqual(fields);
+  });
+
+  it("creates a head when the document has none", () => {
+    const out = writeHtmlMetadata(`<html>\n<body>\n<p>x</p>\n</body>\n</html>`, { title: "A" });
+    expect(out).toMatch(/<head>[\s\S]*helm:title[\s\S]*<\/head>/);
+    expect(out).toContain(`<body>\n<p>x</p>\n</body>`);
+  });
+
+  it("wraps a bare fragment that has no html element", () => {
+    const out = writeHtmlMetadata(`<div class="c">hi</div>`, { title: "A" });
+    expect(out).toMatch(/<html>[\s\S]*<head>[\s\S]*helm:title/);
+    expect(out).toContain(`<div class="c">hi</div>`);
+  });
+
+  it("changes nothing but the helm block on rewrite", () => {
+    const original = `<html>\n<head>\n  <meta charset="utf-8">\n  <style>body{color:red}</style>\n</head>\n<body>\n  <h1>Title</h1>\n</body>\n</html>`;
+    const withMeta = writeHtmlMetadata(original, { title: "A" });
+    const stripped = withMeta.replace(/\s*<meta name="helm:[^>]*>/g, "");
+    expect(stripped).toBe(original);
+  });
+
+  it("omits undefined fields", () => {
+    const out = writeHtmlMetadata(`<html><head></head><body></body></html>`, {
+      title: "A",
+      deadline: undefined,
+    });
+    expect(out).not.toContain("helm:deadline");
   });
 });

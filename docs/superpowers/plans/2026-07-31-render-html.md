@@ -284,9 +284,20 @@ Expected: FAIL — `writeHtmlMetadata is not a function`
 Append to `src/lib/html-metadata.ts`:
 
 ```ts
-/** Escape a value for a single-quoted HTML attribute. */
+/**
+ * Escape a value for a single-quoted HTML attribute.
+ *
+ * `>` must be escaped even though it is legal in an attribute value: the
+ * reader's tag matcher is `/<meta\b[^>]*>/gi`, so a raw `>` truncates the tag
+ * and the value is silently lost. `&` is escaped first, the dual of decoding
+ * `&amp;` last in unescapeAttr.
+ */
 function escapeAttr(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/'/g, "&#39;").replace(/</g, "&lt;");
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /** A helm meta tag and any whitespace that precedes it on its own line. */

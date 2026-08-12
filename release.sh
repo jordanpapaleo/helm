@@ -106,17 +106,22 @@ mkdir -p "$RELEASE_DIR"
 cp "$DMG_PATH" "$RELEASE_DIR/"
 cp -r "$APP_PATH" "$RELEASE_DIR/" 2>/dev/null || true
 
-git add "$RELEASE_DIR/Helm_${NEW_VERSION}_aarch64.dmg"
+DMG_ASSET="$RELEASE_DIR/Helm_${NEW_VERSION}_aarch64.dmg"
+DMG_LATEST="$RELEASE_DIR/Helm_aarch64.dmg"
+cp "$DMG_ASSET" "$DMG_LATEST"
+
+# Sync Homebrew cask version and sha256 (sha256 only available after the DMG is built)
+sed -i '' "s/^  version \".*\"/  version \"$NEW_VERSION\"/" Casks/helm.rb
+DMG_SHA=$(shasum -a 256 "$DMG_LATEST" | awk '{ print $1 }')
+sed -i '' "s/^  sha256 \".*\"/  sha256 \"$DMG_SHA\"/" Casks/helm.rb
+
+git add "$DMG_ASSET" Casks/helm.rb
 git commit -m "release: add Helm_${NEW_VERSION}_aarch64.dmg"
 git tag "v$NEW_VERSION"
 
 echo ""
 echo "✓ v$NEW_VERSION released"
 echo "  Artifacts: $RELEASE_DIR"
-
-DMG_ASSET="$RELEASE_DIR/Helm_${NEW_VERSION}_aarch64.dmg"
-DMG_LATEST="$RELEASE_DIR/Helm_aarch64.dmg"
-cp "$DMG_ASSET" "$DMG_LATEST"
 
 if [[ -t 0 ]]; then
   read -r -p "Push and create a draft GitHub Release now? [y/N] " CREATE_DRAFT

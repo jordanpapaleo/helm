@@ -1,3 +1,42 @@
+## v1.1.0 — 2026-08-12
+
+- Key the tag tree by null-prototype maps
+- Add Homebrew tap instructions
+- Add Homebrew cask support to release.sh
+- fix: route Ctrl+Q through the shared quit flow
+- Stop writing escaped wiki-link brackets to disk
+- Fix the cursor mapping against real notes, and guarantee a visible caret
+- Sync the markdown textarea with external writes
+- Merge tags on save instead of recomputing them from the body
+- Keep the reading position across the editor/markdown toggle
+- fix: never let a wedged save make the app impossible to close
+- Store `created` / `updated` as UTC datetimes
+- Stop Vite watching agent worktrees under .claude
+- Preserve the cursor position when toggling editor/markdown
+- Snapshot before bulk tag writes; clean up emptied lines
+- Exclude unmanaged notes from the briefing and drop the empty state badge
+- Reattach the extractInlineTags docblock to its function
+- Add bulk tag rename and delete from the sidebar
+- Keep get_kanban on ?? and document why
+- Share the inline-tag grammar instead of duplicating it
+- Do not bump `updated` when a note is merely opened or blurred
+- Hide and clear workflow fields on unmanaged notes
+- Add visual chip styling for inline #tags in the editor
+- Extract update-result dialog presentation into a helper.
+- Add the GitHub repo URL to the About dialog.
+- Show a checking toast while update lookup runs.
+- Ignore overlapping Check for Updates clicks.
+- Add manual Check for Updates via GitHub latest release.
+- Keep GitHub Releases as drafts after Linux uploads.
+- Automate Linux releases and stabilize download asset names.
+- feat: print version with --version / -V before GUI launch
+- fix: unstick close if exit_app invoke fails
+- fix: exit the whole process when closing the main window
+- fix: handle setsid failure when detaching from terminal
+- fix: detach from controlling terminal when launched from a shell
+- chore: update version to 1.0.0 in package-lock.json and Cargo.lock
+- release: add Helm_1.0.0_aarch64.dmg
+
 ## v1.0.0 — 2026-07-10
 
 - docs: refresh CLAUDE.md for agentic use — new conventions, structure, MCP tools

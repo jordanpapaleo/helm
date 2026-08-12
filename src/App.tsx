@@ -120,8 +120,11 @@ export default function App() {
   // alive after the first ⌘⇧Space use. See src/lib/window-close.ts for why the
   // flush is time-bounded — a wedged save must never trap the user in the app.
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenClose: (() => void) | undefined;
+    let unlistenQuit: (() => void) | undefined;
 
+    // Shared handler so menu quit / Ctrl+Q go through the same flush →
+    // exit sequence (and the same non-latching guard) as window close.
     const handleCloseRequested = createCloseHandler({
       flush: flushPendingSaves,
       exit: tauriCommands.exitApp,
@@ -131,13 +134,26 @@ export default function App() {
     getCurrentWindow()
       .onCloseRequested(handleCloseRequested)
       .then((fn) => {
-        unlisten = fn;
+        unlistenClose = fn;
       })
       .catch(() => {
         // Not running inside a Tauri window (tests, plain browser dev)
       });
 
-    return () => unlisten?.();
+    listen("quit-app", () => {
+      void handleCloseRequested({ preventDefault: () => {} });
+    })
+      .then((fn) => {
+        unlistenQuit = fn;
+      })
+      .catch(() => {
+        // Not running inside a Tauri window (tests, plain browser dev)
+      });
+
+    return () => {
+      unlistenClose?.();
+      unlistenQuit?.();
+    };
   }, []);
 
   if (loading) {

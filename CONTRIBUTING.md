@@ -123,11 +123,22 @@ The script:
 5. Runs `npm run tauri build` to produce the `.dmg` (Tauri signs and notarizes using the credentials from step 1)
 6. **Verifies the artifacts**: `codesign --verify` and `xcrun stapler validate` on `Helm.app`, plus a Gatekeeper assessment (`spctl`) that must report *Notarized Developer ID*. If any check fails, the script aborts without committing artifacts.
 7. Copies the DMG to `releases/vX.Y.Z/`, commits it, and tags `vX.Y.Z`
+8. Syncs `Casks/helm.rb` to the new version and the DMG's sha256
 
 `sign.sh` lives at the repo root, is git-ignored, and must export the four Apple signing environment variables (see the Creating a DMG section below).
 
 When prompted, answer **y** to push and create a draft GitHub Release (attaches the `.dmg`).
-CI builds Linux packages, uploads them, and publishes the Release.
+CI then builds the Linux packages and uploads them to that draft.
+
+**The Release stays a draft — CI does not publish it.** Review the notes, then publish yourself:
+
+```sh
+gh release edit vX.Y.Z --draft=false
+```
+
+Order matters: the tag push is what starts CI, and the job quits early if no Release exists yet for the tag (`gh release view`). Create the draft immediately after pushing the tag, which is what answering **y** does for you.
+
+If you run `release.sh` without a terminal attached (a script, an agent), the push prompt is skipped entirely — the release is built, committed, and tagged locally only, and you push and create the draft by hand.
 
 ---
 

@@ -17,6 +17,10 @@ dist-ssr
 
 sign.sh
 releases/**/*.app
+# Unversioned duplicate of the versioned .dmg, made only so the Homebrew cask
+# has a stable download URL. The versioned copy in the same directory is the
+# one that gets committed.
+releases/**/Helm_aarch64.dmg
 
 # Editor directories and files
 .vscode/*

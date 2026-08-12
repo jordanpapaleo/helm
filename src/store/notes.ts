@@ -32,12 +32,23 @@ export interface TagNode {
 }
 
 /**
+ * A tag-name-keyed map. Always null-prototype: tag names come from user files,
+ * so a tag like `constructor` or `__proto__` would otherwise resolve to an
+ * inherited Object.prototype member instead of a node — `ensureNode` would hand
+ * back a non-node and the whole vault load would die on `.notes.push`.
+ * @internal
+ */
+function emptyTagMap(): Record<string, TagNode> {
+  return Object.create(null);
+}
+
+/**
  * Recursively ensure a tag path exists in the tree, creating missing nodes.
  * @internal
  */
 function ensureNode(parts: string[], current: Record<string, TagNode>): TagNode {
   const [head, ...rest] = parts;
-  if (!current[head]) current[head] = { notes: [], children: {} };
+  if (!current[head]) current[head] = { notes: [], children: emptyTagMap() };
   if (rest.length === 0) return current[head];
   return ensureNode(rest, current[head].children);
 }
@@ -48,7 +59,7 @@ function ensureNode(parts: string[], current: Record<string, TagNode>): TagNode 
  * @internal
  */
 function buildTagTree(notes: Note[]): Record<string, TagNode> {
-  const tree: Record<string, TagNode> = {};
+  const tree: Record<string, TagNode> = emptyTagMap();
   for (const note of notes) {
     for (const tag of note.frontmatter.tags ?? []) {
       const parts = tag.split("/").filter(Boolean);

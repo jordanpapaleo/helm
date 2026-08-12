@@ -1003,4 +1003,58 @@ describe("nested tag tree", () => {
     expect(leaf.notes).toHaveLength(1);
     expect(leaf.notes[0].id).toBe("n1");
   });
+
+  // A tag whose segment collides with an Object.prototype key used to find the
+  // inherited member instead of a node, and the whole vault load died with
+  // "undefined is not an object (evaluating '…notes.push')".
+  const PROTOTYPE_KEYS = [
+    "constructor",
+    "__proto__",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toLocaleString",
+  ];
+
+  it.each(PROTOTYPE_KEYS)("indexes %s as an ordinary tag", (tag) => {
+    const { result } = renderHook(() => useNoteStore());
+    const note = makeNote({
+      id: "n1",
+      frontmatter: { ...makeNote().frontmatter, id: "n1", tags: [tag] },
+    });
+    act(() => result.current.setNotes([note]));
+    const node = result.current.tagTree[tag];
+    expect(node.notes.map((n) => n.id)).toEqual(["n1"]);
+    expect(Object.keys(result.current.tagTree)).toContain(tag);
+  });
+
+  it.each(PROTOTYPE_KEYS)("indexes work/%s as a nested tag", (tag) => {
+    const { result } = renderHook(() => useNoteStore());
+    const note = makeNote({
+      id: "n1",
+      frontmatter: { ...makeNote().frontmatter, id: "n1", tags: [`work/${tag}`] },
+    });
+    act(() => result.current.setNotes([note]));
+    const leaf = result.current.tagTree.work.children[tag];
+    expect(leaf.notes.map((n) => n.id)).toEqual(["n1"]);
+    expect(Object.keys(result.current.tagTree.work.children)).toContain(tag);
+  });
+
+  it("loads the rest of the vault when one note carries a prototype-key tag", () => {
+    const { result } = renderHook(() => useNoteStore());
+    const poison = makeNote({
+      id: "n1",
+      frontmatter: { ...makeNote().frontmatter, id: "n1", tags: ["constructor"] },
+    });
+    const ordinary = makeNote({
+      id: "n2",
+      filePath: "/notes/other.md",
+      frontmatter: { ...makeNote().frontmatter, id: "n2", tags: ["work"] },
+    });
+    act(() => result.current.setNotes([poison, ordinary]));
+    expect(result.current.notes).toHaveLength(2);
+    expect(result.current.tagTree.work.notes.map((n) => n.id)).toEqual(["n2"]);
+  });
 });

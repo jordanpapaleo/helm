@@ -826,11 +826,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       children: Record<string, TagNode>;
     }
 
-    const tree: Record<string, TagNode> = {};
+    // KEEP IN SYNC with buildTagTree in src/store/notes.ts. Both maps must be
+    // null-prototype: tag names come from user files, so a tag like
+    // `constructor` or `__proto__` would otherwise resolve to an inherited
+    // Object.prototype member rather than a node.
+    const emptyTagMap = (): Record<string, TagNode> => Object.create(null);
+
+    const tree: Record<string, TagNode> = emptyTagMap();
 
     function ensureNode(parts: string[], cur: Record<string, TagNode>): TagNode {
       const [head, ...rest] = parts;
-      if (!cur[head]) cur[head] = { count: 0, children: {} };
+      if (!cur[head]) cur[head] = { count: 0, children: emptyTagMap() };
       if (rest.length === 0) return cur[head];
       return ensureNode(rest, cur[head].children);
     }

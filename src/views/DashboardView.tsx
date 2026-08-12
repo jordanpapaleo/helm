@@ -252,7 +252,9 @@ export function DashboardView() {
   );
 
   // Charts derived from the active subset
-  const tagCounts: Record<string, number> = {};
+  // Null-prototype: tag names come from user files, and a tag like `toString`
+  // would otherwise read back an inherited Object.prototype member as its count.
+  const tagCounts: Record<string, number> = Object.create(null);
   for (const note of subset) {
     for (const tag of note.frontmatter.tags) {
       tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;

@@ -3,7 +3,7 @@
  * KEEP IN SYNC with src/lib/briefing.ts — same buckets, windows, and ordering.
  */
 
-import { timestampDate } from "./timestamps";
+import { timestampDate } from "./timestamps.js";
 
 interface BriefingFrontmatter {
   id: string;

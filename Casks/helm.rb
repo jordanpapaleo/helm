@@ -7,6 +7,6 @@ cask "helm" do
   desc "Personal knowledge management app"
   homepage "https://github.com/jordanpapaleo/helm"
 
-  depends_on macos: ">= :big_sur"
+  depends_on macos: :big_sur
   app "Helm.app"
 end

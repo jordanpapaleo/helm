@@ -1,5 +1,7 @@
 # Helm MCP Server
 
+[![npm](https://img.shields.io/npm/v/helm-mcp)](https://www.npmjs.com/package/helm-mcp)
+
 Exposes your Helm vault(s) to Claude and any other MCP-compatible AI tool. Supports full CRUD, zettelkasten graph navigation, note history with restore, a one-call daily briefing, multi-vault, and built-in prompts for common workflows.
 
 ## Add to Claude Code

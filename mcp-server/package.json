@@ -1,11 +1,30 @@
 {
   "name": "helm-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "description": "MCP server exposing a Helm notes vault to Claude and other MCP-compatible AI tools.",
+  "author": "Jordan Papaleo",
   "type": "module",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "bin": {
+    "helm-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jordanpapaleo/helm.git",
+    "directory": "mcp-server"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node --import tsx/esm index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test:types": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

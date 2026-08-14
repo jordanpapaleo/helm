@@ -1,5 +1,8 @@
 # Helm
 
+[![Release](https://img.shields.io/github/v/release/jordanpapaleo/helm?label=helm)](https://github.com/jordanpapaleo/helm/releases)
+[![helm-mcp](https://img.shields.io/npm/v/helm-mcp?label=helm-mcp)](https://www.npmjs.com/package/helm-mcp)
+
 Helm is a personal knowledge management app for macOS and Linux. Notes are plain markdown files with YAML frontmatter stored in a folder on your computer — your **vault**. Helm never touches a server; everything stays on your device.
 
 ---

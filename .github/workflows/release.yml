@@ -84,3 +84,41 @@ jobs:
           # Leave the Release as a draft so the maintainer can update the notes
           # before publishing. Uncomment to auto-publish after Linux uploads:
           # gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  publish-npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Check release exists
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No GitHub Release for $TAG — quitting early."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build mcp-server
+        if: steps.gate.outputs.exists == 'true'
+        working-directory: mcp-server
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to npm
+        if: steps.gate.outputs.exists == 'true'
+        working-directory: mcp-server
+        run: npm publish --provenance --access public

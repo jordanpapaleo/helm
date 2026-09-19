@@ -1,10 +1,15 @@
 import type { ReactNodeViewProps } from "@tiptap/react";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LANGUAGES } from "../../lib/lowlight";
+import { MermaidPreview } from "./MermaidPreview";
 
-export function CodeBlockView({ node, updateAttributes }: ReactNodeViewProps) {
+export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeViewProps) {
   const language = (node.attrs.language as string | null) ?? "";
+  const isMermaid = language === "mermaid";
+  // Mermaid source is shown only while the cursor is inside the block.
+  const cursorInside = useCursorInside(editor, getPos, node.nodeSize, isMermaid);
+  const showSource = !isMermaid || cursorInside || !node.textContent.trim();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -89,9 +94,51 @@ export function CodeBlockView({ node, updateAttributes }: ReactNodeViewProps) {
           </button>
         )}
       </div>
-      <pre>
+      <pre className={showSource ? undefined : "code-block-source-collapsed"}>
         <NodeViewContent />
       </pre>
+      {isMermaid && (
+        <MermaidPreview
+          source={node.textContent}
+          onActivate={() => {
+            const pos = getPos();
+            if (pos === undefined) return;
+            editor
+              .chain()
+              .focus()
+              .setTextSelection(pos + 1)
+              .run();
+          }}
+        />
+      )}
     </NodeViewWrapper>
   );
+}
+
+function useCursorInside(
+  editor: ReactNodeViewProps["editor"],
+  getPos: ReactNodeViewProps["getPos"],
+  nodeSize: number,
+  enabled: boolean,
+): boolean {
+  const [inside, setInside] = useState(false);
+  useEffect(() => {
+    if (!enabled) return;
+    const check = () => {
+      const pos = getPos();
+      if (pos === undefined) return setInside(false);
+      const { from, to } = editor.state.selection;
+      setInside(editor.isFocused && from >= pos && to <= pos + nodeSize);
+    };
+    check();
+    editor.on("selectionUpdate", check);
+    editor.on("focus", check);
+    editor.on("blur", check);
+    return () => {
+      editor.off("selectionUpdate", check);
+      editor.off("focus", check);
+      editor.off("blur", check);
+    };
+  }, [editor, getPos, nodeSize, enabled]);
+  return inside;
 }

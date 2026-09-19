@@ -831,12 +831,12 @@ export function LeftColumn() {
       </div>
 
       {/* Footer */}
-      <div className="flex flex-col border-t border-base-300 py-2">
+      <div className="flex items-center justify-between border-t border-base-300 px-2 py-2">
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
           title="Settings"
-          className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
+          className="btn btn-ghost btn-xs btn-square opacity-60 hover:opacity-100"
         >
           <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
@@ -844,7 +844,7 @@ export function LeftColumn() {
           type="button"
           onClick={() => setSidebarCollapsed(true)}
           title="Collapse sidebar"
-          className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
+          className="btn btn-ghost btn-xs btn-square opacity-60 hover:opacity-100"
         >
           <Icon icon="uil:arrow-left" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>

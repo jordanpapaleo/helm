@@ -1,4 +1,5 @@
 import { common, createLowlight } from "lowlight";
 
 export const lowlight = createLowlight(common);
-export const LANGUAGES: string[] = lowlight.listLanguages().sort();
+// Not a highlight.js grammar — rendered as a diagram by CodeBlockView.
+export const LANGUAGES: string[] = [...lowlight.listLanguages(), "mermaid"].sort();

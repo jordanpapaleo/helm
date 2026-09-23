@@ -489,3 +489,40 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
 .find-replace-highlight-active {
   background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
+
+/* ── Mermaid diagrams ───────────────────────────────────────── */
+/* Hidden, not removed: ProseMirror needs the contentDOM to stay mounted. */
+.code-block-node-view pre.code-block-source-collapsed {
+  position: absolute;
+  height: 0;
+  padding: 0 !important;
+  margin: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.mermaid-preview {
+  cursor: pointer;
+  border-radius: 6px;
+  background: var(--color-base-200);
+  padding: 1rem;
+  margin: 0.5rem 0 1rem;
+  overflow-x: auto;
+}
+.mermaid-preview-svg svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-preview-status {
+  font-size: 0.8rem;
+  opacity: 0.5;
+  text-align: center;
+}
+.mermaid-preview-error {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  color: var(--color-error, #e5484d);
+}

@@ -1,3 +1,13 @@
+## v1.2.0 — 2026-09-23
+
+- Add block keyboard commands to the editor
+- Put the settings and collapse buttons on one sidebar footer row
+- Render mermaid diagrams in fenced code blocks
+- Give border radius to icons used by Debian apps
+- Use bare symbol to fix deprecated syntax warning
+- Stop tracking the duplicate DMG, and correct who publishes the Release
+- chore: update version to 1.1.0 in package-lock.json and Cargo.lock
+
 ## v1.1.0 — 2026-08-12
 
 - Key the tag tree by null-prototype maps

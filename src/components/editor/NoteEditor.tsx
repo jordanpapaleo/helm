@@ -87,6 +87,7 @@ import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import type { Note } from "../../types/note";
+import { BlockCommands } from "./BlockCommands";
 import { FindReplaceExtension } from "./findReplaceExtension";
 import { InlineTagExtension } from "./InlineTag";
 import { WikiLinkExtension } from "./WikiLink";
@@ -202,6 +203,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         ClearMarksOnEnter,
         HeadingKeyboardFix,
         CodeBlockGapCursor,
+        BlockCommands,
         InlineTagExtension,
         WikiLinkExtension.configure({
           suggestion: {

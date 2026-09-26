@@ -50,6 +50,10 @@ echo "→ Bumping to $NEW_VERSION"
 # Sync tauri.conf.json
 sed -i '' "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" src-tauri/tauri.conf.json
 
+# Sync mcp-server/package.json (helm-mcp npm package tracks the app version)
+sed -i '' "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" mcp-server/package.json
+(cd mcp-server && npm install --package-lock-only --silent)
+
 # Sync Cargo.toml (first occurrence — the [package] version)
 awk -v ver="$NEW_VERSION" 'done { print; next } /^version = "/ { sub(/^version = ".*"/, "version = \"" ver "\""); done=1 } { print }' src-tauri/Cargo.toml > src-tauri/Cargo.toml.tmp && mv src-tauri/Cargo.toml.tmp src-tauri/Cargo.toml
 
@@ -76,7 +80,8 @@ fi
 echo "→ Changelog updated"
 
 # Commit version bump (tag after the DMG commit so the tag includes release artifacts)
-git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml CHANGELOG.md
+git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml CHANGELOG.md \
+  mcp-server/package.json mcp-server/package-lock.json
 git commit -m "chore: release v$NEW_VERSION"
 
 echo "→ Building (signing + notarization can take a few minutes)..."

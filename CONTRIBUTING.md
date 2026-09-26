@@ -117,7 +117,7 @@ For an **unsigned** local build (no Apple Developer account needed), just run `n
 
 The script:
 1. Sources `sign.sh` and validates the Apple signing credentials: all four of `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` must be exported, and the signing identity must exist in the keychain. It aborts otherwise — a partial `sign.sh` produces a build that Gatekeeper rejects on other machines.
-2. Bumps the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
+2. Bumps the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `mcp-server/package.json` (the `helm-mcp` npm package tracks the app version)
 3. Generates a changelog entry in `CHANGELOG.md` from commits since the last tag
 4. Commits the version bump
 5. Runs `npm run tauri build` to produce the `.dmg` (Tauri signs and notarizes using the credentials from step 1)
@@ -128,7 +128,8 @@ The script:
 `sign.sh` lives at the repo root, is git-ignored, and must export the four Apple signing environment variables (see the Creating a DMG section below).
 
 When prompted, answer **y** to push and create a draft GitHub Release (attaches the `.dmg`).
-CI then builds the Linux packages and uploads them to that draft.
+CI then builds the Linux packages and uploads them to that draft, and publishes `mcp-server/` to npm as `helm-mcp` in
+parallel — both gated on the draft Release existing for the tag.
 
 **The Release stays a draft — CI does not publish it.** Review the notes, then publish yourself:
 

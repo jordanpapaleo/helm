@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -11,9 +12,9 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import matter from "gray-matter";
-import { buildBriefing } from "./briefing";
-import { listNoteHistory, snapshotNoteFile } from "./history";
-import { normalizeTimestamp, nowTimestamp, todayDate } from "./timestamps";
+import { buildBriefing } from "./briefing.js";
+import { listNoteHistory, snapshotNoteFile } from "./history.js";
+import { normalizeTimestamp, nowTimestamp, todayDate } from "./timestamps.js";
 
 // ── Vault resolution ──────────────────────────────────────────────────────────
 // Supports multiple vaults via HELM_VAULTS (comma-separated paths) or HELM_VAULT (single path)

@@ -1,9 +1,7 @@
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextSelection } from "@tiptap/pm/state";
-import { EditorContent, Extension, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
-import { lowlight } from "../../lib/lowlight";
-import { CodeBlockView } from "./CodeBlockView";
+import { EditorContent, Extension, useEditor } from "@tiptap/react";
+import { richCodeBlock } from "./CodeBlockView";
 import {
   CodeBlockGapCursor,
   getEditorMarkdown,
@@ -186,13 +184,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       () => [
         // Schema + markdown behaviour, shared verbatim with the tests that check
         // the cursor mapping against a real document (see extensions.ts).
-        ...markdownExtensions(
-          CodeBlockLowlight.extend({
-            addNodeView() {
-              return ReactNodeViewRenderer(CodeBlockView);
-            },
-          }).configure({ lowlight }),
-        ),
+        ...markdownExtensions(richCodeBlock()),
         // Interaction only — none of these adds a node, mark, or markdown spec,
         // so none can change the text of a parsed document. InlineTagExtension
         // only draws decorations over #tags, so it stays out of the shared

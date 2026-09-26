@@ -6,6 +6,11 @@ import type { Theme } from "./themes";
 
 type MermaidModule = typeof import("mermaid")["default"];
 
+/** Whether a code block's language marks it as a mermaid diagram. */
+export function isMermaidLanguage(language: string | null | undefined): boolean {
+  return (language ?? "").toLowerCase() === "mermaid";
+}
+
 let loading: Promise<MermaidModule> | null = null;
 let currentThemeId: string | null = null;
 let renderCounter = 0;
@@ -43,7 +48,18 @@ export function sanitizeMermaidSvg(svg: string): string {
   });
 }
 
-export async function renderMermaid(source: string, theme: Theme): Promise<string> {
+// mermaid.initialize is global, so each render runs alone with its own theme;
+// otherwise the print view's light render and an editor render could swap
+// themes mid-flight.
+let queue: Promise<unknown> = Promise.resolve();
+
+export function renderMermaid(source: string, theme: Theme): Promise<string> {
+  const run = queue.then(() => renderNow(source, theme));
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+async function renderNow(source: string, theme: Theme): Promise<string> {
   const mermaid = await load(theme);
   const id = `helm-mermaid-${++renderCounter}`;
   try {

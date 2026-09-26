@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor } from "@tiptap/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const renderMermaid = vi.fn();
@@ -10,8 +9,7 @@ vi.mock("../../lib/mermaid", async (importOriginal) => ({
 }));
 
 import type { Editor } from "@tiptap/core";
-import { lowlight } from "../../lib/lowlight";
-import { CodeBlockView } from "./CodeBlockView";
+import { richCodeBlock } from "./CodeBlockView";
 import { getEditorMarkdown, markdownExtensions } from "./extensions";
 
 const DOC = [
@@ -36,13 +34,7 @@ let editorRef: Editor | null = null;
 
 function Harness({ content }: { content: string }) {
   const editor = useEditor({
-    extensions: markdownExtensions(
-      CodeBlockLowlight.extend({
-        addNodeView() {
-          return ReactNodeViewRenderer(CodeBlockView);
-        },
-      }).configure({ lowlight }),
-    ),
+    extensions: markdownExtensions(richCodeBlock()),
     content,
   });
   editorRef = editor;

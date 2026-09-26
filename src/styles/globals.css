@@ -8,6 +8,23 @@
   --sidebar-width: 220px;
   --notelist-width: 260px;
 
+  /* ── Editor typography — overridden at runtime by applySettings() */
+  --editor-font-size: 16px;
+  --editor-line-height: 1.7;
+  --editor-max-width: 72ch;
+
+  /* Single spacing unit used for all block-level bottom spacing */
+  --spacing-block: 0.75em;
+
+  /* ── Font families ───────────────────────────────────────────── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+}
+
+/* Declared wherever a theme applies, not just on :root, so a subtree with its
+   own data-theme (the PDF print view) resolves these against its own tokens. */
+:root,
+[data-theme] {
   /* ── Derived / alias vars — used by component files ─────────── */
   /* Theme color vars come exclusively from [data-theme="x"] blocks (injected by injectThemeStyles()) */
   --color-border: color-mix(in oklab, var(--color-base-content) 10%, transparent);
@@ -58,18 +75,6 @@
      Using base-content directly gives full contrast in both light and dark without looking
      like a "special" token. Overridable per-theme if a subtler value is preferred. */
   --color-syntax-punctuation: var(--color-base-content);
-
-  /* ── Editor typography — overridden at runtime by applySettings() */
-  --editor-font-size: 16px;
-  --editor-line-height: 1.7;
-  --editor-max-width: 72ch;
-
-  /* Single spacing unit used for all block-level bottom spacing */
-  --spacing-block: 0.75em;
-
-  /* ── Font families ───────────────────────────────────────────── */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
 }
 
 input[type="range"] {
@@ -542,4 +547,49 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
   font-size: 0.75rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ── PDF export ─────────────────────────────────────────────── */
+/* NotePrintView exists only for print media, and is all that prints.
+   Page margins come from the native print settings (src-tauri/src/pdf.rs). */
+.print-root {
+  display: none;
+}
+@page {
+  background-color: var(--color-base-100);
+}
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: var(--color-base-100);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body > :not(.print-root) {
+    display: none !important;
+  }
+  .print-root {
+    display: block;
+  }
+  .print-title {
+    margin: 0 0 1.5rem;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--color-base-content);
+  }
+  .print-root .code-block-lang-bar {
+    display: none;
+  }
+  .print-root .mermaid-preview {
+    cursor: auto;
+    overflow: visible;
+  }
+  .print-root .mermaid-preview,
+  .print-root pre,
+  .print-root img {
+    break-inside: avoid;
+  }
 }

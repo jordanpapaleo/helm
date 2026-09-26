@@ -67,4 +67,18 @@ export const tauriCommands = {
 
   renameFolder: (oldPath: string, newPath: string): Promise<void> =>
     invoke("rename_folder", { oldPath, newPath }),
+
+  /** Ask where to save a PDF; null when the user cancels. */
+  savePdfDialog: async (defaultFileName: string): Promise<string | null> => {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    return save({
+      title: "Export to PDF",
+      defaultPath: defaultFileName,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+  },
+
+  // Prints the webview's print-media rendering to `path` (`.pdf` is appended
+  // if missing). Resolves with the path actually written.
+  exportPdf: (path: string): Promise<string> => invoke("export_pdf", { path }),
 };

@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePdfExport } from "../../hooks/usePdfExport";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import {
   extractInlineTags,
@@ -36,6 +37,7 @@ import { BacklinksPanel } from "../editor/BacklinksPanel";
 import { FindReplaceBar } from "../editor/FindReplaceBar";
 import { NoteEditor, type NoteEditorHandle } from "../editor/NoteEditor";
 import { NoteHistoryModal } from "../editor/NoteHistoryModal";
+import { NotePrintView } from "../editor/NotePrintView";
 import { PropertyPanel } from "../editor/PropertyPanel";
 
 interface MarkdownTextareaHandle {
@@ -339,6 +341,7 @@ export function MainPanel() {
   const [findOpen, setFindOpen] = useState(false);
   const [findExpanded, setFindExpanded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const { job: pdfJob, start: startPdfExport, handleReady: handlePdfReady } = usePdfExport();
   const markdownTextareaRef = useRef<MarkdownTextareaHandle>(null);
   // Cursor and scroll position handed from the outgoing surface to the incoming
   // one across a markdown/editor toggle, tagged with the note it came from so a
@@ -423,11 +426,17 @@ export function MainPanel() {
           editorRef.current?.getEditor()?.chain().focus().setParagraph().run();
         }),
       );
+      unlisteners.push(
+        await listen("export-pdf", () => {
+          const { selectedNoteId: id } = useNoteStore.getState();
+          if (id && useUIStore.getState().activeView === "notes") startPdfExport(id);
+        }),
+      );
     })();
     return () => {
       for (const fn of unlisteners) fn();
     };
-  }, []);
+  }, [startPdfExport]);
 
   async function handleSave(content: string) {
     if (!selectedNote) return;
@@ -554,6 +563,8 @@ export function MainPanel() {
               markdownMode={markdownMode}
               onToggleMarkdown={handleToggleMarkdown}
               onShowHistory={selectedVaultPath ? () => setHistoryOpen(true) : undefined}
+              onExportPdf={() => startPdfExport(selectedNote.id)}
+              exportingPdf={pdfJob !== null}
             />
             {historyOpen && selectedVaultPath && (
               <NoteHistoryModal
@@ -608,6 +619,7 @@ export function MainPanel() {
       {activeView === "eisenhower" && <EisenhowerView />}
       {activeView === "kanban" && <KanbanView />}
       {activeView === "dashboard" && <DashboardView />}
+      {pdfJob && <NotePrintView key={pdfJob.path} note={pdfJob.note} onReady={handlePdfReady} />}
     </div>
   );
 }

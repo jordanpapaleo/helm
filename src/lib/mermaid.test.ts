@@ -38,6 +38,41 @@ describe("renderMermaid", () => {
     expect(initialize).toHaveBeenCalledTimes(1);
   });
 
+  it("never lets one render's theme leak into a concurrent render", async () => {
+    await renderMermaid("warm up", light);
+    const calls: string[] = [];
+    initialize.mockImplementation((cfg: { themeVariables: { darkMode: boolean } }) => {
+      calls.push(`init:${cfg.themeVariables.darkMode ? "dark" : "light"}`);
+    });
+    let release: () => void = () => {};
+    render
+      .mockImplementationOnce(async () => {
+        calls.push("render:1");
+        await new Promise<void>((r) => {
+          release = r;
+        });
+        return { svg: "<svg></svg>" };
+      })
+      .mockImplementationOnce(async () => {
+        calls.push("render:2");
+        return { svg: "<svg></svg>" };
+      });
+
+    const first = renderMermaid("graph TD; A-->B", dark);
+    const second = renderMermaid("graph TD; A-->C", light);
+    await vi.waitFor(() => expect(calls).toContain("render:1"));
+    expect(calls).not.toContain("init:light");
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["init:dark", "render:1", "init:light", "render:2"]);
+  });
+
+  it("keeps rendering after a failed render", async () => {
+    render.mockRejectedValueOnce(new Error("bad"));
+    await expect(renderMermaid("x", light)).rejects.toThrow("bad");
+    await expect(renderMermaid("graph TD; A-->B", light)).resolves.toContain("<svg");
+  });
+
   it("returns sanitised svg", async () => {
     render.mockResolvedValueOnce({
       svg: '<svg onload="alert(1)"><script>alert(2)</script><text>ok</text></svg>',

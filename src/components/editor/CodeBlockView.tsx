@@ -1,12 +1,23 @@
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import type { ReactNodeViewProps } from "@tiptap/react";
-import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
+import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import { useEffect, useRef, useState } from "react";
-import { LANGUAGES } from "../../lib/lowlight";
+import { LANGUAGES, lowlight } from "../../lib/lowlight";
+import { isMermaidLanguage } from "../../lib/mermaid";
 import { MermaidPreview } from "./MermaidPreview";
+
+/** The code block the app renders: highlighted, with mermaid previews. */
+export function richCodeBlock() {
+  return CodeBlockLowlight.extend({
+    addNodeView() {
+      return ReactNodeViewRenderer(CodeBlockView);
+    },
+  }).configure({ lowlight });
+}
 
 export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeViewProps) {
   const language = (node.attrs.language as string | null) ?? "";
-  const isMermaid = language.toLowerCase() === "mermaid";
+  const isMermaid = isMermaidLanguage(language);
   // Mermaid source is shown only while the cursor is inside the block.
   const cursorInside = useCursorInside(editor, getPos, node.nodeSize, isMermaid);
   const showSource = !isMermaid || cursorInside || !node.textContent.trim();

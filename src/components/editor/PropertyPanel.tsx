@@ -1,3 +1,4 @@
+import { Icon } from "@iconify/react";
 import { useEffect, useState } from "react";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { formatTimestamp } from "../../lib/timestamps";
@@ -15,6 +16,9 @@ interface PropertyPanelProps {
   markdownMode?: boolean;
   onToggleMarkdown?: () => void;
   onShowHistory?: () => void;
+  onExportPdf?: () => void;
+  /** True while an export is running; the button is disabled meanwhile. */
+  exportingPdf?: boolean;
 }
 
 // Fields handled explicitly — excluded from the "extra fields" section
@@ -125,6 +129,8 @@ export function PropertyPanel({
   markdownMode,
   onToggleMarkdown,
   onShowHistory,
+  onExportPdf,
+  exportingPdf = false,
 }: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -225,6 +231,18 @@ export function PropertyPanel({
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
+          </button>
+        )}
+        {onExportPdf && (
+          <button
+            type="button"
+            onClick={onExportPdf}
+            disabled={exportingPdf}
+            aria-label="Export to PDF"
+            title="Export to PDF (⇧⌘E)"
+            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
+          >
+            <Icon icon="uil:file-export" className="h-4 w-4" aria-hidden="true" />
           </button>
         )}
         {onToggleMarkdown && (

@@ -75,6 +75,10 @@ A TipTap-based rich markdown editor with:
 
 The editor respects the user's typography settings (font size, line height, line width) and applies them in real time.
 
+### Export to PDF
+
+**File → Export to PDF…** (⇧⌘E) or the export button in the note header saves the current note as a PDF, picking the destination in a save dialog. The PDF is the rendered note — title, formatted text and mermaid diagrams as vector graphics — not the markdown source, and it works the same with markdown mode on. It is laid out by the platform's own print engine (WebKit on macOS and Linux), so text stays selectable. Light themes print as they look; dark themes print on the Light palette, because print engines leave page margins white. Windows is not supported yet.
+
 ### Sidebar
 
 The left column provides navigation and filtering:

@@ -162,3 +162,35 @@ describe("PropertyPanel timestamp display", () => {
     }
   });
 });
+
+describe("PropertyPanel export to PDF", () => {
+  it("offers a labelled export button that calls onExportPdf", () => {
+    const onExportPdf = vi.fn();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter()}
+        onChange={vi.fn()}
+        onExportPdf={onExportPdf}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export to PDF" }));
+    expect(onExportPdf).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the button while an export is running", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter()}
+        onChange={vi.fn()}
+        onExportPdf={vi.fn()}
+        exportingPdf
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Export to PDF" })).toBeDisabled();
+  });
+
+  it("hides the button when export is unavailable", () => {
+    render(<PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Export to PDF" })).not.toBeInTheDocument();
+  });
+});

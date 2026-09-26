@@ -1,3 +1,4 @@
+mod pdf;
 mod vault;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -204,8 +205,15 @@ pub fn run() {
                 .id("add_vault")
                 .build(app)?;
 
+            let export_pdf_item = MenuItemBuilder::new("Export to PDF…")
+                .id("export_pdf")
+                .accelerator("CmdOrCtrl+Shift+E")
+                .build(app)?;
+
             let file_menu = SubmenuBuilder::new(app, "File")
                 .item(&new_note_item)
+                .separator()
+                .item(&export_pdf_item)
                 .separator()
                 .item(&add_vault_item)
                 .separator()
@@ -354,6 +362,7 @@ pub fn run() {
                 match id {
                     "quit" => { let _ = app_handle.emit("quit-app", ()); }
                     "new_note" => { let _ = app_handle.emit("new-note", ()); }
+                    "export_pdf" => { let _ = app_handle.emit("export-pdf", ()); }
                     "toggle_markdown" => { let _ = app_handle.emit("toggle-markdown", ()); }
                     "open_settings" => { let _ = app_handle.emit("open-settings", ()); }
                     "check_for_updates" => { let _ = app_handle.emit("check-for-updates", ()); }
@@ -399,6 +408,7 @@ pub fn run() {
             create_folder,
             delete_folder,
             rename_folder,
+            pdf::export_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -201,6 +201,8 @@ body {
   top: 0.5rem;
   right: 0.75rem;
   z-index: 1;
+  display: flex;
+  gap: 0.75rem;
 }
 .code-block-lang-btn {
   font-family: var(--font-mono);
@@ -216,6 +218,12 @@ body {
 }
 .code-block-lang-btn:hover {
   opacity: 0.75;
+}
+.code-block-lang-btn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 .code-block-lang-empty {
   font-style: italic;
@@ -521,8 +529,17 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
   text-align: center;
 }
 .mermaid-preview-error {
+  color: var(--color-error, #e5484d);
+}
+.mermaid-preview-error-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: inherit;
+}
+.mermaid-preview-error-detail {
   font-family: var(--font-mono);
   font-size: 0.75rem;
   white-space: pre-wrap;
-  color: var(--color-error, #e5484d);
+  overflow-wrap: anywhere;
 }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { renderMermaid } from "../../lib/mermaid";
+import { useEffect, useRef, useState } from "react";
+import { mermaidAriaLabel, renderMermaid } from "../../lib/mermaid";
 import { useThemeStore } from "../../store/theme";
 
 const RENDER_DEBOUNCE_MS = 300;
@@ -10,9 +10,11 @@ interface MermaidPreviewProps {
 }
 
 export function MermaidPreview({ source, onActivate }: MermaidPreviewProps) {
-  const scheme = useThemeStore((s) => s.theme.colorScheme);
+  const theme = useThemeStore((s) => s.theme);
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Only edits are debounced; opening a note should show its diagrams at once.
+  const hasRenderedRef = useRef(false);
 
   useEffect(() => {
     if (!source.trim()) {
@@ -21,47 +23,60 @@ export function MermaidPreview({ source, onActivate }: MermaidPreviewProps) {
       return;
     }
     let cancelled = false;
-    const timer = setTimeout(() => {
-      renderMermaid(source, scheme).then(
-        (out) => {
-          if (cancelled) return;
-          setSvg(out);
-          setError(null);
-        },
-        (e: unknown) => {
-          if (cancelled) return;
-          setError(e instanceof Error ? e.message : String(e));
-        },
-      );
-    }, RENDER_DEBOUNCE_MS);
+    const timer = setTimeout(
+      () => {
+        renderMermaid(source, theme).then(
+          (out) => {
+            if (cancelled) return;
+            hasRenderedRef.current = true;
+            setSvg(out);
+            setError(null);
+          },
+          (e: unknown) => {
+            if (cancelled) return;
+            hasRenderedRef.current = true;
+            setError(e instanceof Error ? e.message : String(e));
+          },
+        );
+      },
+      hasRenderedRef.current ? RENDER_DEBOUNCE_MS : 0,
+    );
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [source, scheme]);
+  }, [source, theme]);
 
   if (!source.trim()) return null;
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a <button> cannot contain block SVG layout
+    // Clicking is a mouse shortcut into the source; keyboard users reach it
+    // with the arrow keys or the block's "Edit source" button.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard path described above
+    // biome-ignore lint/a11y/noStaticElementInteractions: keyboard path described above
     <div
       className="mermaid-preview"
       contentEditable={false}
-      role="button"
-      tabIndex={-1}
       onClick={onActivate}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onActivate();
-      }}
       title="Click to edit diagram source"
     >
       {svg ? (
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid sanitises its output (securityLevel "strict")
-        <div className="mermaid-preview-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+        <div
+          className="mermaid-preview-svg"
+          role="img"
+          aria-label={mermaidAriaLabel(source)}
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid "strict" output, then DOMPurify (sanitizeMermaidSvg)
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
       ) : !error ? (
         <div className="mermaid-preview-status">Rendering diagram…</div>
       ) : null}
-      {error && <div className="mermaid-preview-error">{error}</div>}
+      {error && (
+        <div className="mermaid-preview-error">
+          <p className="mermaid-preview-error-title">Couldn't render this diagram</p>
+          <div className="mermaid-preview-error-detail">{error}</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { MermaidPreview } from "./MermaidPreview";
 
 export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeViewProps) {
   const language = (node.attrs.language as string | null) ?? "";
-  const isMermaid = language === "mermaid";
+  const isMermaid = language.toLowerCase() === "mermaid";
   // Mermaid source is shown only while the cursor is inside the block.
   const cursorInside = useCursorInside(editor, getPos, node.nodeSize, isMermaid);
   const showSource = !isMermaid || cursorInside || !node.textContent.trim();
@@ -33,6 +33,16 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactN
 
   function commit() {
     select(draft.trim().toLowerCase());
+  }
+
+  function editSource() {
+    const pos = getPos();
+    if (pos === undefined) return;
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(pos + 1)
+      .run();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -89,28 +99,22 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactN
             )}
           </div>
         ) : (
-          <button className="code-block-lang-btn" onClick={startEdit} type="button">
-            {language || <span className="code-block-lang-empty">language</span>}
-          </button>
+          <>
+            {!showSource && (
+              <button className="code-block-lang-btn" onClick={editSource} type="button">
+                Edit source
+              </button>
+            )}
+            <button className="code-block-lang-btn" onClick={startEdit} type="button">
+              {language || <span className="code-block-lang-empty">language</span>}
+            </button>
+          </>
         )}
       </div>
       <pre className={showSource ? undefined : "code-block-source-collapsed"}>
         <NodeViewContent />
       </pre>
-      {isMermaid && (
-        <MermaidPreview
-          source={node.textContent}
-          onActivate={() => {
-            const pos = getPos();
-            if (pos === undefined) return;
-            editor
-              .chain()
-              .focus()
-              .setTextSelection(pos + 1)
-              .run();
-          }}
-        />
-      )}
+      {isMermaid && <MermaidPreview source={node.textContent} onActivate={editSource} />}
     </NodeViewWrapper>
   );
 }

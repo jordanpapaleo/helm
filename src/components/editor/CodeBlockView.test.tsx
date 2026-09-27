@@ -11,6 +11,7 @@ vi.mock("../../lib/mermaid", async (importOriginal) => ({
 import type { Editor } from "@tiptap/core";
 import { richCodeBlock } from "./CodeBlockView";
 import { getEditorMarkdown, markdownExtensions } from "./extensions";
+import { MermaidSourceExtension } from "./MermaidSource";
 
 const DOC = [
   "Intro",
@@ -34,7 +35,7 @@ let editorRef: Editor | null = null;
 
 function Harness({ content }: { content: string }) {
   const editor = useEditor({
-    extensions: markdownExtensions(richCodeBlock()),
+    extensions: [...markdownExtensions(richCodeBlock()), MermaidSourceExtension],
     content,
   });
   editorRef = editor;
@@ -56,6 +57,17 @@ async function mount(content = DOC) {
   return result;
 }
 
+function caretBlock(): string {
+  const parent = editorRef?.state.selection.$head.parent;
+  return parent?.type.name === "codeBlock" ? String(parent.attrs.language) : "text";
+}
+
+function collapsed(container: HTMLElement) {
+  return [...container.querySelectorAll(".code-block-node-view pre")].map((p) =>
+    p.classList.contains("code-block-source-collapsed"),
+  );
+}
+
 describe("CodeBlockView", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -73,22 +85,53 @@ describe("CodeBlockView", () => {
 
   it("hides mermaid source but leaves other code visible", async () => {
     const { container } = await mount();
-    const pres = [...container.querySelectorAll(".code-block-node-view pre")];
-    expect(pres.map((p) => p.classList.contains("code-block-source-collapsed"))).toEqual([
-      true,
-      true,
-      false,
-    ]);
+    expect(collapsed(container)).toEqual([true, true, false]);
   });
 
-  it("offers a keyboard-reachable Edit source button that moves the caret into the block", async () => {
-    await mount();
+  it("keeps the source hidden when the caret is placed in the diagram's block", async () => {
+    const { container } = await mount();
+    act(() => {
+      editorRef?.commands.focus();
+      editorRef?.commands.setTextSelection(10);
+    });
+    expect(collapsed(container)).toEqual([true, true, false]);
+    expect(caretBlock()).not.toMatch(/^mermaid$/i);
+  });
+
+  it("toggles the source with a keyboard-reachable Edit source button", async () => {
+    const { container } = await mount();
     const buttons = screen.getAllByRole("button", { name: "Edit source" });
     expect(buttons).toHaveLength(2);
-    fireEvent.click(buttons[0]);
+    expect(buttons[0]).toHaveAttribute("aria-expanded", "false");
+
+    act(() => buttons[0].click());
+    expect(collapsed(container)).toEqual([false, true, false]);
     const { $from } = editorRef?.state.selection ?? {};
-    expect($from?.parent.type.name).toBe("codeBlock");
     expect($from?.parent.textContent).toContain("flowchart TD");
+    const hide = screen.getByRole("button", { name: "Hide source" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+
+    act(() => hide.click());
+    expect(collapsed(container)).toEqual([true, true, false]);
+    expect(caretBlock()).not.toMatch(/^mermaid$/i);
+  });
+
+  it("hides the source again on Escape", async () => {
+    const { container } = await mount();
+    act(() => screen.getAllByRole("button", { name: "Edit source" })[1].click());
+    expect(collapsed(container)).toEqual([true, false, false]);
+    act(() => {
+      fireEvent.keyDown(container.querySelector(".ProseMirror") as Element, { key: "Escape" });
+    });
+    expect(collapsed(container)).toEqual([true, true, false]);
+  });
+
+  it("opens the source when the diagram is clicked", async () => {
+    const { container } = await mount();
+    act(() => {
+      fireEvent.click(screen.getByRole("img", { name: "Flowchart diagram" }));
+    });
+    expect(collapsed(container)).toEqual([false, true, false]);
   });
 
   it("round-trips the markdown source unchanged", async () => {

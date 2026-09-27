@@ -76,6 +76,9 @@ describe("NotePrintView", () => {
     await act(async () => second.resolve("<svg data-testid='two'></svg>"));
     await waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
     expect(printRoot()?.querySelectorAll("svg")).toHaveLength(2);
+    const pres = [...(printRoot()?.querySelectorAll(".code-block-node-view pre") ?? [])];
+    expect(pres).toHaveLength(2);
+    for (const pre of pres) expect(pre).toHaveClass("code-block-source-collapsed");
   });
 
   it("still reports ready when a diagram fails, printing its error", async () => {

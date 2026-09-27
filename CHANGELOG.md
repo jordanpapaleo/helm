@@ -1,3 +1,13 @@
+## v1.3.0 — 2026-09-26
+
+- Hide mermaid source until explicitly opened
+- Export the current note to PDF from its rendered view
+- Add native export_pdf command and File > Export to PDF… menu item
+- Serialise mermaid renders so a theme can't leak between them
+- Make rendered mermaid diagrams accessible and easier to edit
+- Theme mermaid diagrams from the app palette and sanitise their SVG
+- chore: update version to 1.2.0 in package-lock.json and Cargo.lock
+
 ## v1.2.0 — 2026-09-23
 
 - Add block keyboard commands to the editor

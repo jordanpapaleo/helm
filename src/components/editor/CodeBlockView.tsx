@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { LANGUAGES, lowlight } from "../../lib/lowlight";
 import { isMermaidLanguage } from "../../lib/mermaid";
 import { MermaidPreview } from "./MermaidPreview";
+import { closeMermaidSource, mermaidSourceOpenAt, openMermaidSource } from "./MermaidSource";
 
 /** The code block the app renders: highlighted, with mermaid previews. */
 export function richCodeBlock() {
@@ -18,9 +19,10 @@ export function richCodeBlock() {
 export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeViewProps) {
   const language = (node.attrs.language as string | null) ?? "";
   const isMermaid = isMermaidLanguage(language);
-  // Mermaid source is shown only while the cursor is inside the block.
-  const cursorInside = useCursorInside(editor, getPos, node.nodeSize, isMermaid);
-  const showSource = !isMermaid || cursorInside || !node.textContent.trim();
+  // Diagrams show only the rendered image until their source is opened.
+  const sourceOpen = useMermaidSourceOpen(editor, getPos, isMermaid);
+  const hasSource = !!node.textContent.trim();
+  const showSource = !isMermaid || !hasSource || sourceOpen;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -46,14 +48,17 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactN
     select(draft.trim().toLowerCase());
   }
 
-  function editSource() {
+  function openSource() {
     const pos = getPos();
     if (pos === undefined) return;
-    editor
-      .chain()
-      .focus()
-      .setTextSelection(pos + 1)
-      .run();
+    editor.view.dispatch(openMermaidSource(editor.state.tr, pos));
+    editor.view.focus();
+  }
+
+  function toggleSource() {
+    if (!sourceOpen) return openSource();
+    editor.view.dispatch(closeMermaidSource(editor.state.tr));
+    editor.view.focus();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -111,9 +116,17 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactN
           </div>
         ) : (
           <>
-            {!showSource && (
-              <button className="code-block-lang-btn" onClick={editSource} type="button">
-                Edit source
+            {isMermaid && hasSource && editor.isEditable && (
+              <button
+                className="code-block-lang-btn"
+                type="button"
+                aria-expanded={sourceOpen}
+                // Keep editor focus on click, so its blur does not close the
+                // source just before this toggles it.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={toggleSource}
+              >
+                {sourceOpen ? "Hide source" : "Edit source"}
               </button>
             )}
             <button className="code-block-lang-btn" onClick={startEdit} type="button">
@@ -125,35 +138,28 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactN
       <pre className={showSource ? undefined : "code-block-source-collapsed"}>
         <NodeViewContent />
       </pre>
-      {isMermaid && <MermaidPreview source={node.textContent} onActivate={editSource} />}
+      {isMermaid && <MermaidPreview source={node.textContent} onActivate={openSource} />}
     </NodeViewWrapper>
   );
 }
 
-function useCursorInside(
+function useMermaidSourceOpen(
   editor: ReactNodeViewProps["editor"],
   getPos: ReactNodeViewProps["getPos"],
-  nodeSize: number,
   enabled: boolean,
 ): boolean {
-  const [inside, setInside] = useState(false);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!enabled) return;
     const check = () => {
       const pos = getPos();
-      if (pos === undefined) return setInside(false);
-      const { from, to } = editor.state.selection;
-      setInside(editor.isFocused && from >= pos && to <= pos + nodeSize);
+      setOpen(pos !== undefined && mermaidSourceOpenAt(editor.state, pos));
     };
     check();
-    editor.on("selectionUpdate", check);
-    editor.on("focus", check);
-    editor.on("blur", check);
+    editor.on("transaction", check);
     return () => {
-      editor.off("selectionUpdate", check);
-      editor.off("focus", check);
-      editor.off("blur", check);
+      editor.off("transaction", check);
     };
-  }, [editor, getPos, nodeSize, enabled]);
-  return inside;
+  }, [editor, getPos, enabled]);
+  return open;
 }

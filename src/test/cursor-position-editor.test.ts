@@ -3,6 +3,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { describe, expect, it } from "vitest";
 import { FindReplaceExtension } from "../components/editor/findReplaceExtension";
 import { InlineTagExtension } from "../components/editor/InlineTag";
+import { MermaidSourceExtension } from "../components/editor/MermaidSource";
 import { WikiLinkExtension } from "../components/editor/WikiLink";
 import {
   docPositionToTextOffset,
@@ -140,6 +141,7 @@ const INTERACTION_ONLY: AnyExtension[] = [
   InlineTagExtension,
   WikiLinkExtension.configure({ suggestion: {} }),
   FindReplaceExtension,
+  MermaidSourceExtension,
 ];
 
 describe("markdownExtensions — the excluded extensions cannot affect text", () => {

@@ -8,6 +8,7 @@ import {
   handleTextPaste,
   markdownExtensions,
 } from "./extensions";
+import { MermaidSourceExtension } from "./MermaidSource";
 
 // Convert a heading to a paragraph when Backspace is pressed at position 0.
 // Without this, pressing Backspace at the start of a heading is a no-op,
@@ -195,6 +196,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         ClearMarksOnEnter,
         HeadingKeyboardFix,
         CodeBlockGapCursor,
+        MermaidSourceExtension,
         BlockCommands,
         InlineTagExtension,
         WikiLinkExtension.configure({

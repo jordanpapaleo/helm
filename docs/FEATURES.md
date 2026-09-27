@@ -65,7 +65,7 @@ A TipTap-based rich markdown editor with:
 - **Auto-save**: Saves every 1 second (debounced) and on blur to ensure no data loss
 - **Markdown syntax**: Full CommonMark + extensions
 - **Syntax-highlighted code blocks**: Uses the One Dark color scheme
-- **Mermaid diagrams**: ` ```mermaid ` blocks render as diagrams in the editor (bundled, works offline) using the current theme's colors. The source appears while the caret is inside the block — click the diagram, use its **Edit source** button, or arrow into it. Invalid diagrams show the parse error. Markdown mode always shows the source
+- **Mermaid diagrams**: ` ```mermaid ` blocks render as diagrams in the editor (bundled, works offline) using the current theme's colors; only the diagram is shown. Open the source with the block's **Edit source** button (or by clicking the diagram); it hides again with **Hide source**, Escape, when the editor loses focus, or when the caret leaves the block. The caret never rests inside hidden source. Invalid diagrams show the parse error. Markdown mode always shows the source, and PDF export shows only the diagram
 - **Inline formatting**: Bold, italic, strikethrough, inline code, highlight marks (`==text==`)
 - **Task lists**: Full checkbox support with visual toggle
 - **Image paste**: Paste images directly; they're saved to `vault/assets/` and linked

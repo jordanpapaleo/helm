@@ -20,8 +20,25 @@ interface Props {
 
 const menuCls =
   "fixed z-50 min-w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-xl";
+/** 20rem, the same cap as TemplateMenu's max-h-80. */
+const SUBMENU_MAX_PX = 320;
+const VIEWPORT_MARGIN = 4;
 const submenuCls =
-  "absolute z-50 min-w-[160px] max-w-[22rem] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-xl";
+  "absolute z-50 min-w-[160px] max-w-[22rem] overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-xl";
+
+function submenuFrame(
+  anchorTop: number,
+  anchorBottom: number,
+): {
+  maxHeight: number;
+  upward: boolean;
+} {
+  const spaceBelow = Math.max(0, window.innerHeight - anchorTop - VIEWPORT_MARGIN);
+  const spaceAbove = Math.max(0, anchorBottom - VIEWPORT_MARGIN);
+  const upward = spaceBelow < SUBMENU_MAX_PX && spaceAbove > spaceBelow;
+  const available = Math.max(32, upward ? spaceAbove : spaceBelow);
+  return { maxHeight: Math.min(SUBMENU_MAX_PX, available), upward };
+}
 const itemCls =
   "flex w-full items-center px-3 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-accent)]";
 
@@ -68,6 +85,10 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
   // Whether to open submenus to the right or left. Determined after first
   // paint based on remaining horizontal space.
   const [submenuFlipped, setSubmenuFlipped] = useState(false);
+  const [submenuFrameState, setSubmenuFrameState] = useState({
+    maxHeight: SUBMENU_MAX_PX,
+    upward: false,
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -92,6 +113,20 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
   useEffect(() => {
     if (openSubmenu === null) return;
     submenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [openSubmenu]);
+
+  // Cap the submenu to the viewport (and to TemplateMenu's max height) so a
+  // long template list, or a folder row near the bottom, stays reachable.
+  useLayoutEffect(() => {
+    if (openSubmenu === null) return;
+    const trigger =
+      submenuRef.current?.parentElement?.querySelector<HTMLButtonElement>('[role="menuitem"]');
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const next = submenuFrame(rect.top, rect.bottom);
+    setSubmenuFrameState((current) =>
+      current.maxHeight === next.maxHeight && current.upward === next.upward ? current : next,
+    );
   }, [openSubmenu]);
 
   // Clamp position so the menu stays fully within the viewport. Running in
@@ -168,7 +203,8 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
                   ref={submenuRef}
                   role="menu"
                   aria-label={item.label}
-                  className={`${submenuCls} ${submenuPositionCls} top-0`}
+                  className={`${submenuCls} ${submenuPositionCls} ${submenuFrameState.upward ? "bottom-0" : "top-0"}`}
+                  style={{ maxHeight: submenuFrameState.maxHeight }}
                   onKeyDown={(e) => {
                     if (e.key === "ArrowLeft" || e.key === "Escape") {
                       e.preventDefault();

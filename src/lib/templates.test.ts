@@ -85,6 +85,30 @@ describe("listTemplateChoices", () => {
     ]);
   });
 
+  it("lengthens the vault path when two vaults share a name and relative path", () => {
+    const home: VaultConfig = { id: "v-home", name: "notes", path: "/home/a/notes" };
+    const mount: VaultConfig = { id: "v-mnt", name: "notes", path: "/mnt/notes" };
+    const a = makeNote({
+      id: "a",
+      vaultId: "v-home",
+      filePath: "/home/a/notes/templates/spec.md",
+      fileName: "spec.md",
+      frontmatter: { ...makeNote().frontmatter, id: "a", title: "Spec" },
+    });
+    const b = makeNote({
+      id: "b",
+      vaultId: "v-mnt",
+      filePath: "/mnt/notes/templates/spec.md",
+      fileName: "spec.md",
+      frontmatter: { ...makeNote().frontmatter, id: "b", title: "Spec" },
+    });
+
+    expect(listTemplateChoices([b, a], [home, mount]).map((choice) => choice.label)).toEqual([
+      "Spec — a/notes/templates/spec.md",
+      "Spec — mnt/notes/templates/spec.md",
+    ]);
+  });
+
   it("disambiguates a template titled Blank so it does not collide with the blank action", () => {
     const blank = makeNote({
       id: "blank",

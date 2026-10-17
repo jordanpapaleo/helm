@@ -205,7 +205,7 @@ Set via the `locked` frontmatter field.
 
 Any note can be a template. Set `template: true` in its frontmatter, or toggle **Template** in the property panel. There is no template folder and no separate editor — a template is an ordinary note.
 
-**New Note** (the note list, File ▸ New Note, folder **New Note Here**, and the Kanban and Eisenhower `+` buttons) opens a menu. The first item is **Blank**, then every template by title. Identical titles are disambiguated with the vault and path. Choosing an entry creates a new note in the current destination (the selected folder, or the vault root). The template file is not modified, and later edits to either note do not affect the other.
+**New Note** (the note list, File ▸ New Note, folder **New Note Here**, and the Kanban and Eisenhower `+` buttons) opens a menu. The first item is **Blank**, then every template by title. Identical titles are disambiguated with the vault and path. When two vaults share a name and the same relative path, the label keeps enough parent directories to stay unique. Choosing an entry creates a new note in the current destination (the selected folder, or the vault root). The template file is not modified, and later edits to either note do not affect the other.
 
 Copied from the template:
 

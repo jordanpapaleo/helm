@@ -32,7 +32,7 @@ import { extractInlineTags } from "./note-parser";
 
 export interface TemplateChoice {
   id: string;
-  /** Plain title, or title plus vault/path when that title is not unique. */
+  /** Plain title, or title plus a unique vault/path when that title is not unique. */
   label: string;
   title: string;
   vaultId: string;
@@ -65,10 +65,39 @@ function relativePath(note: Note, vaultPath: string | undefined): string {
   return note.fileName || note.filePath;
 }
 
-function disambiguator(note: Note, vaults: VaultConfig[]): string {
-  const vault = vaults.find((v) => v.id === note.vaultId);
-  const vaultName = vault?.name || "vault";
-  return `${vaultName}/${relativePath(note, vault?.path)}`;
+function vaultFor(note: Note, vaults: VaultConfig[]): VaultConfig | undefined {
+  return vaults.find((v) => v.id === note.vaultId);
+}
+
+/** Vault display name plus the template's path inside that vault. */
+function baseDisambiguator(note: Note, vaults: VaultConfig[]): string {
+  const vault = vaultFor(note, vaults);
+  return `${vault?.name || "vault"}/${relativePath(note, vault?.path)}`;
+}
+
+function pathSuffix(path: string, take: number): string {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length === 0) return "";
+  return segments.slice(-Math.min(take, segments.length)).join("/");
+}
+
+/**
+ * Lengthen a vault path from the basename until it differs from every peer.
+ * Vault names are basenames, so `/home/a/notes` and `/mnt/notes` are both
+ * "notes" until a parent segment is included.
+ */
+function uniqueVaultPrefix(vault: VaultConfig, peers: VaultConfig[]): string {
+  const segments = vault.path.split("/").filter(Boolean);
+  const limit = Math.max(segments.length, 1);
+  for (let take = 1; take <= limit; take++) {
+    const suffix = pathSuffix(vault.path, take);
+    const collision = peers.some(
+      (peer) => peer.id !== vault.id && pathSuffix(peer.path, take) === suffix,
+    );
+    if (!collision && suffix) return suffix;
+  }
+  const full = segments.join("/") || vault.name || "vault";
+  return `${full} (${vault.id})`;
 }
 
 /**
@@ -77,7 +106,9 @@ function disambiguator(note: Note, vaults: VaultConfig[]): string {
  * flagged, including `template: false`, are not. Callers pass the live note
  * index, so renames, flag changes, and deletions show up on the next read.
  * Identical titles — and a title of "Blank", which would collide with the
- * blank action — are suffixed with vault and path.
+ * blank action — are suffixed with vault name and path. When those suffixes
+ * still match (two vaults share a basename and the same relative path), the
+ * vault path grows parent-by-parent until the labels differ.
  */
 export function listTemplateChoices(notes: Note[], vaults: VaultConfig[]): TemplateChoice[] {
   const templates = notes.filter(isTemplateNote);
@@ -87,14 +118,39 @@ export function listTemplateChoices(notes: Note[], vaults: VaultConfig[]): Templ
     titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
   }
 
-  const choices = templates.map((note) => {
+  const suffixGroups = new Map<string, Note[]>();
+  for (const note of templates) {
     const title = displayTitle(note);
     const colliding = (titleCounts.get(title) ?? 0) > 1 || title.toLowerCase() === "blank";
+    if (!colliding) continue;
+    const key = `${title}\0${baseDisambiguator(note, vaults)}`;
+    const group = suffixGroups.get(key) ?? [];
+    group.push(note);
+    suffixGroups.set(key, group);
+  }
+
+  function labelFor(note: Note): string {
+    const title = displayTitle(note);
+    const colliding = (titleCounts.get(title) ?? 0) > 1 || title.toLowerCase() === "blank";
+    if (!colliding) return title;
+    const base = baseDisambiguator(note, vaults);
+    const group = suffixGroups.get(`${title}\0${base}`) ?? [];
+    if (group.length < 2) return `${title} — ${base}`;
+    const vault = vaultFor(note, vaults);
+    if (!vault) return `${title} — ${base} (${note.vaultId})`;
+    const peers = group
+      .map((member) => vaultFor(member, vaults))
+      .filter((peer): peer is VaultConfig => peer !== undefined);
+    return `${title} — ${uniqueVaultPrefix(vault, peers)}/${relativePath(note, vault.path)}`;
+  }
+
+  const choices = templates.map((note) => {
+    const title = displayTitle(note);
     return {
       id: note.id,
       title,
       vaultId: note.vaultId,
-      label: colliding ? `${title} — ${disambiguator(note, vaults)}` : title,
+      label: labelFor(note),
     };
   });
 

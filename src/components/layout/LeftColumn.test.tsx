@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useNoteStore } from "../../store/notes";
@@ -219,5 +219,76 @@ describe("LeftColumn — New Note Here", () => {
     expect(useNoteStore.getState().notes.find((n) => n.id === "tmpl")?.content).toBe(
       "template body",
     );
+  });
+
+  it("refreshes an open submenu when a template is renamed, unflagged, or deleted", async () => {
+    const template = makeNote({
+      id: "tmpl",
+      filePath: "/other/bug.md",
+      fileName: "bug.md",
+      content: "template body",
+      vaultId: "v-other",
+      frontmatter: {
+        id: "tmpl",
+        title: "Bug report",
+        created: "2026-01-01",
+        updated: "2026-01-01",
+        tags: ["eng"],
+        urgent: false,
+        important: false,
+        state: "Prepare",
+        blocked: false,
+        template: true,
+      },
+    });
+    useNoteStore.setState({
+      notes: [template],
+      vaults: [VAULT, { id: "v-other", name: "Other", path: "/other" }],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByText("parent"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New Note Here" }));
+    expect(screen.getByRole("menuitem", { name: "Bug report" })).toBeInTheDocument();
+
+    const renamed = {
+      ...template,
+      frontmatter: { ...template.frontmatter, title: "Defect" },
+    };
+    await act(async () => {
+      useNoteStore.setState({ notes: [renamed] });
+    });
+    expect(screen.queryByRole("menuitem", { name: "Bug report" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Defect" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Defect" }));
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    const [, renamedRaw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
+    expect(renamedRaw).toContain("title: Defect");
+    expect(renamedRaw).toContain("template body");
+
+    fireEvent.contextMenu(screen.getByText("parent"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New Note Here" }));
+    await act(async () => {
+      useNoteStore.setState({
+        notes: useNoteStore
+          .getState()
+          .notes.map((note) =>
+            note.id === "tmpl"
+              ? { ...note, frontmatter: { ...note.frontmatter, template: false } }
+              : note,
+          ),
+      });
+    });
+    expect(screen.queryByRole("menuitem", { name: "Defect" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Blank" })).toBeInTheDocument();
+
+    await act(async () => {
+      useNoteStore.setState({
+        notes: useNoteStore.getState().notes.filter((note) => note.id !== "tmpl"),
+      });
+    });
+    expect(screen.queryByRole("menuitem", { name: "Defect" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Blank" })).toBeInTheDocument();
   });
 });

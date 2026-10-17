@@ -311,7 +311,10 @@ function NewFolderRow({ onCommit }: { onCommit: (name: string) => void }) {
   );
 }
 
-type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
+type MenuState =
+  | { x: number; y: number; kind: "folder"; folderPath: string }
+  | { x: number; y: number; kind: "tag"; items: ContextMenuItem[] }
+  | null;
 
 export function LeftColumn() {
   const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
@@ -494,6 +497,7 @@ export function LeftColumn() {
     setFolderMenu({
       x: e.clientX,
       y: e.clientY,
+      kind: "tag",
       items: [
         {
           kind: "action",
@@ -514,47 +518,49 @@ export function LeftColumn() {
   function handleFolderContextMenu(e: React.MouseEvent, folderPath: string) {
     e.preventDefault();
     e.stopPropagation();
-    setFolderMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        {
-          kind: "submenu",
-          label: "New Note Here",
-          items: [
-            {
-              label: "Blank",
-              onClick: () => handleCreateNoteInFolder(folderPath, null),
-            },
-            ...listTemplateChoices(notes, vaults).map((choice) => ({
-              label: choice.label,
-              onClick: () => handleCreateNoteInFolder(folderPath, choice.id),
-            })),
-          ],
-        },
-        {
-          kind: "action",
-          label: "New Subfolder",
-          onClick: () => {
-            setNewFolderParent(folderPath);
-            setSelectedGrouping({ type: "folder", id: folderPath });
-            setView("notes");
+    setFolderMenu({ x: e.clientX, y: e.clientY, kind: "folder", folderPath });
+  }
+
+  // Built on each render so a rename, unflag, or deletion updates an open menu
+  // instead of leaving a stale id that createNote would treat as a blank note.
+  function folderMenuItems(folderPath: string): ContextMenuItem[] {
+    return [
+      {
+        kind: "submenu",
+        label: "New Note Here",
+        items: [
+          {
+            label: "Blank",
+            onClick: () => handleCreateNoteInFolder(folderPath, null),
           },
+          ...listTemplateChoices(notes, vaults).map((choice) => ({
+            label: choice.label,
+            onClick: () => handleCreateNoteInFolder(folderPath, choice.id),
+          })),
+        ],
+      },
+      {
+        kind: "action",
+        label: "New Subfolder",
+        onClick: () => {
+          setNewFolderParent(folderPath);
+          setSelectedGrouping({ type: "folder", id: folderPath });
+          setView("notes");
         },
-        {
-          kind: "action",
-          label: "Rename",
-          onClick: () => setRenamingFolderPath(folderPath),
-        },
-        { kind: "separator" },
-        {
-          kind: "action",
-          label: "Delete",
-          danger: true,
-          onClick: () => handleDeleteFolder(folderPath),
-        },
-      ],
-    });
+      },
+      {
+        kind: "action",
+        label: "Rename",
+        onClick: () => setRenamingFolderPath(folderPath),
+      },
+      { kind: "separator" },
+      {
+        kind: "action",
+        label: "Delete",
+        danger: true,
+        onClick: () => handleDeleteFolder(folderPath),
+      },
+    ];
   }
 
   return (
@@ -766,7 +772,9 @@ export function LeftColumn() {
         <ContextMenu
           x={folderMenu.x}
           y={folderMenu.y}
-          items={folderMenu.items}
+          items={
+            folderMenu.kind === "folder" ? folderMenuItems(folderMenu.folderPath) : folderMenu.items
+          }
           onClose={() => setFolderMenu(null)}
         />
       )}

@@ -279,13 +279,24 @@ describe("NoteListPanel — archive", () => {
     });
   });
 
-  it("does not offer archive on a locked note", () => {
+  it("withholds Archive and Delete on a locked note", () => {
     const locked = makeNote({ title: "Locked", locked: true });
     resetStores(locked);
     render(<NoteListPanel />);
     fireEvent.contextMenu(screen.getByText("Locked"));
     expect(screen.queryByRole("menuitem", { name: "Archive" })).not.toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Unlock" })).toBeInTheDocument();
     expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(tauriCommands.deleteNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes).toHaveLength(1);
+  });
+
+  it("still offers Delete on an unlocked note", () => {
+    resetStores(makeNote({ title: "Open" }));
+    render(<NoteListPanel />);
+    fireEvent.contextMenu(screen.getByText("Open"));
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Archive" })).toBeInTheDocument();
   });
 });

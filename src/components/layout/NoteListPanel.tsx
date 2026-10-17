@@ -202,6 +202,10 @@ export function NoteListPanel() {
   }
 
   async function handleDeleteNote(note: Note) {
+    if (note.frontmatter.locked) {
+      reportError("Unlock the note before deleting it", new Error("Note is locked"));
+      return;
+    }
     const ok = await confirm(`Move "${note.frontmatter.title || "Untitled"}" to Trash?`, {
       title: "Move to Trash",
       kind: "warning",
@@ -348,22 +352,22 @@ export function NoteListPanel() {
                               onClick: () => handleMoveNote(note, f.path),
                             })),
                           },
-                          { kind: "separator" },
                           ...(note.frontmatter.locked
                             ? []
                             : [
+                                { kind: "separator" as const },
                                 {
                                   kind: "action" as const,
                                   label: isArchived(note.frontmatter) ? "Unarchive" : "Archive",
                                   onClick: () => handleArchiveToggle(note),
                                 },
+                                {
+                                  kind: "action" as const,
+                                  label: "Delete",
+                                  danger: true,
+                                  onClick: () => handleDeleteNote(note),
+                                },
                               ]),
-                          {
-                            kind: "action",
-                            label: "Delete",
-                            danger: true,
-                            onClick: () => handleDeleteNote(note),
-                          },
                         ],
                       });
                     }}

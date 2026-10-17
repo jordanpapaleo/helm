@@ -2,12 +2,14 @@ import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState } from "react";
 import { ulid } from "ulid";
+import { isArchived, visibleNotes } from "../../lib/archive";
 import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp, timestampDate } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
+import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
@@ -32,6 +34,7 @@ export function NoteListPanel() {
     renameNote,
   } = useNoteStore();
   const { items: trashItems, removeFromTrash, permanentlyDelete, addToTrash } = useTrashStore();
+  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
   const [search, setSearch] = useState("");
   const [menu, setMenu] = useState<MenuState>(null);
   // null means no note is being renamed inline
@@ -47,7 +50,8 @@ export function NoteListPanel() {
   }, [knownFolderPaths, notes, vault]);
 
   const filteredNotes = useMemo(() => {
-    let result = activeVaultId ? notes.filter((n) => n.vaultId === activeVaultId) : notes;
+    const visible = visibleNotes(notes, showArchivedNotes);
+    let result = activeVaultId ? visible.filter((n) => n.vaultId === activeVaultId) : visible;
 
     if (selectedGrouping.type === "folder" && selectedGrouping.id) {
       const prefix = `${selectedGrouping.id}/`;
@@ -75,7 +79,7 @@ export function NoteListPanel() {
       if (!a.frontmatter.pinned && b.frontmatter.pinned) return 1;
       return b.frontmatter.updated.localeCompare(a.frontmatter.updated);
     });
-  }, [notes, selectedGrouping, activeVaultId, search]);
+  }, [notes, selectedGrouping, activeVaultId, search, showArchivedNotes]);
 
   async function handleNewNote() {
     if (!vault) return;
@@ -176,7 +180,32 @@ export function NoteListPanel() {
     setRenamingNoteId(null);
   }
 
+  async function handleArchiveToggle(note: Note) {
+    if (note.frontmatter.locked) {
+      reportError("Unlock the note before archiving it", new Error("Note is locked"));
+      return;
+    }
+    const updated = {
+      ...note,
+      frontmatter: {
+        ...note.frontmatter,
+        archived: !isArchived(note.frontmatter),
+        updated: nowTimestamp(),
+      },
+    };
+    try {
+      await tauriCommands.writeNote(note.filePath, serializeNote(updated));
+      updateNote(updated);
+    } catch (e) {
+      reportError("Failed to update archive state", e);
+    }
+  }
+
   async function handleDeleteNote(note: Note) {
+    if (note.frontmatter.locked) {
+      reportError("Unlock the note before deleting it", new Error("Note is locked"));
+      return;
+    }
     const ok = await confirm(`Move "${note.frontmatter.title || "Untitled"}" to Trash?`, {
       title: "Move to Trash",
       kind: "warning",
@@ -323,13 +352,22 @@ export function NoteListPanel() {
                               onClick: () => handleMoveNote(note, f.path),
                             })),
                           },
-                          { kind: "separator" },
-                          {
-                            kind: "action",
-                            label: "Delete",
-                            danger: true,
-                            onClick: () => handleDeleteNote(note),
-                          },
+                          ...(note.frontmatter.locked
+                            ? []
+                            : [
+                                { kind: "separator" as const },
+                                {
+                                  kind: "action" as const,
+                                  label: isArchived(note.frontmatter) ? "Unarchive" : "Archive",
+                                  onClick: () => handleArchiveToggle(note),
+                                },
+                                {
+                                  kind: "action" as const,
+                                  label: "Delete",
+                                  danger: true,
+                                  onClick: () => handleDeleteNote(note),
+                                },
+                              ]),
                         ],
                       });
                     }}
@@ -347,6 +385,9 @@ export function NoteListPanel() {
                           className="h-3.5 w-3.5 text-[var(--color-primary)]"
                           aria-label="Pinned"
                         />
+                      )}
+                      {isArchived(note.frontmatter) && (
+                        <span className="badge badge-ghost badge-xs">Archived</span>
                       )}
                       {/* Dense list — just the day. The full stored timestamp
                           is in the tooltip and in the property panel. */}

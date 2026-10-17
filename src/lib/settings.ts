@@ -5,6 +5,8 @@ export interface Settings {
   autoSaveOnEdit: boolean;
   pinnedNotesFloat: boolean;
   showNoteCountOnTags: boolean;
+  /** When false, archived notes are hidden from discovery views. */
+  showArchivedNotes: boolean;
   defaultNoteView: "editor" | "markdown";
 }
 
@@ -15,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoSaveOnEdit: true,
   pinnedNotesFloat: true,
   showNoteCountOnTags: true,
+  showArchivedNotes: false,
   defaultNoteView: "editor",
 };
 

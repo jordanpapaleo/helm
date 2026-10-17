@@ -28,6 +28,7 @@ state: Doing
 blocked: false
 locked: false
 pinned: false
+archived: false
 team:
   - Alice
   - Bob
@@ -154,8 +155,9 @@ The graph is computed on demand from the notes and their link data, updating whe
 | `deadline` | string? | Optional deadline as ISO date |
 | `team` | string[]? | Optional list of responsible team members |
 | `links` | string[]? | Array of ULID references to linked notes (from `[[wiki links]]`) |
-| `locked` | boolean? | If true, note is read-only in the editor; delete is hidden |
+| `locked` | boolean? | If true, note is read-only in the editor; delete and archive are hidden |
 | `pinned` | boolean? | If true, note floats to the top of all lists |
+| `archived` | boolean? | If true, the note is hidden from discovery views. Absent or false means active |
 
 ### Themes
 
@@ -182,7 +184,7 @@ User preferences accessible from the sidebar:
 
 - **Themes**: Card grid to select any of the 6 themes
 
-- **General**: Preference checkboxes (expandable for future flags)
+- **General**: Preference checkboxes, including **Show archived notes** (off by default, persisted in localStorage)
 
 All settings are persisted to localStorage and applied immediately on change.
 
@@ -194,9 +196,20 @@ All settings are persisted to localStorage and applied immediately on change.
 - Content cannot be edited
 - Delete button is hidden
 - A lock icon is shown in the editor header
-- Useful for archived or reference notes
+- Archive and delete are unavailable until the note is unlocked
+- Useful for reference notes you want to preserve exactly
 
 Set via the `locked` frontmatter field.
+
+### Archived notes
+
+**Archive** keeps a note for recall without deleting it or changing its workflow. The file, id, content, tags, links, history, and other frontmatter stay where they are. Only `archived: true` is set. Unarchive sets `archived: false` and restores the note to everyday views with that metadata intact.
+
+- The archive action sits next to Delete: an archive icon with the label "Archive note" / "Unarchive note" in the property panel, and Archive / Unarchive in the note-list menu. Both are withheld while the note is locked.
+- **Show archived notes** (Settings → General) defaults to off and persists across restarts. It is a UI preference only. The MCP server does not read it; agent tools take their own `include_archived` option and exclude archived notes unless that option is true.
+- While the setting is off, archived notes are hidden from lists, search, tag and vault counts, boards, the graph, the dashboard, and the daily briefing. Opening a note you already have selected still works, and shows an Archived mark plus Unarchive.
+- While the setting is on, archived notes appear in those views with an Archived mark.
+- Existing links stay valid. A visible note can still open an archived note it links to.
 
 ### Zettelkasten / Wiki Links
 
@@ -315,6 +328,7 @@ state: Prepare
 blocked: false
 locked: false
 pinned: false
+archived: false
 deadline: 2025-04-15
 team:
   - Alice

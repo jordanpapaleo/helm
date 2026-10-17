@@ -27,6 +27,18 @@ describe("useSettingsStore", () => {
       expect(result.current.settings.showNoteCountOnTags).toBe(
         DEFAULT_SETTINGS.showNoteCountOnTags,
       );
+      expect(result.current.settings.showArchivedNotes).toBe(DEFAULT_SETTINGS.showArchivedNotes);
+    });
+
+    it("persists show archived notes, which defaults to off", () => {
+      const { result } = renderHook(() => useSettingsStore());
+      expect(result.current.settings.showArchivedNotes).toBe(false);
+      act(() => {
+        result.current.updateSettings({ showArchivedNotes: true });
+      });
+      expect(result.current.settings.showArchivedNotes).toBe(true);
+      const stored = JSON.parse(localStorage.getItem("helm-settings") ?? "{}");
+      expect(stored.showArchivedNotes).toBe(true);
     });
 
     it("persists to localStorage after update", () => {

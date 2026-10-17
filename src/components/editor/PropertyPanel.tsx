@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useState } from "react";
+import { isArchived } from "../../lib/archive";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { formatTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
@@ -13,6 +14,8 @@ interface PropertyPanelProps {
   onTitleInput?: (title: string) => void;
   onTitleTab?: () => void;
   onDelete?: () => void;
+  /** Archive or unarchive. Omitted when the note is locked. */
+  onArchive?: () => void;
   markdownMode?: boolean;
   onToggleMarkdown?: () => void;
   onShowHistory?: () => void;
@@ -37,6 +40,7 @@ const KNOWN_FIELDS = new Set([
   "links",
   "locked",
   "pinned",
+  "archived",
   "unmanaged",
   "kanbanOrder",
   "eisenhowerOrder",
@@ -126,6 +130,7 @@ export function PropertyPanel({
   onTitleInput,
   onTitleTab,
   onDelete,
+  onArchive,
   markdownMode,
   onToggleMarkdown,
   onShowHistory,
@@ -152,6 +157,7 @@ export function PropertyPanel({
   const { notes } = useNoteStore();
 
   const unmanaged = frontmatter.unmanaged ?? false;
+  const archived = isArchived(frontmatter);
 
   // Extra unknown fields beyond the known set
   const extraFields = Object.entries(frontmatter).filter(([k]) => !KNOWN_FIELDS.has(k));
@@ -177,6 +183,7 @@ export function PropertyPanel({
           }}
           placeholder="Untitled"
         />
+        {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
         {filePath && (
           <button
             type="button"
@@ -280,6 +287,17 @@ export function PropertyPanel({
                 <line x1="12" y1="4" x2="12" y2="20" />
               </svg>
             )}
+          </button>
+        )}
+        {onArchive && (
+          <button
+            type="button"
+            onClick={onArchive}
+            title={archived ? "Unarchive note" : "Archive note"}
+            aria-label={archived ? "Unarchive note" : "Archive note"}
+            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
+          >
+            <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
           </button>
         )}
         {onDelete && (

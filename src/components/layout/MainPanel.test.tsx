@@ -729,3 +729,68 @@ describe("MainPanel — scroll position survives the markdown/editor toggle", ()
     expect(other.scrollTop).toBe(0);
   });
 });
+
+describe("MainPanel archive", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  it("archives in place and keeps the note open", async () => {
+    const note = makeNote();
+    note.frontmatter = {
+      ...note.frontmatter,
+      tags: ["work"],
+      links: ["01OTHER"],
+      state: "Doing",
+    };
+    setup(note, true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Archive note" }));
+    });
+
+    const saved = useNoteStore.getState().notes[0];
+    expect(saved.id).toBe(note.id);
+    expect(saved.filePath).toBe(note.filePath);
+    expect(saved.content).toBe(note.content);
+    expect(saved.frontmatter.archived).toBe(true);
+    expect(saved.frontmatter.state).toBe("Doing");
+    expect(saved.frontmatter.tags).toEqual(["work"]);
+    expect(saved.frontmatter.links).toEqual(["01OTHER"]);
+    expect(useNoteStore.getState().selectedNoteId).toBe(note.id);
+    expect(tauriCommands.deleteNote).not.toHaveBeenCalled();
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      note.filePath,
+      expect.stringContaining("archived: true"),
+    );
+    expect(screen.getByRole("button", { name: "Unarchive note" })).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+  });
+
+  it("unarchives without changing workflow metadata", async () => {
+    const note = makeNote();
+    note.frontmatter = { ...note.frontmatter, archived: true, state: "Maintain", tags: ["ref"] };
+    setup(note, true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unarchive note" }));
+    });
+
+    const saved = useNoteStore.getState().notes[0].frontmatter;
+    expect(saved.archived).toBe(false);
+    expect(saved.state).toBe("Maintain");
+    expect(saved.tags).toEqual(["ref"]);
+  });
+
+  it("still opens a hidden archived note and withholds the action when locked", () => {
+    const note = makeNote();
+    note.frontmatter = { ...note.frontmatter, archived: true, locked: true, title: "Old Decision" };
+    setup(note, true);
+
+    expect(screen.getByDisplayValue("Old Decision")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Unarchive note" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Archive note" })).not.toBeInTheDocument();
+  });
+});

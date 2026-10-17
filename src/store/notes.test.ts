@@ -1,9 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS } from "../lib/settings";
 import { tauriCommands } from "../lib/tauri-commands";
 import { todayDate } from "../lib/timestamps";
 import type { Note, VaultConfig } from "../types/note";
 import { useNoteStore } from "./notes";
+import { useSettingsStore } from "./settings";
 import { useToastStore } from "./toast";
 
 vi.mock("../lib/tauri-commands", () => ({
@@ -303,6 +305,7 @@ describe("addNote", () => {
 
 describe("search", () => {
   beforeEach(() => {
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
     useNoteStore.setState({
       notes: [],
       selectedNoteId: null,
@@ -384,6 +387,58 @@ describe("search", () => {
     });
     expect(result.current.searchResults.length).toBeGreaterThan(0);
     expect(result.current.searchResults[0].id).toBe("n1");
+  });
+
+  it("hides archived notes from search unless show archived is on", () => {
+    const { result } = renderHook(() => useNoteStore());
+    const active = makeNote({
+      id: "active",
+      filePath: "/notes/active.md",
+      content: "lighthouse",
+      frontmatter: {
+        id: "active",
+        title: "Active lighthouse",
+        created: "2026-03-13",
+        updated: "2026-03-13",
+        tags: [],
+        urgent: false,
+        important: false,
+        state: "Doing",
+        blocked: false,
+        links: [],
+      },
+    });
+    const archived = makeNote({
+      id: "archived",
+      filePath: "/notes/archived.md",
+      content: "lighthouse",
+      frontmatter: {
+        id: "archived",
+        title: "Archived lighthouse",
+        created: "2026-03-13",
+        updated: "2026-03-13",
+        tags: ["keep"],
+        urgent: true,
+        important: true,
+        state: "Doing",
+        blocked: false,
+        links: ["active"],
+        archived: true,
+      },
+    });
+    act(() => {
+      useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, showArchivedNotes: false } });
+      result.current.setNotes([active, archived]);
+      result.current.search("lighthouse");
+    });
+    expect(result.current.searchResults.map((n) => n.id)).toEqual(["active"]);
+
+    act(() => {
+      useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, showArchivedNotes: true } });
+      result.current.search("lighthouse");
+    });
+    expect(result.current.searchResults.map((n) => n.id).sort()).toEqual(["active", "archived"]);
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
   });
 
   it("updates searchQuery on every call", () => {

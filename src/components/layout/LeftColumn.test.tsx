@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useNoteStore } from "../../store/notes";
+import { useSettingsStore } from "../../store/settings";
 import type { Note, VaultConfig } from "../../types/note";
 import { LeftColumn } from "./LeftColumn";
 
@@ -122,5 +124,47 @@ describe("LeftColumn — Folder Rename (Bug B)", () => {
       expect(useNoteStore.getState().notes[0].filePath).toBe("/vault/renamed/note.md"),
     );
     expect(useNoteStore.getState().knownFolderPaths).toContain("/vault/renamed");
+  });
+});
+
+describe("LeftColumn — archived note counts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  function listed(id: string, title: string, tags: string[], archived = false): Note {
+    const base = makeNote();
+    return {
+      ...base,
+      id,
+      filePath: `/vault/${id}.md`,
+      fileName: `${id}.md`,
+      frontmatter: { ...base.frontmatter, id, title, tags, archived },
+    };
+  }
+
+  it("omits archived notes from vault, all-notes, and tag counts", () => {
+    useNoteStore.setState({
+      notes: [listed("live", "Live", ["home"]), listed("old", "Old", ["work"], true)],
+    });
+    render(<LeftColumn />);
+
+    const allNotes = screen.getByText("All Notes").parentElement;
+    expect(allNotes).toHaveTextContent("1");
+    expect(screen.getByText("home")).toBeInTheDocument();
+    expect(screen.queryByText("work")).not.toBeInTheDocument();
+  });
+
+  it("counts archived notes when the setting is on", () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, showArchivedNotes: true } });
+    useNoteStore.setState({
+      notes: [listed("live", "Live", ["home"]), listed("old", "Old", ["work"], true)],
+    });
+    render(<LeftColumn />);
+
+    expect(screen.getByText("All Notes").parentElement).toHaveTextContent("2");
+    expect(screen.getByText("work")).toBeInTheDocument();
   });
 });

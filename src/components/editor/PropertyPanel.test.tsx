@@ -194,3 +194,39 @@ describe("PropertyPanel export to PDF", () => {
     expect(screen.queryByRole("button", { name: "Export to PDF" })).not.toBeInTheDocument();
   });
 });
+
+describe("PropertyPanel archive", () => {
+  it("offers Archive beside delete, with an accessible name", () => {
+    const onArchive = vi.fn();
+    render(
+      <PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} onArchive={onArchive} />,
+    );
+    const archive = screen.getByRole("button", { name: "Archive note" });
+    expect(archive).toHaveAttribute("title", "Archive note");
+    expect(screen.queryByText("Archived")).not.toBeInTheDocument();
+    fireEvent.click(archive);
+    expect(onArchive).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels an archived note and offers Unarchive", () => {
+    const onArchive = vi.fn();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ archived: true, state: "Doing", tags: ["work"] })}
+        onChange={vi.fn()}
+        onArchive={onArchive}
+      />,
+    );
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(screen.getByText("Doing")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unarchive note" }));
+    expect(onArchive).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the archive action when it is not provided (locked notes)", () => {
+    render(<PropertyPanel frontmatter={makeFrontmatter({ archived: true })} onChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Unarchive note" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Archive note" })).not.toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+  });
+});

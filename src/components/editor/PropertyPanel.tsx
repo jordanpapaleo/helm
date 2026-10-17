@@ -44,6 +44,7 @@ const KNOWN_FIELDS = new Set([
   "unmanaged",
   "kanbanOrder",
   "eisenhowerOrder",
+  "template",
 ]);
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -415,6 +416,16 @@ export function PropertyPanel({
             className="rounded accent-[var(--color-accent)]"
           />
           Unmanaged
+        </label>
+
+        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+          <input
+            type="checkbox"
+            checked={frontmatter.template ?? false}
+            onChange={(e) => onChange({ template: e.target.checked })}
+            className="rounded accent-[var(--color-accent)]"
+          />
+          Template
         </label>
 
         {/* Expand toggle */}

@@ -114,7 +114,7 @@ A 2x2 grid for priority-based task organization:
 - **Delegate** (urgent + not important, bottom-left): Should be passed to others
 - **Eliminate** (not urgent + not important, bottom-right): Low-value, skip them
 
-Drag cards between quadrants to update `urgent` and `important` frontmatter flags. Changes save immediately to disk. Each quadrant has a `+` button to create a new pre-configured note in that category.
+Drag cards between quadrants to update `urgent` and `important` frontmatter flags. Changes save immediately to disk. Each quadrant has a `+` button that opens the same Blank / template menu as New Note and creates a note in that quadrant.
 
 ### Kanban Board
 
@@ -125,7 +125,7 @@ A 4-column drag-and-drop workflow board:
 - **Maintain**: Completed but needs ongoing attention
 - **Done**: Finished
 
-Drag cards between columns to update the `state` frontmatter field. Changes save immediately. Each column has a `+` button to create a new note in that state. Columns automatically fill available width.
+Drag cards between columns to update the `state` frontmatter field. Changes save immediately. Each column has a `+` button that opens the same Blank / template menu as New Note and creates a note in that state. Columns automatically fill available width.
 
 ### Graph View
 
@@ -200,6 +200,28 @@ All settings are persisted to localStorage and applied immediately on change.
 - Useful for reference notes you want to preserve exactly
 
 Set via the `locked` frontmatter field.
+
+### Templates
+
+Any note can be a template. Set `template: true` in its frontmatter, or toggle **Template** in the property panel. There is no template folder and no separate editor — a template is an ordinary note.
+
+**New Note** (the note list, File ▸ New Note, folder **New Note Here**, and the Kanban and Eisenhower `+` buttons) opens a menu. The first item is **Blank**, then every template by title. Identical titles are disambiguated with the vault and path. Choosing an entry creates a new note in the current destination (the selected folder, or the vault root) and keeps the creation context: a Kanban column sets `state`, an Eisenhower quadrant sets `urgent` / `important`, and a selected tag is added to the new note. The new title follows the normal flow (`Untitled`). The template file is not modified, and later edits to either note do not affect the other.
+
+Copied from the template:
+
+- markdown body
+- `tags`, `urgent`, `important`, `state`, `blocked`, `deadline`, `team`, `unmanaged`
+- any other custom frontmatter keys
+
+Not copied:
+
+- `id`, `title`, `created`, `updated` (all fresh; the id is a new ULID)
+- `template` (the new note is not a template until you mark it)
+- `locked`, `pinned`
+- `kanbanOrder`, `eisenhowerOrder`
+- `links` (recomputed from `[[wiki links]]` in the copied body, the same way a normal save does)
+
+Locked templates can still be used. Notes in Trash are not listed. With no templates, the menu offers Blank only and that choice matches the previous blank-note behavior.
 
 ### Archived notes
 

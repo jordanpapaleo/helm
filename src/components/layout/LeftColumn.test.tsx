@@ -168,3 +168,54 @@ describe("LeftColumn — archived note counts", () => {
     expect(screen.getByText("work")).toBeInTheDocument();
   });
 });
+
+describe("LeftColumn — New Note Here", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+  });
+
+  it("offers Blank and templates, and creates the chosen template in that folder", async () => {
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "tmpl",
+          filePath: "/other/bug.md",
+          fileName: "bug.md",
+          content: "template body",
+          vaultId: "v-other",
+          frontmatter: {
+            id: "tmpl",
+            title: "Bug report",
+            created: "2026-01-01",
+            updated: "2026-01-01",
+            tags: ["eng"],
+            urgent: false,
+            important: true,
+            state: "Prepare",
+            blocked: false,
+            links: [],
+            template: true,
+          },
+        }),
+      ],
+      vaults: [VAULT, { id: "v-other", name: "Other", path: "/other" }],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByText("parent"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New Note Here" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Bug report" }));
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    const [filePath, raw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
+    expect(filePath?.startsWith("/vault/parent/")).toBe(true);
+    expect(filePath).not.toContain("/other/");
+    expect(raw).toContain("template body");
+    expect(raw).toContain("important: true");
+    expect(raw).not.toContain("template:");
+    expect(useNoteStore.getState().notes.find((n) => n.id === "tmpl")?.content).toBe(
+      "template body",
+    );
+  });
+});

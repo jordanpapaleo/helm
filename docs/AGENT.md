@@ -55,6 +55,7 @@ Note content in standard markdown. You can reference other notes with [[Wiki Lin
 | `blocked` | boolean | no | Whether the note is blocked from progress. Default `false`. |
 | `locked` | boolean | no | If `true`, the note is read-only in the UI. Default `false`. |
 | `pinned` | boolean | no | If `true`, the note floats to the top of all lists. Default `false`. |
+| `template` | boolean | no | If `true`, Helm offers this note in New Note menus. Absent means false. |
 | `deadline` | string (ISO date) | no | Optional deadline. |
 | `team` | string[] | no | Optional list of responsible people. |
 | `links` | string[] | no | ULIDs of notes this note links to (populated from `[[wiki links]]` on save). |
@@ -70,6 +71,16 @@ Every note has a ULID as its `id`. ULIDs are 26-character uppercase strings like
 - The `links` field stores the ULIDs of linked notes, not their titles or filenames.
 
 ---
+
+## Templates
+
+A note with `template: true` is a reusable starting point. Helm copies its body and reusable frontmatter into a **new** note with a new ULID, title, and timestamps. Do not edit the template to "fill it in."
+
+Copied: body, `tags`, `urgent`, `important`, `state`, `blocked`, `deadline`, `team`, `unmanaged`, and any custom keys.
+
+Not copied: `id`, `title`, `created`, `updated`, `template`, `locked`, `pinned`, `kanbanOrder`, `eisenhowerOrder`, `links`. `links` are derived again from `[[wiki links]]` in the body. The new note is not a template unless you set `template: true` on it afterward.
+
+Preserve a `template` key you did not mean to change. `update_note` shallow-merges it like any other safe field.
 
 ## Tags
 

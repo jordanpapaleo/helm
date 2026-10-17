@@ -1,14 +1,13 @@
 import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import React, { useMemo, useState } from "react";
-import { ulid } from "ulid";
 import { addVault, removeVault } from "../../hooks/useVault";
 import { visibleNotes } from "../../lib/archive";
+import { createNote } from "../../lib/create-note";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
-import { serializeNote } from "../../lib/note-parser";
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
-import { nowTimestamp } from "../../lib/timestamps";
+import { listTemplateChoices } from "../../lib/templates";
 import { buildTagTree, type TagNode, useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -381,38 +380,8 @@ export function LeftColumn() {
     await removeVault(id);
   }
 
-  async function handleCreateNoteInFolder(folderPath: string) {
-    if (!activeVault) return;
-    const id = ulid();
-    const now = nowTimestamp();
-    const slug = id.toLowerCase();
-    const filePath = `${folderPath}/${slug}.md`;
-    const note = {
-      id,
-      filePath,
-      fileName: `${slug}.md`,
-      content: "",
-      vaultId: activeVault.id,
-      frontmatter: {
-        id,
-        title: "Untitled",
-        created: now,
-        updated: now,
-        tags: [],
-        urgent: false,
-        important: false,
-        state: "Prepare" as const,
-        blocked: false,
-      },
-    };
-    try {
-      await tauriCommands.writeNote(filePath, serializeNote(note));
-      useNoteStore.getState().addNote(note);
-      useNoteStore.getState().selectNote(id);
-      setView("notes");
-    } catch (e) {
-      reportError("Failed to create note", e);
-    }
+  function handleCreateNoteInFolder(folderPath: string, templateId: string | null) {
+    void createNote({ folderPath, vaultId: activeVault?.id, templateId });
   }
 
   // Single create-folder path shared by the root "New folder" button and the
@@ -550,9 +519,18 @@ export function LeftColumn() {
       y: e.clientY,
       items: [
         {
-          kind: "action",
+          kind: "submenu",
           label: "New Note Here",
-          onClick: () => handleCreateNoteInFolder(folderPath),
+          items: [
+            {
+              label: "Blank",
+              onClick: () => handleCreateNoteInFolder(folderPath, null),
+            },
+            ...listTemplateChoices(notes, vaults).map((choice) => ({
+              label: choice.label,
+              onClick: () => handleCreateNoteInFolder(folderPath, choice.id),
+            })),
+          ],
         },
         {
           kind: "action",

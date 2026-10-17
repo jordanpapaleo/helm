@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseNote } from "../../lib/note-parser";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
@@ -298,5 +299,81 @@ describe("NoteListPanel — archive", () => {
     fireEvent.contextMenu(screen.getByText("Open"));
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Archive" })).toBeInTheDocument();
+  });
+});
+
+describe("NoteListPanel — new note menu", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("creates a blank note in the selected folder, unchanged from the previous defaults", async () => {
+    resetStores(makeNote());
+    useUIStore.setState({ selectedGrouping: { type: "folder", id: "/vault/inbox" } });
+    render(<NoteListPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Blank" }));
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    const [filePath, raw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
+    expect(filePath?.startsWith("/vault/inbox/")).toBe(true);
+    const parsed = parseNote(raw ?? "", filePath ?? "");
+    expect(parsed.frontmatter.title).toBe("Untitled");
+    expect(parsed.frontmatter.state).toBe("Prepare");
+    expect(parsed.content.trim()).toBe("");
+    expect(raw).not.toContain("template:");
+  });
+
+  it("copies a template into the active vault and leaves the template note unchanged", async () => {
+    const base = makeNote({
+      id: "tmpl",
+      title: "Bug report",
+      template: true,
+      tags: ["eng"],
+      state: "Maintain",
+    });
+    const stored: Note = {
+      ...base,
+      id: "tmpl",
+      filePath: "/other/bug.md",
+      fileName: "bug.md",
+      content: "Reproduce it",
+      vaultId: "v-other",
+    };
+    resetStores(stored);
+    render(<NoteListPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Bug report" }));
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    const [filePath, raw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
+    expect(filePath).not.toBe("/other/bug.md");
+    expect(filePath?.startsWith("/vault/")).toBe(true);
+    const parsed = parseNote(raw ?? "", filePath ?? "");
+    expect(parsed.content.trim()).toBe("Reproduce it");
+    expect(parsed.frontmatter.tags).toEqual(["eng"]);
+    expect(parsed.frontmatter.state).toBe("Maintain");
+    expect(parsed.frontmatter.template).toBeUndefined();
+    expect(parsed.frontmatter.title).toBe("Untitled");
+    expect(useNoteStore.getState().notes.find((n) => n.id === "tmpl")?.content).toBe(
+      "Reproduce it",
+    );
+  });
+
+  it("adds the selected tag when creating a blank note from a tag grouping", async () => {
+    resetStores(makeNote());
+    useUIStore.setState({ selectedGrouping: { type: "tag", id: "work" } });
+    render(<NoteListPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Blank" }));
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    const [filePath, raw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
+    const parsed = parseNote(raw ?? "", filePath ?? "");
+    expect(parsed.content.trim()).toBe("#work");
+    expect(parsed.frontmatter.tags).toEqual(["work"]);
   });
 });

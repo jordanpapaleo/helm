@@ -1,9 +1,9 @@
 import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState } from "react";
-import { ulid } from "ulid";
 import { isArchived, visibleNotes } from "../../lib/archive";
 import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
+import { createNote, creationTargetFromUI } from "../../lib/create-note";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -15,12 +15,13 @@ import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
+import { NewNoteMenu } from "../sidebar/NewNoteMenu";
 import { RenameInput } from "../sidebar/RenameInput";
 
 type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
 
 export function NoteListPanel() {
-  const { selectedGrouping, setView, navigate } = useUIStore();
+  const { selectedGrouping, navigate } = useUIStore();
   const {
     notes,
     selectedNoteId,
@@ -81,42 +82,8 @@ export function NoteListPanel() {
     });
   }, [notes, selectedGrouping, activeVaultId, search, showArchivedNotes]);
 
-  async function handleNewNote() {
-    if (!vault) return;
-    const folderPath =
-      selectedGrouping.type === "folder" && selectedGrouping.id ? selectedGrouping.id : vault.path;
-    const contextTag =
-      selectedGrouping.type === "tag" && selectedGrouping.id ? selectedGrouping.id : null;
-    const id = ulid();
-    const now = nowTimestamp();
-    const slug = id.toLowerCase();
-    const filePath = `${folderPath}/${slug}.md`;
-    const note: Note = {
-      id,
-      filePath,
-      fileName: `${slug}.md`,
-      content: contextTag ? `#${contextTag}` : "",
-      vaultId: vault.id,
-      frontmatter: {
-        id,
-        title: "Untitled",
-        created: now,
-        updated: now,
-        tags: contextTag ? [contextTag] : [],
-        urgent: false,
-        important: false,
-        state: "Prepare",
-        blocked: false,
-      },
-    };
-    try {
-      await tauriCommands.writeNote(filePath, serializeNote(note));
-      addNote(note);
-      selectNote(id);
-      setView("notes");
-    } catch (e) {
-      reportError("Failed to create note", e);
-    }
+  function handleNewNote(templateId: string | null) {
+    void createNote({ ...creationTargetFromUI(), templateId });
   }
 
   async function handleRestore(noteId: string) {
@@ -283,14 +250,14 @@ export function NoteListPanel() {
           onChange={(e) => setSearch(e.target.value)}
           className="input input-sm flex-1 border border-base-300 bg-base-200"
         />
-        <button
-          type="button"
-          onClick={handleNewNote}
+        <NewNoteMenu
+          ariaLabel="New note"
           title="New note"
+          icon="uil:file-medical"
+          disabled={!vault}
           className="btn btn-ghost btn-xs btn-square"
-        >
-          <Icon icon="uil:file-medical" className="h-4 w-4" aria-hidden="true" />
-        </button>
+          onSelect={handleNewNote}
+        />
       </div>
 
       {/* Note list — onContextMenu is on each button to avoid conflicts with the toolbar */}

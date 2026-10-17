@@ -76,6 +76,37 @@ describe("parseNote", () => {
     expect(note.frontmatter.updated).toBe("2026-07-31T18:23:05Z");
   });
 
+  it("treats a missing template flag as not a template and round-trips a boolean", () => {
+    const absent = parseNote(RAW_NOTE, "/notes/rule-builder.md");
+    expect(absent.frontmatter.template).toBeUndefined();
+    expect(serializeNote(absent)).not.toContain("template:");
+
+    const flagged = parseNote(
+      RAW_NOTE.replace("---\n", "---\ntemplate: true\n"),
+      "/notes/rule-builder.md",
+    );
+    expect(flagged.frontmatter.template).toBe(true);
+    const stored = serializeNote(flagged);
+    expect(stored).toContain("template: true");
+    expect(parseNote(stored, "/notes/rule-builder.md").frontmatter.template).toBe(true);
+
+    const unmarked = parseNote(
+      "---\nid: abc\ntitle: Off\ntemplate: false\n---\nbody",
+      "/notes/off.md",
+    );
+    expect(unmarked.frontmatter.template).toBe(false);
+    expect(serializeNote(unmarked)).toContain("template: false");
+  });
+
+  it("drops a non-boolean template value instead of keeping it", () => {
+    const note = parseNote(
+      "---\nid: abc\ntitle: Odd\ntemplate: yes-please\n---\nbody",
+      "/notes/odd.md",
+    );
+    expect(note.frontmatter.template).toBeUndefined();
+    expect(serializeNote(note)).not.toContain("template:");
+  });
+
   // js-yaml turns an *unquoted* ISO value into a JS Date, which would break
   // every string comparison in the app. Helm always writes them quoted, but a
   // hand-edited file can still hand us one.

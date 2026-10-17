@@ -9,10 +9,11 @@ import { move } from "@dnd-kit/helpers";
 import { type DragDropEventHandlers, DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ulid } from "ulid";
+import { NewNoteMenu } from "../components/sidebar/NewNoteMenu";
 import { isArchived, visibleNotes } from "../lib/archive";
 import { EISENHOWER_QUADRANTS } from "../lib/constants";
-import { noteFilePath, serializeNote } from "../lib/note-parser";
+import { createNote } from "../lib/create-note";
+import { serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
@@ -90,11 +91,13 @@ function NoteCard({
 function Quadrant({
   id,
   notes,
+  disabled,
   onCreate,
 }: {
   id: EisenhowerQuadrant;
   notes: Note[];
-  onCreate: () => void;
+  disabled?: boolean;
+  onCreate: (templateId: string | null) => void;
 }) {
   const { ref, isDropTarget } = useDroppable({
     id,
@@ -117,25 +120,14 @@ function Quadrant({
             <p className="card-title text-sm">{q.label}</p>
             <p className="text-xs opacity-50">{q.subtitle}</p>
           </div>
-          <button
-            type="button"
-            onClick={onCreate}
-            title="New note in this quadrant"
+          <NewNoteMenu
+            ariaLabel={`New note in ${q.label}`}
+            title={`New note in ${q.label}`}
+            icon="uil:plus"
+            disabled={disabled}
             className="btn btn-ghost btn-sm btn-square"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              aria-hidden="true"
-            >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
+            onSelect={onCreate}
+          />
         </div>
         <div className="flex flex-col gap-2">
           {notes.map((n, index) => (
@@ -149,7 +141,7 @@ function Quadrant({
 }
 
 export function EisenhowerView() {
-  const { notes: allNotes, updateNote, addNote, vaults, activeVaultId } = useNoteStore();
+  const { notes: allNotes, updateNote, vaults, activeVaultId } = useNoteStore();
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
   const notes = useMemo(
     () => visibleNotes(allNotes, showArchivedNotes),
@@ -282,38 +274,13 @@ export function EisenhowerView() {
     await Promise.all(writes);
   }
 
-  async function createNoteInQuadrant(quadrant: EisenhowerQuadrant) {
-    if (!vault) return;
+  function createNoteInQuadrant(quadrant: EisenhowerQuadrant, templateId: string | null) {
     const q = EISENHOWER_QUADRANTS[quadrant];
-    const id = ulid();
-    const filePath = noteFilePath(vault.path, id.toLowerCase());
-    const createdAt = nowTimestamp();
-    const note: Note = {
-      id,
-      filePath,
-      fileName: filePath.split("/").at(-1) ?? "",
-      content: "",
-      vaultId: vault.id,
-      frontmatter: {
-        id,
-        title: "Untitled",
-        created: createdAt,
-        updated: createdAt,
-        tags: [],
-        urgent: q.urgent,
-        important: q.important,
-        state: "Prepare",
-        blocked: false,
-        links: [],
-      },
-    };
-    try {
-      await tauriCommands.writeNote(filePath, serializeNote(note));
-      addNote(note);
-      navigate({ view: "notes", selectedNoteId: id, selectedGrouping });
-    } catch (e) {
-      reportError("Failed to create note", e);
-    }
+    void createNote({
+      templateId,
+      recordNavigation: true,
+      overrides: { urgent: q.urgent, important: q.important },
+    });
   }
 
   return (
@@ -331,7 +298,8 @@ export function EisenhowerView() {
               key={q}
               id={q}
               notes={quadrantNotes[q] ?? []}
-              onCreate={() => createNoteInQuadrant(q)}
+              disabled={!vault}
+              onCreate={(templateId) => createNoteInQuadrant(q, templateId)}
             />
           ))}
         </div>

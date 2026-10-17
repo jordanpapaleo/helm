@@ -68,6 +68,7 @@ export default function App() {
       const fns: Array<() => void> = [];
 
       fns.push(await listen("show-mcp-setup", () => setShowMcpSetup(true)));
+      fns.push(await listen("new-note", () => useUIStore.getState().openNewNoteMenu()));
       fns.push(await listen("open-settings", () => useUIStore.getState().setSettingsOpen(true)));
       fns.push(await listen("toggle-markdown", () => useUIStore.getState().toggleMarkdownMode()));
       fns.push(

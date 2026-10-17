@@ -1,11 +1,19 @@
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseNote } from "../lib/note-parser";
 import { DEFAULT_SETTINGS } from "../lib/settings";
+import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
 import { useSettingsStore } from "../store/settings";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
 import { KanbanView } from "./KanbanView";
+
+vi.mock("../lib/tauri-commands", () => ({
+  tauriCommands: {
+    writeNote: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {
@@ -118,5 +126,52 @@ describe("KanbanView — archived notes", () => {
     render(<KanbanView />);
     expect(screen.getByText("Archived Card")).toBeInTheDocument();
     expect(screen.getByText("Archived")).toBeInTheDocument();
+  });
+});
+
+describe("KanbanView — new note menu", () => {
+  it("creates from a template in the chosen column and sets that column's state", async () => {
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "tmpl",
+          filePath: "/vault/bug.md",
+          fileName: "bug.md",
+          content: "column body",
+          frontmatter: {
+            id: "tmpl",
+            title: "Bug report",
+            created: "2026-01-01",
+            updated: "2026-01-01",
+            tags: ["eng"],
+            urgent: true,
+            important: false,
+            state: "Maintain",
+            blocked: false,
+            links: [],
+            template: true,
+            kanbanOrder: 9,
+          },
+        }),
+      ],
+    });
+
+    render(<KanbanView />);
+    fireEvent.click(screen.getByRole("button", { name: "New note in Doing" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Bug report" }));
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    const [filePath, raw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
+    const parsed = parseNote(raw ?? "", filePath ?? "");
+    expect(parsed.frontmatter.title).toBe("Bug report");
+    expect(parsed.frontmatter.state).toBe("Doing");
+    expect(parsed.frontmatter.urgent).toBe(false);
+    expect(parsed.frontmatter.important).toBe(false);
+    expect(parsed.frontmatter.tags).toEqual(["eng"]);
+    expect(parsed.content.trim()).toBe("column body");
+    expect(parsed.frontmatter.template).toBe(false);
+    expect(parsed.frontmatter.kanbanOrder).toBeUndefined();
+    expect(raw).not.toContain("kanbanOrder");
+    expect(useUIStore.getState().activeView).toBe("notes");
   });
 });

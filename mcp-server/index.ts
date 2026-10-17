@@ -56,6 +56,8 @@ interface NoteData {
   links?: string[];
   /** true hides the note from default queries; absent or false means active */
   archived?: boolean;
+  /** Absent means false. True offers the note as a reusable template. */
+  template?: boolean;
   [key: string]: unknown;
 }
 
@@ -79,8 +81,13 @@ function normalizeNoteData(data: Record<string, unknown>): NoteData {
   const fm = data as NoteData;
   const created = normalizeTimestamp(data.created);
   const updated = normalizeTimestamp(data.updated);
-  if (created === fm.created && updated === fm.updated) return fm;
-  return { ...fm, created: created ?? "", updated: updated ?? "" };
+  const template = data.template === true ? true : data.template === false ? false : undefined;
+  const templateChanged = template !== fm.template;
+  if (created === fm.created && updated === fm.updated && !templateChanged) return fm;
+  const next: NoteData = { ...fm, created: created ?? "", updated: updated ?? "" };
+  if (template === undefined) delete next.template;
+  else next.template = template;
+  return next;
 }
 
 function listAllNotes(): Note[] {
@@ -215,6 +222,7 @@ function noteSummary(n: Note) {
     team: n.frontmatter.team,
     links: n.frontmatter.links ?? [],
     archived: isArchived(n.frontmatter),
+    ...(n.frontmatter.template === true ? { template: true } : {}),
     vault: n.vaultName,
     preview: n.content.slice(0, 300).trim(),
   };
@@ -250,6 +258,12 @@ FRONTMATTER FIELDS
 • locked: boolean — note is read-only (only changeable in the Helm app)
 • pinned: boolean — floats to top of lists
 • archived: boolean — true hides the note from default queries; absent or false means active. See ARCHIVED NOTES.
+• template: boolean — when true, Helm lists this note in New Note menus. Absent means false.
+  A note created from a template copies the title, the body, and the tags. It does not copy
+  state, urgent, important, blocked, pinned, locked, or links. The new note keeps its own id,
+  created, and updated, and sets template: false. Workflow fields stay blank unless creation
+  context sets them (a Kanban column sets state, an Eisenhower cell sets urgent/important, a
+  selected tag is applied). Those come from where the note was created, never from the template.
 • deadline: YYYY-MM-DD
 • team: string[] — team member names (freeform strings)
 • links: string[] — ULIDs of linked notes (outbound graph edges)
@@ -491,6 +505,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description:
               "Vault name to create the note in. Defaults to the first configured vault.",
           },
+          template: {
+            type: "boolean",
+            description:
+              "Mark the new note as a reusable template. Omit to leave the field unset (not a template).",
+          },
         },
         required: ["title"],
       },
@@ -513,7 +532,7 @@ Read get_rules for full merge semantics.`,
           frontmatter: {
             type: "object",
             description:
-              "Frontmatter fields to shallow-merge in. Safe fields: title, tags, links, urgent, important, state, blocked, pinned, archived, deadline, team. Protected: id, locked (ignored if provided).",
+              "Frontmatter fields to shallow-merge in. Safe fields: title, tags, links, urgent, important, state, blocked, pinned, archived, template, deadline, team. Protected: id, locked (ignored if provided).",
           },
           append_tags: {
             type: "array",
@@ -933,6 +952,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       links: (args?.links as string[]) ?? [],
       ...(args?.deadline ? { deadline: String(args.deadline) } : {}),
       ...(args?.team ? { team: args.team as string[] } : {}),
+      ...(args?.template === true ? { template: true } : {}),
     };
 
     writeNote(filePath, frontmatter, content);
@@ -1000,6 +1020,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       locked: note.frontmatter.locked, // never overwrite
       updated: nowTimestamp(),
     };
+
+    // `template` is a real boolean. A non-boolean value must not land on disk.
+    if ("template" in incoming) {
+      updatedFrontmatter.template = incoming.template === true;
+    }
 
     // Time machine: snapshot the current on-disk version before overwriting,
     // mirroring what the Helm app does. Never blocks the write.

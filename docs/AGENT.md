@@ -55,6 +55,7 @@ Note content in standard markdown. You can reference other notes with [[Wiki Lin
 | `blocked` | boolean | no | Whether the note is blocked from progress. Default `false`. |
 | `locked` | boolean | no | If `true`, the note is read-only in the UI. Default `false`. |
 | `pinned` | boolean | no | If `true`, the note floats to the top of all lists. Default `false`. |
+| `template` | boolean | no | If `true`, Helm offers this note in New Note menus. Absent means false. |
 | `deadline` | string (ISO date) | no | Optional deadline. |
 | `team` | string[] | no | Optional list of responsible people. |
 | `links` | string[] | no | ULIDs of notes this note links to (populated from `[[wiki links]]` on save). |
@@ -70,6 +71,18 @@ Every note has a ULID as its `id`. ULIDs are 26-character uppercase strings like
 - The `links` field stores the ULIDs of linked notes, not their titles or filenames.
 
 ---
+
+## Templates
+
+A note with `template: true` is a reusable starting point. Helm copies its title, body, and tags into a **new** note. Do not edit the template to "fill it in."
+
+Copied: title, body, and `tags` (they describe the kind of note).
+
+Not copied: `state`, `urgent`, `important`, `blocked`, `pinned`, `locked`, and `links`. The new note starts with blank workflow front matter. It keeps its own `id`, `created`, and `updated`, and sets `template: false`. Deadline, team, unmanaged, custom keys, and board order are not inherited either.
+
+Creation context is the only reason to set workflow fields, and it overrides those blank defaults: a Kanban column sets `state`, an Eisenhower cell sets `urgent` / `important`, and a selected sidebar tag is applied. Those come from where the note was created, never from the template.
+
+Preserve a `template` key you did not mean to change. `update_note` shallow-merges it like any other safe field.
 
 ## Tags
 

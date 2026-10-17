@@ -9,10 +9,11 @@ import { move } from "@dnd-kit/helpers";
 import { type DragDropEventHandlers, DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ulid } from "ulid";
+import { NewNoteMenu } from "../components/sidebar/NewNoteMenu";
 import { isArchived, visibleNotes } from "../lib/archive";
 import { NOTE_STATES } from "../lib/constants";
-import { noteFilePath, serializeNote } from "../lib/note-parser";
+import { createNote } from "../lib/create-note";
+import { serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
@@ -77,11 +78,13 @@ function KanbanCard({ note, index, column }: { note: Note; index: number; column
 function KanbanColumn({
   state,
   notes,
+  disabled,
   onCreate,
 }: {
   state: NoteState;
   notes: Note[];
-  onCreate: () => void;
+  disabled?: boolean;
+  onCreate: (templateId: string | null) => void;
 }) {
   const { ref, isDropTarget } = useDroppable({
     id: state,
@@ -103,25 +106,13 @@ function KanbanColumn({
             <p className="card-title text-sm">{state}</p>
             <span className="badge badge-ghost badge-sm">{notes.length}</span>
           </div>
-          <button
-            type="button"
-            onClick={onCreate}
-            title={`New note in ${state}`}
+          <NewNoteMenu
+            ariaLabel={`New note in ${state}`}
+            icon="uil:plus"
+            disabled={disabled}
             className="btn btn-ghost btn-sm btn-square"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              aria-hidden="true"
-            >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
+            onSelect={onCreate}
+          />
         </div>
         <div className="flex flex-col gap-2">
           {notes.map((n, index) => (
@@ -134,13 +125,12 @@ function KanbanColumn({
 }
 
 export function KanbanView() {
-  const { notes: allNotes, updateNote, addNote, vaults, activeVaultId } = useNoteStore();
+  const { notes: allNotes, updateNote, vaults, activeVaultId } = useNoteStore();
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
   const notes = useMemo(
     () => visibleNotes(allNotes, showArchivedNotes),
     [allNotes, showArchivedNotes],
   );
-  const { navigate, selectedGrouping } = useUIStore();
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const [items, setItems] = useState<Record<string, string[]>>(() => {
@@ -258,37 +248,12 @@ export function KanbanView() {
     await Promise.all(writes);
   }
 
-  async function createNoteInColumn(state: NoteState) {
-    if (!vault) return;
-    const id = ulid();
-    const filePath = noteFilePath(vault.path, id.toLowerCase());
-    const createdAt = nowTimestamp();
-    const note: Note = {
-      id,
-      filePath,
-      fileName: filePath.split("/").at(-1) ?? "",
-      content: "",
-      vaultId: vault.id,
-      frontmatter: {
-        id,
-        title: "Untitled",
-        created: createdAt,
-        updated: createdAt,
-        tags: [],
-        urgent: false,
-        important: false,
-        state,
-        blocked: false,
-        links: [],
-      },
-    };
-    try {
-      await tauriCommands.writeNote(filePath, serializeNote(note));
-      addNote(note);
-      navigate({ view: "notes", selectedNoteId: id, selectedGrouping });
-    } catch (e) {
-      reportError("Failed to create note", e);
-    }
+  function createNoteInColumn(state: NoteState, templateId: string | null) {
+    void createNote({
+      templateId,
+      recordNavigation: true,
+      overrides: { state },
+    });
   }
 
   return (
@@ -306,7 +271,8 @@ export function KanbanView() {
               key={state}
               state={state as NoteState}
               notes={columnNotes[state] ?? []}
-              onCreate={() => createNoteInColumn(state as NoteState)}
+              disabled={!vault}
+              onCreate={(templateId) => createNoteInColumn(state as NoteState, templateId)}
             />
           ))}
         </div>

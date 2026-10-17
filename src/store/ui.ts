@@ -36,6 +36,10 @@ interface UIStore {
   markdownMode: boolean;
   toggleMarkdownMode: () => void;
   setMarkdownMode: (v: boolean) => void;
+  /** File ▸ New Note opens the shared Blank/template menu. */
+  newNoteMenuOpen: boolean;
+  openNewNoteMenu: () => void;
+  closeNewNoteMenu: () => void;
 
   navHistory: NavEntry[];
   navIndex: number;
@@ -60,6 +64,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
   markdownMode: false,
   toggleMarkdownMode: () => set((s) => ({ markdownMode: !s.markdownMode })),
   setMarkdownMode: (markdownMode) => set({ markdownMode }),
+  newNoteMenuOpen: false,
+  openNewNoteMenu: () => set({ newNoteMenuOpen: true }),
+  closeNewNoteMenu: () => set({ newNoteMenuOpen: false }),
 
   navHistory: [initialEntry],
   navIndex: 0,

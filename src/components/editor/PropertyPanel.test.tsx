@@ -163,6 +163,30 @@ describe("PropertyPanel timestamp display", () => {
   });
 });
 
+describe("PropertyPanel template flag", () => {
+  it("marks and unmarks the note as a template", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PropertyPanel frontmatter={makeFrontmatter()} onChange={onChange} />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Template"));
+    expect(onChange).toHaveBeenCalledWith({ template: true });
+
+    rerender(
+      <PropertyPanel frontmatter={makeFrontmatter({ template: true })} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByLabelText("Template"));
+    expect(onChange).toHaveBeenLastCalledWith({ template: false });
+  });
+
+  it("does not surface template as an extra frontmatter field", () => {
+    render(<PropertyPanel frontmatter={makeFrontmatter({ template: true })} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+    expect(screen.queryByText("template")).not.toBeInTheDocument();
+  });
+});
+
 describe("PropertyPanel export to PDF", () => {
   it("offers a labelled export button that calls onExportPdf", () => {
     const onExportPdf = vi.fn();

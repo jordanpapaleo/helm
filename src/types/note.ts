@@ -70,6 +70,11 @@ export interface NoteFrontmatter {
   kanbanOrder?: number;
   /** Position index within an Eisenhower quadrant (persists drag-and-drop order) */
   eisenhowerOrder?: number;
+  /**
+   * When true, the note is offered as a reusable template in New Note menus.
+   * Absent means false. A note created from a template does not inherit this flag.
+   */
+  template?: boolean;
   /** Allow arbitrary extra fields in frontmatter */
   [key: string]: unknown;
 }

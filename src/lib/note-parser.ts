@@ -56,6 +56,12 @@ export function parseNote(raw: string, filePath: string): Note {
     tags: mergedTags, // must be after ...data spread to include inline tags
   };
 
+  // Absent means "not a template". Only a real boolean is kept — a stray string
+  // must not survive into the typed field or into the next write.
+  if (data.template === true) frontmatter.template = true;
+  else if (data.template === false) frontmatter.template = false;
+  else delete frontmatter.template;
+
   return { id: frontmatter.id, frontmatter, content, filePath, fileName, vaultId: "" };
 }
 

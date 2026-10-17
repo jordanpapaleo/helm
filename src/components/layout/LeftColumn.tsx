@@ -321,14 +321,8 @@ export function LeftColumn() {
   const [folderMenu, setFolderMenu] = useState<MenuState>(null);
   const { activeView, setView, selectedGrouping, setSelectedGrouping, setSettingsOpen, navigate } =
     useUIStore();
-  const {
-    notes,
-    vaults,
-    activeVaultId,
-    setActiveVaultId,
-    knownFolderPaths,
-    selectedNoteId,
-  } = useNoteStore();
+  const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, selectedNoteId } =
+    useNoteStore();
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
   const discoveryNotes = useMemo(
     () => visibleNotes(notes, showArchivedNotes),

@@ -14,10 +14,11 @@
 //!   files before it changes the worktree.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -710,12 +711,18 @@ fn excluded_path(path: &str) -> bool {
         || path.starts_with(".git/")
 }
 
-fn parse_porcelain(stdout: &str) -> Vec<String> {
+struct StatusPath {
+    untracked: bool,
+    path: String,
+}
+
+fn parse_status(stdout: &str) -> Vec<StatusPath> {
     let mut files = Vec::new();
     for line in stdout.lines() {
         if line.len() < 4 {
             continue;
         }
+        let untracked = line.starts_with("??");
         let raw = line[3..].trim();
         let path = raw
             .rsplit(" -> ")
@@ -723,50 +730,175 @@ fn parse_porcelain(stdout: &str) -> Vec<String> {
             .unwrap_or(raw)
             .trim()
             .trim_matches('"');
-        if path.is_empty() || excluded_path(path) {
+        if path.is_empty() || path == ".git" || path.starts_with(".git/") {
             continue;
         }
-        files.push(path.to_string());
+        files.push(StatusPath {
+            untracked,
+            path: path.to_string(),
+        });
     }
     files
 }
 
+/// Every file `git add -A` can see, including dotfiles. `.git` itself is not a vault file.
 fn walk_files(dir: &Path, root: &Path, out: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
-    for entry in entries.flatten() {
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || name.ends_with('~') || name.ends_with(".tmp") {
+        if name == ".git" {
             continue;
         }
         if path.is_dir() {
             walk_files(&path, root, out);
         } else if let Ok(rel) = path.strip_prefix(root) {
             let rel = rel.to_string_lossy().replace('\\', "/");
-            if !excluded_path(&rel) {
+            if !rel.is_empty() {
                 out.push(rel);
             }
         }
     }
 }
 
-fn candidate_files(repo: &Path) -> Vec<String> {
-    if is_git_repo(repo) {
-        if let Ok(out) = run_sync_git(
-            repo,
-            &args(&["status", "--porcelain", "-uall"]),
-            LOCAL_TIMEOUT,
-        ) {
-            if out.code == 0 {
-                return parse_porcelain(&out.stdout);
-            }
-        }
+fn read_gitignore_text(repo: &Path) -> String {
+    fs::read_to_string(repo.join(".gitignore")).unwrap_or_default()
+}
+
+fn future_gitignore(repo: &Path) -> String {
+    upsert_block(&read_gitignore_text(repo))
+}
+
+fn fallback_ignored(paths: &[String]) -> HashSet<String> {
+    paths
+        .iter()
+        .filter(|path| excluded_path(path))
+        .cloned()
+        .collect()
+}
+
+/// Ask Git which of `paths` the gitignore Helm will have written would ignore.
+fn ignored_by(gitignore: &str, paths: &[String]) -> HashSet<String> {
+    if paths.is_empty() {
+        return HashSet::new();
     }
+    static TICK: AtomicU64 = AtomicU64::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "helm-ignore-{}-{}",
+        std::process::id(),
+        TICK.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    if fs::create_dir_all(&dir).is_err() {
+        return fallback_ignored(paths);
+    }
+    let init = run_sync_git(&dir, &args(&["init", "-q", "-b", "main"]), LOCAL_TIMEOUT);
+    if !matches!(&init, Ok(out) if out.code == 0) {
+        let _ = fs::remove_dir_all(&dir);
+        return fallback_ignored(paths);
+    }
+    if fs::write(dir.join(".gitignore"), gitignore).is_err() {
+        let _ = fs::remove_dir_all(&dir);
+        return fallback_ignored(paths);
+    }
+    let bin = match resolve_git() {
+        Ok(bin) => bin,
+        Err(_) => {
+            let _ = fs::remove_dir_all(&dir);
+            return fallback_ignored(paths);
+        }
+    };
+    let mut spec = Vec::new();
+    for path in paths {
+        spec.extend(path.as_bytes());
+        spec.push(0);
+    }
+    let mut cmd = Command::new(bin);
+    cmd.args(["check-ignore", "-z", "--stdin"])
+        .current_dir(&dir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let checked = (|| {
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        {
+            use std::io::Write;
+            let mut stdin = child.stdin.take().ok_or("git check-ignore stdin")?;
+            stdin.write_all(&spec).map_err(|e| e.to_string())?;
+        }
+        child.wait_with_output().map_err(|e| e.to_string())
+    })();
+    let _ = fs::remove_dir_all(&dir);
+    match checked {
+        Ok(out) if out.status.code() == Some(0) || out.status.code() == Some(1) => {
+            String::from_utf8_lossy(&out.stdout)
+                .split('\0')
+                .filter(|path| !path.is_empty())
+                .map(|path| path.to_string())
+                .collect()
+        }
+        _ => fallback_ignored(paths),
+    }
+}
+
+fn include_gitignore_if_rewritten(repo: &Path, gitignore: &str, files: &mut Vec<String>) {
+    if read_gitignore_text(repo) == gitignore || files.iter().any(|file| file == ".gitignore") {
+        return;
+    }
+    files.push(".gitignore".to_string());
+}
+
+fn status_entries(repo: &Path) -> Option<Vec<StatusPath>> {
+    let out = run_sync_git(
+        repo,
+        &args(&["status", "--porcelain", "-uall"]),
+        LOCAL_TIMEOUT,
+    )
+    .ok()?;
+    if out.code != 0 {
+        return None;
+    }
+    Some(parse_status(&out.stdout))
+}
+
+fn walked_candidates(repo: &Path, gitignore: &str) -> Vec<String> {
     let mut files = Vec::new();
     walk_files(repo, repo, &mut files);
+    let ignored = ignored_by(gitignore, &files);
+    files.retain(|path| !ignored.contains(path));
+    files
+}
+
+/// Paths the next checkpoint will stage. Hidden files are included when Git would add them.
+fn candidate_files(repo: &Path) -> Vec<String> {
+    let gitignore = future_gitignore(repo);
+    let mut files = if is_git_repo(repo) {
+        if let Some(entries) = status_entries(repo) {
+            let untracked: Vec<String> = entries
+                .iter()
+                .filter(|entry| entry.untracked)
+                .map(|entry| entry.path.clone())
+                .collect();
+            let ignored = ignored_by(&gitignore, &untracked);
+            entries
+                .into_iter()
+                .filter(|entry| !entry.untracked || !ignored.contains(&entry.path))
+                .map(|entry| entry.path)
+                .collect()
+        } else {
+            walked_candidates(repo, &gitignore)
+        }
+    } else {
+        walked_candidates(repo, &gitignore)
+    };
+    include_gitignore_if_rewritten(repo, &gitignore, &mut files);
     files.sort();
+    files.dedup();
     files
 }
 
@@ -1758,6 +1890,81 @@ mod tests {
         let other = clone_of(&remote, "empty-other");
         assert_eq!(read(&other.join("note.md")), "hello");
         assert!(!other.join("scratch.tmp").exists());
+    }
+
+    #[test]
+    fn preview_lists_hidden_files_that_the_checkpoint_commits() {
+        let remote = bare("hidden-remote");
+        let vault = temp("hidden-vault");
+        fs::write(vault.join("note.md"), "hello").unwrap();
+        fs::write(vault.join(".env"), "SECRET=1\n").unwrap();
+        fs::create_dir(vault.join(".secrets")).unwrap();
+        fs::write(vault.join(".secrets").join("credentials"), "token\n").unwrap();
+        fs::write(vault.join("scratch.tmp"), "temp").unwrap();
+        fs::create_dir_all(vault.join(".helm-history")).unwrap();
+        fs::write(vault.join(".helm-history").join("old.md"), "snap").unwrap();
+
+        let preview = with_repo(vault.to_str().unwrap(), |repo| {
+            preview_repo(repo, remote.to_str().unwrap(), "main")
+        })
+        .unwrap();
+        assert!(preview.files.iter().any(|f| f == ".env"));
+        assert!(preview.files.iter().any(|f| f == ".secrets/credentials"));
+        assert!(preview.files.iter().any(|f| f == "note.md"));
+        assert!(preview.files.iter().any(|f| f == ".gitignore"));
+        assert!(!preview.files.iter().any(|f| f.ends_with(".tmp")));
+        assert!(!preview.files.iter().any(|f| f.contains(".helm-history")));
+
+        with_repo(vault.to_str().unwrap(), |repo| {
+            connect_repo(repo, remote.to_str().unwrap(), "main")
+        })
+        .unwrap();
+        let pushed = with_repo(vault.to_str().unwrap(), sync_now_repo).unwrap();
+        assert_eq!(pushed.state, "synced", "{}", pushed.message);
+        let listed = Command::new("git")
+            .args(["ls-files"])
+            .current_dir(&vault)
+            .output()
+            .unwrap();
+        let committed = String::from_utf8_lossy(&listed.stdout);
+        let mut got: Vec<&str> = committed.lines().collect();
+        got.sort();
+        let mut expected: Vec<&str> = preview.files.iter().map(String::as_str).collect();
+        expected.sort();
+        assert_eq!(got, expected);
+        assert!(!got
+            .iter()
+            .any(|f| *f == "scratch.tmp" || f.contains(".helm-history")));
+    }
+
+    #[test]
+    fn preview_omits_hidden_files_the_user_already_ignores() {
+        let remote = bare("ignored-secret-remote");
+        let vault = temp("ignored-secret-vault");
+        fs::write(vault.join(".gitignore"), ".env\n").unwrap();
+        fs::write(vault.join(".env"), "SECRET=1\n").unwrap();
+        fs::write(vault.join("note.md"), "hello").unwrap();
+
+        let preview = with_repo(vault.to_str().unwrap(), |repo| {
+            preview_repo(repo, remote.to_str().unwrap(), "main")
+        })
+        .unwrap();
+        assert!(preview.files.iter().any(|f| f == "note.md"));
+        assert!(!preview.files.iter().any(|f| f == ".env"));
+
+        with_repo(vault.to_str().unwrap(), |repo| {
+            connect_repo(repo, remote.to_str().unwrap(), "main")
+        })
+        .unwrap();
+        with_repo(vault.to_str().unwrap(), sync_now_repo).unwrap();
+        let listed = Command::new("git")
+            .args(["ls-files"])
+            .current_dir(&vault)
+            .output()
+            .unwrap();
+        let committed = String::from_utf8_lossy(&listed.stdout);
+        assert!(!committed.lines().any(|f| f == ".env"));
+        assert!(committed.lines().any(|f| f == "note.md"));
     }
 
     #[test]

@@ -80,6 +80,7 @@ import {
 import { wikiLinkCandidates } from "../../lib/archive";
 import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-position";
 import { decideEditorSync } from "../../lib/git-sync";
+import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -163,6 +164,9 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     notesRef.current = notes;
     const noteIdRef = useRef(note.id);
     noteIdRef.current = note.id;
+    // The note whose body is currently loaded. Updated only when that body is
+    // replaced, so leaving a note can still see the id render has already moved.
+    const loadedNoteIdRef = useRef(note.id);
     const popupRef = useRef(popup);
     popupRef.current = popup;
     const setPopupRef = useRef(setPopup);
@@ -347,6 +351,8 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       editorProps,
       content: initialContentRef.current,
     });
+    const editorInstanceRef = useRef(editor);
+    editorInstanceRef.current = editor;
 
     // Placing the caret is a selection-only transaction. TipTap emits `update`
     // only when the doc actually changed, so restoring a cursor can never wake
@@ -409,13 +415,53 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // TipTap v3 emits `update` from setContent by default, which would schedule
     // the debounced auto-save and rewrite the note (bumping `updated`) merely
     // because it was opened.
+    // A sync hold does not survive this reload: the keystrokes are kept as a
+    // draft and shown again, and later saves are allowed.
     // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
-      if (editor) {
-        editor.commands.setContent(note.content, { emitUpdate: false });
-        lastSavedContentRef.current = note.content;
+      if (!editor) return;
+      const previous = loadedNoteIdRef.current;
+      if (previous !== note.id) {
+        const store = useGitSyncStore.getState();
+        if (
+          store.isHeld(previous) ||
+          store.heldDraft(previous) ||
+          store.isWriteBlocked(previous, vaultPathRef.current)
+        ) {
+          if (dirtyRef.current || store.isHeld(previous)) {
+            store.preserveHeldDraft(previous, getEditorMarkdown(editor));
+          }
+          store.releaseNote(previous);
+        }
       }
+      loadedNoteIdRef.current = note.id;
+      const store = useGitSyncStore.getState();
+      const draft = store.heldDraft(note.id);
+      if (draft && normalizeContent(draft) !== normalizeContent(note.content)) {
+        editor.commands.setContent(draft, { emitUpdate: false });
+        lastSavedContentRef.current = note.content;
+        dirtyRef.current = true;
+        store.releaseNote(note.id);
+        return;
+      }
+      editor.commands.setContent(note.content, { emitUpdate: false });
+      lastSavedContentRef.current = note.content;
+      dirtyRef.current = false;
+      store.releaseNote(note.id);
+      store.clearHeldDraft(note.id);
     }, [note.id]);
+
+    useEffect(() => {
+      return () => {
+        const id = loadedNoteIdRef.current;
+        const current = editorInstanceRef.current;
+        if (!current || current.isDestroyed) return;
+        const store = useGitSyncStore.getState();
+        if (!store.isHeld(id)) return;
+        store.preserveHeldDraft(id, getEditorMarkdown(current));
+        store.releaseNote(id);
+      };
+    }, []);
 
     // Reload editor when the file is updated externally (e.g. by Claude Code or MCP).
     // We distinguish external changes from our own saves by tracking lastSavedContentRef.
@@ -438,6 +484,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       if (decision === "hold") {
         // The file on disk is the synced version. Leave the newer keystrokes
         // in the editor and block writes until the note is reloaded.
+        useGitSyncStore.getState().preserveHeldDraft(note.id, getEditorMarkdown(editor));
         useGitSyncStore.getState().holdNote(note.id);
         return;
       }
@@ -498,10 +545,13 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         useNoteStore.getState().vaults.find((vault) => vault.id === note.vaultId)?.path ?? null;
       if (useGitSyncStore.getState().isWriteBlocked(note.id, vaultPath)) {
         dirtyRef.current = true;
+        useGitSyncStore.getState().preserveHeldDraft(note.id, md);
         return;
       }
       lastSavedContentRef.current = md; // mark as our own save so the file watcher doesn't reload
       dirtyRef.current = false;
+      useGitSyncStore.getState().clearHeldDraft(note.id);
+      useGitSyncStore.getState().releaseNote(note.id);
       return onSave(md);
     }, [editor, note.id, note.vaultId, onSave]);
 

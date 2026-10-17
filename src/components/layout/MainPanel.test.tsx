@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { todayDate } from "../../lib/timestamps";
+import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { useUIStore } from "../../store/ui";
@@ -309,6 +310,12 @@ function textarea(): HTMLTextAreaElement {
 describe("MainPanel — the markdown view follows external writes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useGitSyncStore.setState({
+      byVaultId: {},
+      barrierPaths: [],
+      heldNoteIds: [],
+      heldDrafts: {},
+    });
   });
 
   // An external write is anything that rewrites the open note's body without
@@ -434,6 +441,52 @@ describe("MainPanel — the markdown view follows external writes", () => {
       useNoteStore.getState().selectNote(first.id);
     });
     expect(textarea().value).toBe("First body");
+  });
+
+  it("does not write a markdown edit over a pulled note, and keeps it after leaving", async () => {
+    const note = makeNote({ content: "Original body" });
+    setup(note, true);
+
+    fireEvent.change(textarea(), { target: { value: "Half-typed sentence" } });
+    externalWrite("Pulled from the other computer");
+
+    expect(textarea().value).toBe("Half-typed sentence");
+    expect(useGitSyncStore.getState().isHeld(note.id)).toBe(true);
+
+    await act(async () => {
+      fireEvent.blur(textarea());
+    });
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes[0].content).toBe("Pulled from the other computer");
+
+    const pulled = useNoteStore.getState().notes[0];
+    const second = makeNote({
+      id: "01JPMXYZ456",
+      filePath: "/vault/other.md",
+      fileName: "other.md",
+      content: "Second body",
+      frontmatter: { ...makeNote().frontmatter, id: "01JPMXYZ456", title: "Other" },
+    });
+    act(() => {
+      useNoteStore.setState({ notes: [pulled, second] });
+      useNoteStore.getState().selectNote(second.id);
+    });
+    expect(useGitSyncStore.getState().isHeld(note.id)).toBe(false);
+    expect(useGitSyncStore.getState().heldDraft(note.id)).toBe("Half-typed sentence");
+
+    act(() => {
+      useNoteStore.getState().selectNote(note.id);
+    });
+    expect(textarea().value).toBe("Half-typed sentence");
+    expect(useGitSyncStore.getState().isHeld(note.id)).toBe(false);
+
+    fireEvent.change(textarea(), { target: { value: "Half-typed sentence plus" } });
+    await act(async () => {
+      fireEvent.blur(textarea());
+    });
+    expect(tauriCommands.writeNote).toHaveBeenCalled();
+    const saved = String(vi.mocked(tauriCommands.writeNote).mock.calls.at(-1)?.[1]);
+    expect(saved).toContain("Half-typed sentence plus");
   });
 });
 

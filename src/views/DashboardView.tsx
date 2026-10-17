@@ -156,9 +156,7 @@ function BriefingSection({
           className="text-sm underline-offset-2 hover:underline"
         >
           {n.frontmatter.title || "Untitled"}
-          {isArchived(n.frontmatter) && (
-            <span className="ml-1 text-xs opacity-60">Archived</span>
-          )}
+          {isArchived(n.frontmatter) && <span className="ml-1 text-xs opacity-60">Archived</span>}
           {detail && <span className="ml-1 text-xs opacity-50">{detail(n)}</span>}
         </button>
       ))}

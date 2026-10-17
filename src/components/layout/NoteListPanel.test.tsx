@@ -192,7 +192,13 @@ describe("NoteListPanel — archive", () => {
     };
     active.frontmatter = { ...active.frontmatter, id: "active", title: "Current" };
     const archived = {
-      ...makeNote({ title: "Old", archived: true, state: "Doing", tags: ["keep"], links: ["active"] }),
+      ...makeNote({
+        title: "Old",
+        archived: true,
+        state: "Doing",
+        tags: ["keep"],
+        links: ["active"],
+      }),
       id: "old",
       filePath: "/vault/old.md",
       fileName: "old.md",

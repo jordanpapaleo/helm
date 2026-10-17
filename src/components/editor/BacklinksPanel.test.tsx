@@ -6,12 +6,7 @@ import { useSettingsStore } from "../../store/settings";
 import type { Note } from "../../types/note";
 import { BacklinksPanel } from "./BacklinksPanel";
 
-function makeNote(
-  id: string,
-  title: string,
-  links: string[] = [],
-  archived = false,
-): Note {
+function makeNote(id: string, title: string, links: string[] = [], archived = false): Note {
   return {
     id,
     filePath: `/vault/${id}.md`,

@@ -42,9 +42,10 @@ export function PanelSeparator({
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
-        onCommit(
-          clamp(width + (event.key === "ArrowRight" ? 10 : -10) * (panel === "right" ? -1 : 1)),
+        const value = clamp(
+          width + (event.key === "ArrowRight" ? 10 : -10) * (panel === "right" ? -1 : 1),
         );
+        if (value !== width) onCommit(value);
       }}
       onPointerDown={(event) => {
         if (event.button !== 0 || drag.current) return;
@@ -69,12 +70,12 @@ export function PanelSeparator({
       }}
       onPointerUp={(event) => {
         if (!drag.current) return;
-        const value = drag.current.value;
+        const { value, width: initialWidth } = drag.current;
         drag.current = null;
         event.currentTarget.releasePointerCapture(event.pointerId);
         restore.current?.();
         restore.current = null;
-        onCommit(value);
+        if (value !== initialWidth) onCommit(value);
         onPreview(null);
       }}
       onPointerCancel={() => {

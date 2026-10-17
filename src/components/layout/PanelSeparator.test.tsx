@@ -18,8 +18,9 @@ it("supports keyboard resizing, reversed on the right and clamped to bounds", ()
       onCommit={onCommit}
     />,
   );
+  onCommit.mockClear();
   fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowLeft" });
-  expect(onCommit).toHaveBeenLastCalledWith(180);
+  expect(onCommit).not.toHaveBeenCalled();
 });
 it("captures pointers, previews without committing, and restores body styles on cancel and unmount", () => {
   const onCommit = vi.fn();
@@ -47,4 +48,35 @@ it("captures pointers, previews without committing, and restores body styles on 
   unmount();
   expect(document.body.style.cursor).toBe("");
   vi.unstubAllGlobals();
+});
+
+it("does not persist auto-shrunk widths after clicks, clamped moves, or returning to the origin", () => {
+  const onCommit = vi.fn();
+  render(
+    <PanelSeparator
+      panel="navigation"
+      width={180}
+      max={220}
+      onPreview={vi.fn()}
+      onCommit={onCommit}
+    />,
+  );
+  const separator = screen.getByRole("separator");
+  separator.setPointerCapture = vi.fn();
+  separator.releasePointerCapture = vi.fn();
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  try {
+    for (const moves of [[], [150], [210, 180]]) {
+      fireEvent.pointerDown(separator, { button: 0, clientX: 180 });
+      for (const clientX of moves) fireEvent.pointerMove(separator, { clientX });
+      fireEvent.pointerUp(separator);
+    }
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.pointerDown(separator, { button: 0, clientX: 180 });
+    fireEvent.pointerMove(separator, { clientX: 210 });
+    fireEvent.pointerUp(separator);
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(210);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

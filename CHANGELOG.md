@@ -1,3 +1,19 @@
+## v1.4.0 — 2026-10-17
+
+- Keep sync preview and editor holds aligned with what Git does
+- Add optional per-vault Git remote sync
+- fix: drop unused board navigation bindings
+- fix: keep template menus reachable and current
+- fix: start template notes with blank workflow fields
+- feat: create notes from templates marked template: true
+- Format LeftColumn store destructure for biome
+- Withhold Delete for locked notes in the list
+- Format archive changes for biome
+- Add reversible note archiving and a show-archived setting
+- fix: preserve remembered panel widths on unchanged resize
+- feat: add resizable workspace panels and native toolbar
+- chore: update version to 1.3.0 in package-lock.json and Cargo.lock
+
 ## v1.3.0 — 2026-09-26
 
 - Hide mermaid source until explicitly opened

@@ -12,7 +12,6 @@ import { type TagNode, useNoteStore } from "../../store/notes";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { type Grouping, useUIStore, type View } from "../../store/ui";
-import { SettingsModal } from "../settings/SettingsModal";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
 import { RenameInput } from "../sidebar/RenameInput";
 
@@ -318,17 +317,8 @@ export function LeftColumn() {
   const [renamingFolderPath, setRenamingFolderPath] = useState<string | null>(null);
   const [renamingTag, setRenamingTag] = useState<string | null>(null);
   const [folderMenu, setFolderMenu] = useState<MenuState>(null);
-  const {
-    activeView,
-    setView,
-    selectedGrouping,
-    setSelectedGrouping,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    settingsOpen,
-    setSettingsOpen,
-    navigate,
-  } = useUIStore();
+  const { activeView, setView, selectedGrouping, setSelectedGrouping, setSettingsOpen, navigate } =
+    useUIStore();
   const {
     notes,
     vaults,
@@ -587,58 +577,8 @@ export function LeftColumn() {
     });
   }
 
-  if (sidebarCollapsed) {
-    return (
-      <div className="flex w-10 flex-col border-r border-base-300">
-        {/* View nav icons */}
-        <div className="flex flex-col py-2">
-          {VIEWS.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => {
-                setSidebarCollapsed(false);
-                navigate({ view: v.id, selectedNoteId, selectedGrouping });
-              }}
-              title={v.label}
-              className={`btn btn-ghost btn-xs btn-square w-full rounded-none ${activeView === v.id ? "text-base-content" : "opacity-40 hover:opacity-100"}`}
-            >
-              <Icon icon={v.icon} className="h-4 w-4" aria-hidden="true" />
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1" />
-
-        {/* Footer icons — same position as expanded state */}
-        <div className="flex flex-col border-t border-base-300 py-2">
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            title="Settings"
-            className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
-          >
-            <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed(false)}
-            title="Expand sidebar"
-            className="btn btn-ghost btn-xs btn-square ml-2 opacity-60 hover:opacity-100"
-          >
-            <Icon icon="uil:arrow-right" className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
-        {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
-      </div>
-    );
-  }
-
   return (
-    <div
-      className="flex flex-col border-r border-base-300"
-      style={{ width: "var(--sidebar-width)", minWidth: "var(--sidebar-width)" }}
-    >
+    <div className="flex h-full min-w-0 flex-col overflow-hidden border-r border-base-300">
       <div className="flex flex-1 flex-col overflow-hidden py-2">
         {/* View nav */}
         <ul className="mb-4">
@@ -840,17 +780,8 @@ export function LeftColumn() {
         >
           <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed(true)}
-          title="Collapse sidebar"
-          className="btn btn-ghost btn-xs btn-square opacity-60 hover:opacity-100"
-        >
-          <Icon icon="uil:arrow-left" className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
       </div>
 
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       {folderMenu && (
         <ContextMenu
           x={folderMenu.x}

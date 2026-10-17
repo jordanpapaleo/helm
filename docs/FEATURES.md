@@ -353,3 +353,11 @@ Files are stored by title slug (e.g., `example-note.md`) in the vault directory.
 6. **Explore**: View connections in the Graph, analyze in the Dashboard
 
 All data stays on your device; Helm is fully offline-capable.
+
+## Workspace panels
+
+A persistent toolbar provides Back/Forward navigation and independent left/right panel toggles in every view. On macOS, it shares the native title bar with the window controls; its empty space can be dragged to move the window. The left panel toggle sits before Back/Forward, and the right panel toggle sits at the far right. Controls use quiet hover feedback without a selected background. The left area includes navigation and, in Notes (including Trash), the note list. The right panel is an empty extension region. Settings remains available through the native menu while navigation is hidden.
+
+Drag the vertical separators to resize each column, or focus a separator and use Left/Right arrows for 10px steps. Panel visibility and completed width changes persist across restarts. Hiding panels preserves the center editor and its pending edits.
+
+At narrow widths Helm reduces panels to their minimum widths, then temporarily hides the right panel followed by the left area to reserve 320px for the center. Explicitly opening either side gives that side priority. Growing the window restores the requested layout and remembered widths.

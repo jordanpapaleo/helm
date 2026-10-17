@@ -31,8 +31,6 @@ interface UIStore {
   setView: (view: View) => void;
   selectedGrouping: Grouping;
   setSelectedGrouping: (grouping: Grouping) => void;
-  sidebarCollapsed: boolean;
-  setSidebarCollapsed: (collapsed: boolean) => void;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
   markdownMode: boolean;
@@ -57,8 +55,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   setView: (view) => set({ activeView: view }),
   selectedGrouping: { type: "all", id: null },
   setSelectedGrouping: (grouping) => set({ selectedGrouping: grouping }),
-  sidebarCollapsed: false,
-  setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   markdownMode: false,

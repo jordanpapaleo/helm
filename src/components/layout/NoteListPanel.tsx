@@ -197,7 +197,7 @@ export function NoteListPanel() {
     return (
       <div
         className="flex flex-col border-r border-base-300"
-        style={{ width: "var(--notelist-width)", minWidth: "var(--notelist-width)" }}
+        style={{ width: "100%", height: "100%", minWidth: 0 }}
       >
         <div className="flex items-center border-b border-base-300 px-3 py-2.5">
           <span className="text-sm font-semibold">Trash</span>
@@ -244,7 +244,7 @@ export function NoteListPanel() {
   return (
     <div
       className="flex flex-col border-r border-base-300"
-      style={{ width: "var(--notelist-width)", minWidth: "var(--notelist-width)" }}
+      style={{ width: "100%", height: "100%", minWidth: 0 }}
     >
       {/* Toolbar */}
       <div className="flex items-center gap-1 border-b border-base-300 px-2 py-2">

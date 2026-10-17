@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useNoteStore } from "../../store/notes";
-import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
 import { LeftColumn } from "./LeftColumn";
 
@@ -66,7 +65,6 @@ function resetStores() {
     // A single real folder "parent" with no notes/subfolders inside it.
     knownFolderPaths: ["/vault/parent"],
   });
-  useUIStore.setState({ sidebarCollapsed: false });
 }
 
 describe("LeftColumn — New Subfolder (Bug A)", () => {

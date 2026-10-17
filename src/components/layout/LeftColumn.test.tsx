@@ -212,8 +212,10 @@ describe("LeftColumn — New Note Here", () => {
     expect(filePath?.startsWith("/vault/parent/")).toBe(true);
     expect(filePath).not.toContain("/other/");
     expect(raw).toContain("template body");
-    expect(raw).toContain("important: true");
-    expect(raw).not.toContain("template:");
+    expect(raw).toContain("title: Bug report");
+    expect(raw).toContain("template: false");
+    expect(raw).not.toContain("important: true");
+    expect(raw).toMatch(/^important: false$/m);
     expect(useNoteStore.getState().notes.find((n) => n.id === "tmpl")?.content).toBe(
       "template body",
     );

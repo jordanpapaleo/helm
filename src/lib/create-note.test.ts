@@ -88,17 +88,19 @@ describe("createNote", () => {
 
     const parsed = parseNote(raw ?? "", filePath ?? "");
     expect(parsed.frontmatter.id).not.toBe(template.id);
-    expect(parsed.frontmatter.title).toBe("Untitled");
+    expect(parsed.frontmatter.title).toBe("Bug report");
     expect(parsed.frontmatter.state).toBe("Doing");
-    expect(parsed.frontmatter.urgent).toBe(true);
-    expect(parsed.frontmatter.important).toBe(true);
+    expect(parsed.frontmatter.urgent).toBe(false);
+    expect(parsed.frontmatter.important).toBe(false);
+    expect(parsed.frontmatter.blocked).toBe(false);
     expect(parsed.frontmatter.tags).toEqual(["eng"]);
-    expect(parsed.frontmatter.template).toBeUndefined();
+    expect(parsed.frontmatter.template).toBe(false);
+    expect(parsed.frontmatter.links).toEqual([]);
     expect(parsed.content.trim()).toBe("Reproduce the failure.");
     expect(raw).not.toContain("STALE");
     expect(raw).not.toMatch(/^locked:/m);
     expect(raw).not.toMatch(/^pinned:/m);
-    expect(raw).not.toMatch(/^template:/m);
+    expect(raw).toMatch(/^template: false$/m);
     expect(created?.frontmatter.locked).toBeUndefined();
     expect(created?.frontmatter.pinned).toBeUndefined();
 

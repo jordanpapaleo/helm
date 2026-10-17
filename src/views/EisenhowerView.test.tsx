@@ -109,7 +109,7 @@ describe("EisenhowerView — archived notes", () => {
 });
 
 describe("EisenhowerView — new note menu", () => {
-  it("creates from a template in the quadrant, overriding urgent and important only", async () => {
+  it("creates from a template in the quadrant and sets urgent and important from that cell", async () => {
     useNoteStore.setState({ notes: [makeNote()] });
     render(<EisenhowerView />);
 
@@ -125,11 +125,12 @@ describe("EisenhowerView — new note menu", () => {
     await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
     const [filePath, raw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
     const parsed = parseNote(raw ?? "", filePath ?? "");
+    expect(parsed.frontmatter.title).toBe("Bug report");
     expect(parsed.frontmatter.urgent).toBe(false);
     expect(parsed.frontmatter.important).toBe(true);
-    expect(parsed.frontmatter.state).toBe("Maintain");
+    expect(parsed.frontmatter.state).toBe("Prepare");
     expect(parsed.content.trim()).toBe("quadrant body");
-    expect(parsed.frontmatter.template).toBeUndefined();
+    expect(parsed.frontmatter.template).toBe(false);
     expect(raw).not.toContain("eisenhowerOrder");
     expect(useUIStore.getState().activeView).toBe("notes");
     expect(useNoteStore.getState().notes.find((n) => n.id === "tmpl")?.frontmatter.template).toBe(

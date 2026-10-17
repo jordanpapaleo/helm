@@ -205,21 +205,24 @@ Set via the `locked` frontmatter field.
 
 Any note can be a template. Set `template: true` in its frontmatter, or toggle **Template** in the property panel. There is no template folder and no separate editor — a template is an ordinary note.
 
-**New Note** (the note list, File ▸ New Note, folder **New Note Here**, and the Kanban and Eisenhower `+` buttons) opens a menu. The first item is **Blank**, then every template by title. Identical titles are disambiguated with the vault and path. Choosing an entry creates a new note in the current destination (the selected folder, or the vault root) and keeps the creation context: a Kanban column sets `state`, an Eisenhower quadrant sets `urgent` / `important`, and a selected tag is added to the new note. The new title follows the normal flow (`Untitled`). The template file is not modified, and later edits to either note do not affect the other.
+**New Note** (the note list, File ▸ New Note, folder **New Note Here**, and the Kanban and Eisenhower `+` buttons) opens a menu. The first item is **Blank**, then every template by title. Identical titles are disambiguated with the vault and path. Choosing an entry creates a new note in the current destination (the selected folder, or the vault root). The template file is not modified, and later edits to either note do not affect the other.
 
 Copied from the template:
 
+- title
 - markdown body
-- `tags`, `urgent`, `important`, `state`, `blocked`, `deadline`, `team`, `unmanaged`
-- any other custom frontmatter keys
+- `tags` (they describe the kind of note)
 
-Not copied:
+Not copied. The new note starts with blank workflow front matter:
 
-- `id`, `title`, `created`, `updated` (all fresh; the id is a new ULID)
-- `template` (the new note is not a template until you mark it)
-- `locked`, `pinned`
-- `kanbanOrder`, `eisenhowerOrder`
-- `links` (recomputed from `[[wiki links]]` in the copied body, the same way a normal save does)
+- `state`, `urgent`, `important`, `blocked`
+- `pinned`, `locked`
+- `links`
+- `deadline`, `team`, `unmanaged`, custom keys, `kanbanOrder`, `eisenhowerOrder`
+
+The new note keeps its own `id` (a fresh ULID), `created`, and `updated`, and writes `template: false`. A blank note still omits `template` and uses the title `Untitled`.
+
+Creation context is the only reason to set workflow fields, and it overrides those blank defaults. Creating from a Kanban column sets that column's `state`. Creating from an Eisenhower cell sets `urgent` / `important`. A selected sidebar tag is still applied. Those come from where the user created the note, never from the template.
 
 Locked templates can still be used. Notes in Trash are not listed. With no templates, the menu offers Blank only and that choice matches the previous blank-note behavior.
 

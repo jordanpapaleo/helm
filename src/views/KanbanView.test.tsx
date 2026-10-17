@@ -130,7 +130,7 @@ describe("KanbanView — archived notes", () => {
 });
 
 describe("KanbanView — new note menu", () => {
-  it("creates from a template in the chosen column, overriding the template state", async () => {
+  it("creates from a template in the chosen column and sets that column's state", async () => {
     useNoteStore.setState({
       notes: [
         makeNote({
@@ -163,11 +163,13 @@ describe("KanbanView — new note menu", () => {
     await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
     const [filePath, raw] = vi.mocked(tauriCommands.writeNote).mock.calls[0] ?? [];
     const parsed = parseNote(raw ?? "", filePath ?? "");
+    expect(parsed.frontmatter.title).toBe("Bug report");
     expect(parsed.frontmatter.state).toBe("Doing");
-    expect(parsed.frontmatter.urgent).toBe(true);
+    expect(parsed.frontmatter.urgent).toBe(false);
+    expect(parsed.frontmatter.important).toBe(false);
     expect(parsed.frontmatter.tags).toEqual(["eng"]);
     expect(parsed.content.trim()).toBe("column body");
-    expect(parsed.frontmatter.template).toBeUndefined();
+    expect(parsed.frontmatter.template).toBe(false);
     expect(parsed.frontmatter.kanbanOrder).toBeUndefined();
     expect(raw).not.toContain("kanbanOrder");
     expect(useUIStore.getState().activeView).toBe("notes");

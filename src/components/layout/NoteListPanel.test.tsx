@@ -354,9 +354,11 @@ describe("NoteListPanel — new note menu", () => {
     const parsed = parseNote(raw ?? "", filePath ?? "");
     expect(parsed.content.trim()).toBe("Reproduce it");
     expect(parsed.frontmatter.tags).toEqual(["eng"]);
-    expect(parsed.frontmatter.state).toBe("Maintain");
-    expect(parsed.frontmatter.template).toBeUndefined();
-    expect(parsed.frontmatter.title).toBe("Untitled");
+    expect(parsed.frontmatter.state).toBe("Prepare");
+    expect(parsed.frontmatter.urgent).toBe(false);
+    expect(parsed.frontmatter.important).toBe(false);
+    expect(parsed.frontmatter.template).toBe(false);
+    expect(parsed.frontmatter.title).toBe("Bug report");
     expect(useNoteStore.getState().notes.find((n) => n.id === "tmpl")?.content).toBe(
       "Reproduce it",
     );

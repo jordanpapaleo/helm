@@ -259,10 +259,11 @@ FRONTMATTER FIELDS
 • pinned: boolean — floats to top of lists
 • archived: boolean — true hides the note from default queries; absent or false means active. See ARCHIVED NOTES.
 • template: boolean — when true, Helm lists this note in New Note menus. Absent means false.
-  A note created from a template copies the body and reusable defaults (tags, urgent, important,
-  state, blocked, deadline, team, unmanaged, and any custom keys). It does not copy id, title,
-  created, updated, template, locked, pinned, kanbanOrder, eisenhowerOrder, or links. Links are
-  recomputed from [[wiki links]] in the body. The new note is not itself a template.
+  A note created from a template copies the title, the body, and the tags. It does not copy
+  state, urgent, important, blocked, pinned, locked, or links. The new note keeps its own id,
+  created, and updated, and sets template: false. Workflow fields stay blank unless creation
+  context sets them (a Kanban column sets state, an Eisenhower cell sets urgent/important, a
+  selected tag is applied). Those come from where the note was created, never from the template.
 • deadline: YYYY-MM-DD
 • team: string[] — team member names (freeform strings)
 • links: string[] — ULIDs of linked notes (outbound graph edges)

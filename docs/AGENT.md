@@ -74,11 +74,13 @@ Every note has a ULID as its `id`. ULIDs are 26-character uppercase strings like
 
 ## Templates
 
-A note with `template: true` is a reusable starting point. Helm copies its body and reusable frontmatter into a **new** note with a new ULID, title, and timestamps. Do not edit the template to "fill it in."
+A note with `template: true` is a reusable starting point. Helm copies its title, body, and tags into a **new** note. Do not edit the template to "fill it in."
 
-Copied: body, `tags`, `urgent`, `important`, `state`, `blocked`, `deadline`, `team`, `unmanaged`, and any custom keys.
+Copied: title, body, and `tags` (they describe the kind of note).
 
-Not copied: `id`, `title`, `created`, `updated`, `template`, `locked`, `pinned`, `kanbanOrder`, `eisenhowerOrder`, `links`. `links` are derived again from `[[wiki links]]` in the body. The new note is not a template unless you set `template: true` on it afterward.
+Not copied: `state`, `urgent`, `important`, `blocked`, `pinned`, `locked`, and `links`. The new note starts with blank workflow front matter. It keeps its own `id`, `created`, and `updated`, and sets `template: false`. Deadline, team, unmanaged, custom keys, and board order are not inherited either.
+
+Creation context is the only reason to set workflow fields, and it overrides those blank defaults: a Kanban column sets `state`, an Eisenhower cell sets `urgent` / `important`, and a selected sidebar tag is applied. Those come from where the note was created, never from the template.
 
 Preserve a `template` key you did not mean to change. `update_note` shallow-merges it like any other safe field.
 

@@ -38,25 +38,6 @@ function makeNote(overrides: Partial<Note> = {}): Note {
   };
 }
 
-const STATUS: Note = {
-  id: "01STATUS00000000000000000",
-  filePath: "/work/status.md",
-  fileName: "status.md",
-  content: "",
-  vaultId: "v-work",
-  frontmatter: {
-    id: "01STATUS00000000000000000",
-    title: "Status",
-    created: "2026-01-01T00:00:00Z",
-    updated: "2026-01-01T00:00:00Z",
-    tags: [],
-    urgent: false,
-    important: false,
-    state: "Doing",
-    blocked: false,
-  },
-};
-
 describe("listTemplateChoices", () => {
   it("lists only notes flagged template: true, including locked ones", () => {
     const plain = makeNote({
@@ -171,13 +152,13 @@ describe("instantiateNote", () => {
     expect(serializeNote(note)).not.toContain("template:");
   });
 
-  it("copies body and reusable defaults, and leaves identity, flags, order, and stale links behind", () => {
+  it("copies title, body, and tags, and starts workflow fields blank", () => {
     const template = makeNote();
     const before = structuredClone(template);
 
     const note = instantiateNote({
       template,
-      notes: [template, STATUS],
+      notes: [template],
       id: NEW_ID,
       now: NOW,
       vaultId: "v-personal",
@@ -188,34 +169,30 @@ describe("instantiateNote", () => {
     expect(note.vaultId).toBe("v-personal");
     expect(note.filePath).toBe("/personal/incoming/01newnote0000000000000000.md");
     expect(note.content).toBe(template.content);
-    expect(note.frontmatter).toMatchObject({
+    expect(note.frontmatter).toEqual({
       id: NEW_ID,
-      title: "Untitled",
+      title: "Bug report",
       created: NOW,
       updated: NOW,
       tags: ["eng", "eng/bugs"],
-      urgent: true,
+      urgent: false,
       important: false,
       state: "Prepare",
-      blocked: true,
-      deadline: "2026-04-01",
-      team: ["Ada"],
-      unmanaged: false,
-      owner: "Ada",
-      links: [STATUS.id],
+      blocked: false,
+      template: false,
     });
-    expect(note.frontmatter.template).toBeUndefined();
-    expect(note.frontmatter.locked).toBeUndefined();
-    expect(note.frontmatter.pinned).toBeUndefined();
-    expect(note.frontmatter.kanbanOrder).toBeUndefined();
-    expect(note.frontmatter.eisenhowerOrder).toBeUndefined();
-    expect(note.frontmatter.links).not.toContain("STALE");
+    expect(serializeNote(note)).toContain("template: false");
+    expect(serializeNote(note)).not.toContain("deadline:");
+    expect(serializeNote(note)).not.toContain("owner:");
+    expect(serializeNote(note)).not.toMatch(/^links:/m);
+    expect(serializeNote(note)).not.toMatch(/^locked:/m);
+    expect(serializeNote(note)).not.toMatch(/^pinned:/m);
 
     note.frontmatter.tags.push("mutated");
     expect(template).toEqual(before);
   });
 
-  it("lets explicit creation context override template defaults", () => {
+  it("lets creation context set workflow fields over the blank defaults", () => {
     const note = instantiateNote({
       template: makeNote(),
       notes: [],
@@ -236,8 +213,11 @@ describe("instantiateNote", () => {
     expect(note.frontmatter.urgent).toBe(false);
     expect(note.frontmatter.important).toBe(true);
     expect(note.frontmatter.tags).toEqual(["eng", "eng/bugs", "triage"]);
+    expect(note.frontmatter.title).toBe("Bug report");
+    expect(note.frontmatter.template).toBe(false);
     expect(note.content).toBe("Steps to reproduce\n\nSee [[Status]]\n\n#triage\n");
-    expect(note.frontmatter.blocked).toBe(true);
+    expect(note.frontmatter.blocked).toBe(false);
+    expect(note.frontmatter.links).toBeUndefined();
   });
 
   it("does not duplicate an inline tag the template body already has", () => {

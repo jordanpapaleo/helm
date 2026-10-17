@@ -2,43 +2,33 @@
  * Reusable note templates.
  *
  * Any note with `template: true` can seed a new note. Instantiation copies the
- * body and reusable frontmatter defaults, then stamps a fresh identity.
+ * title, the markdown body, and the tags — those describe the kind of note —
+ * then stamps a fresh identity.
  *
  * Copied:
+ * - title
  * - markdown body
- * - tags, urgent, important, state, blocked, deadline, team, unmanaged
- * - any other frontmatter key not listed below
+ * - tags
  *
- * Not copied (fresh or omitted on the new note):
- * - id, title, created, updated
- * - template (a new note is not itself a template)
- * - locked, pinned
- * - kanbanOrder, eisenhowerOrder (board positions)
- * - links (recomputed from `[[wiki links]]` in the copied body)
+ * Not copied. A new note starts with blank workflow front matter. There is no
+ * reason to inherit these from the template:
+ * - state, urgent, important, blocked
+ * - pinned, locked
+ * - links
+ * - deadline, team, unmanaged, custom keys, kanbanOrder, eisenhowerOrder
  *
- * Explicit creation context wins over those defaults: destination vault/folder,
- * a Kanban column's state, an Eisenhower quadrant's urgent/important, and a
- * tag-scoped creation's extra tag. The title stays on the normal creation
- * flow ("Untitled") so the source template is never overwritten.
+ * The new note keeps its own id, created, and updated. When it comes from a
+ * template, `template` is written as false so the copy is not itself a
+ * template. A blank note (no template) omits `template` and uses the title
+ * "Untitled".
+ *
+ * Creation context is the only reason to set workflow fields, and it overrides
+ * those blank defaults: a Kanban column sets `state`, an Eisenhower cell sets
+ * `urgent` / `important`, and a selected sidebar tag is applied. Those come
+ * from where the user created the note, never from the template.
  */
 import type { Note, NoteFrontmatter, NoteState, VaultConfig } from "../types/note";
-import { extractInlineTags, extractWikiLinks } from "./note-parser";
-
-/** Frontmatter keys that belong to one note, not to a reusable template. */
-export const TEMPLATE_EXCLUDED_FIELDS = [
-  "id",
-  "title",
-  "created",
-  "updated",
-  "template",
-  "locked",
-  "pinned",
-  "kanbanOrder",
-  "eisenhowerOrder",
-  "links",
-] as const;
-
-const EXCLUDED = new Set<string>(TEMPLATE_EXCLUDED_FIELDS);
+import { extractInlineTags } from "./note-parser";
 
 export interface TemplateChoice {
   id: string;
@@ -112,21 +102,6 @@ export function listTemplateChoices(notes: Note[], vaults: VaultConfig[]): Templ
   return choices;
 }
 
-function copyValue(value: unknown): unknown {
-  return Array.isArray(value) ? [...value] : value;
-}
-
-/** Resolve `[[wiki links]]` the same way a normal save does. Empty means omit. */
-function resolveLinks(content: string, notes: Note[], selfId: string): string[] | undefined {
-  const ids = extractWikiLinks(content)
-    .map(
-      (title) => notes.find((n) => n.frontmatter.title.toLowerCase() === title.toLowerCase())?.id,
-    )
-    .filter((id): id is string => id !== undefined && id !== selfId);
-  const unique = [...new Set(ids)];
-  return unique.length > 0 ? unique : undefined;
-}
-
 function withInlineTag(content: string, tag: string | undefined): string {
   if (!tag) return content;
   if (extractInlineTags(content).includes(tag)) return content;
@@ -138,6 +113,9 @@ function withInlineTag(content: string, tag: string | undefined): string {
 /**
  * Build an unsaved note from a template (or from nothing, when `template` is null).
  * Does not write to disk and does not mutate `template`.
+ *
+ * `notes` is accepted so callers can pass the live index. Instantiation does
+ * not read it: links are not copied and are not resolved from the body.
  */
 export function instantiateNote(args: {
   template: Note | null;
@@ -148,18 +126,10 @@ export function instantiateNote(args: {
   folderPath: string;
   overrides?: NoteDraftOverrides;
 }): Note {
-  const { template, notes, id, now, vaultId, folderPath, overrides } = args;
+  const { template, id, now, vaultId, folderPath, overrides } = args;
   const applied = overrides ?? {};
 
-  const copied: Record<string, unknown> = {};
-  if (template) {
-    for (const [key, value] of Object.entries(template.frontmatter)) {
-      if (EXCLUDED.has(key) || value === undefined) continue;
-      copied[key] = copyValue(value);
-    }
-  }
-
-  const templateTags = Array.isArray(copied.tags) ? (copied.tags as string[]) : [];
+  const templateTags = template ? [...template.frontmatter.tags] : [];
   const added = [
     ...(applied.addTags ?? []),
     ...(applied.appendInlineTag ? [applied.appendInlineTag] : []),
@@ -167,35 +137,21 @@ export function instantiateNote(args: {
   const tags = [...new Set([...templateTags, ...added])];
 
   const content = withInlineTag(template?.content ?? "", applied.appendInlineTag);
-  const links = resolveLinks(content, notes, id);
-  const state =
-    applied.state ?? (typeof copied.state === "string" ? (copied.state as NoteState) : "Prepare");
+  const title = applied.title ?? (template ? displayTitle(template) : "Untitled");
 
   const frontmatter: NoteFrontmatter = {
-    ...(copied as Partial<NoteFrontmatter>),
     id,
-    title: applied.title ?? "Untitled",
+    title,
     created: now,
     updated: now,
     tags,
-    urgent: applied.urgent ?? (typeof copied.urgent === "boolean" ? copied.urgent : false),
-    important:
-      applied.important ?? (typeof copied.important === "boolean" ? copied.important : false),
-    state,
-    blocked: typeof copied.blocked === "boolean" ? copied.blocked : false,
-    links,
-    template: undefined,
-    locked: undefined,
-    pinned: undefined,
-    kanbanOrder: undefined,
-    eisenhowerOrder: undefined,
+    urgent: applied.urgent ?? false,
+    important: applied.important ?? false,
+    state: applied.state ?? "Prepare",
+    blocked: false,
   };
 
-  delete frontmatter.template;
-  delete frontmatter.locked;
-  delete frontmatter.pinned;
-  delete frontmatter.kanbanOrder;
-  delete frontmatter.eisenhowerOrder;
+  if (template) frontmatter.template = false;
 
   const slug = id.toLowerCase();
   const folder = folderPath.replace(/\/+$/, "");

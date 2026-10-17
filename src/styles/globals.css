@@ -5,9 +5,6 @@
 }
 
 :root {
-  --sidebar-width: 220px;
-  --notelist-width: 260px;
-
   /* ── Editor typography — overridden at runtime by applySettings() */
   --editor-font-size: 16px;
   --editor-line-height: 1.7;
@@ -592,4 +589,46 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
   .print-root img {
     break-inside: avoid;
   }
+}
+
+/* Quiet title-bar controls; pressed state stays available to assistive technology. */
+.workspace-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-base-content);
+  opacity: 0.8;
+  transition:
+    background-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.workspace-toolbar-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-base-content) 8%, transparent);
+  opacity: 1;
+}
+
+.workspace-toolbar-button:disabled {
+  opacity: 0.35;
+}
+
+.workspace-toolbar-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.workspace-separator {
+  background: color-mix(in srgb, var(--color-base-content) 6%, transparent);
+  transition: background-color 160ms ease;
+}
+
+.workspace-separator:hover,
+.workspace-separator:focus-visible {
+  background: color-mix(in srgb, var(--color-base-content) 18%, transparent);
 }

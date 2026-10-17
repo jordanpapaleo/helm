@@ -131,7 +131,6 @@ export function KanbanView() {
     () => visibleNotes(allNotes, showArchivedNotes),
     [allNotes, showArchivedNotes],
   );
-  const { navigate, selectedGrouping } = useUIStore();
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const [items, setItems] = useState<Record<string, string[]>>(() => {

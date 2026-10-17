@@ -10,11 +10,13 @@ import { type DragDropEventHandlers, DragDropProvider, useDroppable } from "@dnd
 import { useSortable } from "@dnd-kit/react/sortable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ulid } from "ulid";
+import { isArchived, visibleNotes } from "../lib/archive";
 import { EISENHOWER_QUADRANTS } from "../lib/constants";
 import { noteFilePath, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
+import { useSettingsStore } from "../store/settings";
 import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
@@ -69,6 +71,9 @@ function NoteCard({
         </p>
         {note.frontmatter.blocked && (
           <span className="badge badge-error badge-soft badge-sm">⊘ Blocked</span>
+        )}
+        {isArchived(note.frontmatter) && (
+          <span className="badge badge-ghost badge-sm">Archived</span>
         )}
         <div className="flex flex-wrap gap-1">
           {note.frontmatter.tags.slice(0, 3).map((t) => (
@@ -144,7 +149,12 @@ function Quadrant({
 }
 
 export function EisenhowerView() {
-  const { notes, updateNote, addNote, vaults, activeVaultId } = useNoteStore();
+  const { notes: allNotes, updateNote, addNote, vaults, activeVaultId } = useNoteStore();
+  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
+  const notes = useMemo(
+    () => visibleNotes(allNotes, showArchivedNotes),
+    [allNotes, showArchivedNotes],
+  );
   const { navigate, selectedGrouping } = useUIStore();
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 

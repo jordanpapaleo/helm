@@ -1,16 +1,30 @@
+import { isArchived, visibleNotes } from "../../lib/archive";
 import { useNoteStore } from "../../store/notes";
+import { useSettingsStore } from "../../store/settings";
 import type { Note } from "../../types/note";
 
 interface BacklinksPanelProps {
   note: Note;
 }
 
+function titleWithArchive(note: Note) {
+  return (
+    <>
+      {note.frontmatter.title}
+      {isArchived(note.frontmatter) && <span className="ml-1 text-xs opacity-60">Archived</span>}
+    </>
+  );
+}
+
 export function BacklinksPanel({ note }: BacklinksPanelProps) {
   const { notes, selectNote } = useNoteStore();
+  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
 
-  // Notes that link TO this note (backlinks)
-  const backlinks = notes.filter(
-    (n) => n.id !== note.id && (n.frontmatter.links ?? []).includes(note.id),
+  // Incoming links are discovery. Outgoing links stay visible even when the
+  // target is archived, so an existing link can still open that note.
+  const backlinks = visibleNotes(
+    notes.filter((n) => n.id !== note.id && (n.frontmatter.links ?? []).includes(note.id)),
+    showArchivedNotes,
   );
 
   // Notes this note links TO (outgoing)
@@ -37,7 +51,7 @@ export function BacklinksPanel({ note }: BacklinksPanelProps) {
                   onClick={() => selectNote(n.id)}
                   className="text-left text-sm text-[var(--color-accent)] hover:opacity-80 truncate"
                 >
-                  → {n.frontmatter.title}
+                  → {titleWithArchive(n)}
                 </button>
               ))}
             </div>
@@ -60,7 +74,7 @@ export function BacklinksPanel({ note }: BacklinksPanelProps) {
                   onClick={() => selectNote(n.id)}
                   className="text-left text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] truncate"
                 >
-                  ← {n.frontmatter.title}
+                  ← {titleWithArchive(n)}
                 </button>
               ))}
             </div>

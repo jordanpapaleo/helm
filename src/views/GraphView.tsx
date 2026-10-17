@@ -12,9 +12,11 @@
 import { forceX, forceY } from "d3-force-3d";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
+import { isArchived, visibleNotes } from "../lib/archive";
 import { extractWikiLinks, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
+import { useSettingsStore } from "../store/settings";
 import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
 import type { Note, NoteState } from "../types/note";
@@ -27,6 +29,7 @@ interface GraphNode {
   state: NoteState | undefined;
   /** Total degree — computed after graphData is built */
   degree: number;
+  archived: boolean;
   x?: number;
   y?: number;
 }
@@ -77,7 +80,12 @@ function linkKey(link: GraphLink): string {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function GraphView() {
-  const { notes, updateNote } = useNoteStore();
+  const { notes: allNotes, updateNote } = useNoteStore();
+  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
+  const notes = useMemo(
+    () => visibleNotes(allNotes, showArchivedNotes),
+    [allNotes, showArchivedNotes],
+  );
   const { navigate, selectedGrouping } = useUIStore();
 
   // biome-ignore lint/suspicious/noExplicitAny: react-force-graph-2d does not export ref instance types
@@ -171,12 +179,16 @@ export function GraphView() {
     }
     neighborMap.current = newNeighborMap;
 
-    const nodes: GraphNode[] = notes.map((n) => ({
-      id: n.id,
-      label: n.frontmatter.title,
-      state: n.frontmatter.state,
-      degree: degreeCount.get(n.id) ?? 0,
-    }));
+    const nodes: GraphNode[] = notes.map((n) => {
+      const archived = isArchived(n.frontmatter);
+      return {
+        id: n.id,
+        label: archived ? `${n.frontmatter.title} (archived)` : n.frontmatter.title,
+        state: n.frontmatter.state,
+        degree: degreeCount.get(n.id) ?? 0,
+        archived,
+      };
+    });
 
     graphNodesRef.current = nodes;
     return { nodes, links };
@@ -304,7 +316,7 @@ export function GraphView() {
   const paintNode = useCallback(
     (rawNode: object, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const node = rawNode as GraphNode;
-      const { x = 0, y = 0, label = "", state, degree } = node;
+      const { x = 0, y = 0, label = "", state, degree, archived } = node;
 
       const radius = Math.max(3, Math.sqrt(degree + 1) * 2);
       const isAnyHovered = hoveredId !== null;
@@ -323,6 +335,14 @@ export function GraphView() {
       ctx.arc(x, y, radius, 0, 2 * Math.PI);
       ctx.fillStyle = fill;
       ctx.fill();
+
+      if (archived) {
+        ctx.setLineDash([2 / globalScale, 2 / globalScale]);
+        ctx.strokeStyle = cssVar("--color-text-muted", "#8e8e93");
+        ctx.lineWidth = 1.5 / globalScale;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       // Ring for hovered self or neighbor
       if (isSelf || isNeighbor) {
@@ -489,6 +509,17 @@ export function GraphView() {
           className="absolute bottom-4 left-4 flex flex-col gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
           style={{ opacity: 0.92 }}
         >
+          {notes.some((n) => isArchived(n.frontmatter)) && (
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full border border-dashed"
+                style={{ borderColor: "var(--color-text-muted)" }}
+              />
+              <span className="text-xs" style={{ color: "var(--color-text-muted)", lineHeight: 1 }}>
+                Archived
+              </span>
+            </div>
+          )}
           {LEGEND_ITEMS.map(({ label, varName }) => (
             <div key={label} className="flex items-center gap-2">
               <span

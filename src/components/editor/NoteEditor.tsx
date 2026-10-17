@@ -77,6 +77,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { wikiLinkCandidates } from "../../lib/archive";
 import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-position";
 import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
@@ -154,6 +155,8 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     const notesRef = useRef(notes);
     const autocompleteRef = useRef(settings.autocompleteWikiLinks);
     autocompleteRef.current = settings.autocompleteWikiLinks;
+    const showArchivedRef = useRef(settings.showArchivedNotes);
+    showArchivedRef.current = settings.showArchivedNotes;
     const autoSaveRef = useRef(settings.autoSaveOnEdit);
     autoSaveRef.current = settings.autoSaveOnEdit;
     notesRef.current = notes;
@@ -204,13 +207,12 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
             items: ({ query }: { query: string }) =>
               !autocompleteRef.current
                 ? []
-                : notesRef.current
-                    .filter(
-                      (n) =>
-                        n.id !== noteIdRef.current &&
-                        n.frontmatter.title.toLowerCase().includes(query.toLowerCase()),
-                    )
-                    .slice(0, 8),
+                : wikiLinkCandidates(
+                    notesRef.current,
+                    noteIdRef.current,
+                    query,
+                    showArchivedRef.current,
+                  ),
             render: () => ({
               onStart(props: SuggestionProps<Note>) {
                 const rect = props.clientRect?.();
@@ -553,7 +555,10 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
                   setPopup(null);
                 }}
               >
-                <span className="truncate">{n.frontmatter.title || "Untitled"}</span>
+                <span className="truncate">
+                  {n.frontmatter.title || "Untitled"}
+                  {n.frontmatter.archived ? " (archived)" : ""}
+                </span>
                 {n.frontmatter.tags.length > 0 && (
                   <span className="ml-auto shrink-0 text-xs opacity-50">
                     {n.frontmatter.tags[0]}

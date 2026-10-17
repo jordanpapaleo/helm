@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { usePdfExport } from "../../hooks/usePdfExport";
+import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import {
   extractInlineTags,
@@ -531,6 +532,13 @@ export function MainPanel() {
     }
   }
 
+  async function handleArchiveToggle() {
+    if (!selectedNote || selectedNote.frontmatter.locked) return;
+    // Archive in place: only the flag changes. Id, path, content, tags, links,
+    // history, and workflow fields stay as they are.
+    await handleFrontmatterChange({ archived: !isArchived(selectedNote.frontmatter) });
+  }
+
   async function handleDelete() {
     if (!selectedNote || selectedNote.frontmatter.locked) return;
     const confirmed = await confirm(
@@ -560,6 +568,7 @@ export function MainPanel() {
               onTitleInput={handleTitleInput}
               onTitleTab={() => editorRef.current?.focus()}
               onDelete={selectedNote.frontmatter.locked ? undefined : handleDelete}
+              onArchive={selectedNote.frontmatter.locked ? undefined : handleArchiveToggle}
               markdownMode={markdownMode}
               onToggleMarkdown={handleToggleMarkdown}
               onShowHistory={selectedVaultPath ? () => setHistoryOpen(true) : undefined}

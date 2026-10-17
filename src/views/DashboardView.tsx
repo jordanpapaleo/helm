@@ -3,12 +3,14 @@
  * Displays summary chips for Eisenhower quadrants, tag/state/team distribution
  * charts, and a filterable note list. Clicking a chip filters all content to that subset.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { isArchived, visibleNotes } from "../lib/archive";
 import { buildBriefing } from "../lib/briefing";
 import { NOTE_STATES } from "../lib/constants";
 import { timestampDate, todayDate } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
+import { useSettingsStore } from "../store/settings";
 import { useThemeStore } from "../store/theme";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
@@ -154,6 +156,9 @@ function BriefingSection({
           className="text-sm underline-offset-2 hover:underline"
         >
           {n.frontmatter.title || "Untitled"}
+          {isArchived(n.frontmatter) && (
+            <span className="ml-1 text-xs opacity-60">Archived</span>
+          )}
           {detail && <span className="ml-1 text-xs opacity-50">{detail(n)}</span>}
         </button>
       ))}
@@ -236,7 +241,12 @@ function BriefingCard({ notes, onNoteClick }: { notes: Note[]; onNoteClick: (n: 
  */
 export function DashboardView() {
   const { colors, strokeColor } = useChartColors();
-  const { notes } = useNoteStore();
+  const { notes: allNotes } = useNoteStore();
+  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
+  const notes = useMemo(
+    () => visibleNotes(allNotes, showArchivedNotes),
+    [allNotes, showArchivedNotes],
+  );
   const { navigate, selectedGrouping } = useUIStore();
   const [activeFilter, setActiveFilter] = useState<Filter>("all");
   const [resizeKey, setResizeKey] = useState(0);
@@ -533,6 +543,9 @@ export function DashboardView() {
                     )}
                     {note.frontmatter.blocked && (
                       <span className="badge badge-warning badge-soft badge-sm">blocked</span>
+                    )}
+                    {isArchived(note.frontmatter) && (
+                      <span className="badge badge-ghost badge-sm">Archived</span>
                     )}
                   </div>
                 </button>

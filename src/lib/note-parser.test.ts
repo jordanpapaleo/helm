@@ -291,7 +291,47 @@ Some content.
     expect(note.frontmatter.blocked).toBe(false);
     expect(note.frontmatter.locked).toBe(false);
     expect(note.frontmatter.pinned).toBe(false);
+    expect(note.frontmatter.archived).toBeUndefined();
     expect(note.frontmatter.links).toEqual([]);
+    expect(serializeNote(note)).not.toContain("archived:");
+  });
+
+  it("round-trips archived: true without moving the note or changing its identity", () => {
+    const raw = `---
+id: 01JPMXYZ123
+title: Rule Builder
+created: "2026-03-13"
+updated: "2026-03-13"
+tags:
+  - Code
+state: Doing
+blocked: false
+links:
+  - 01JPMXYZ456
+archived: true
+---
+
+This is the note content.
+`;
+    const note = parseNote(raw, "/notes/rule-builder.md");
+    expect(note.frontmatter.archived).toBe(true);
+    expect(note.id).toBe("01JPMXYZ123");
+    expect(note.filePath).toBe("/notes/rule-builder.md");
+    expect(note.frontmatter.state).toBe("Doing");
+    expect(note.frontmatter.tags).toEqual(["Code"]);
+    expect(note.frontmatter.links).toEqual(["01JPMXYZ456"]);
+    expect(note.content).toContain("This is the note content.");
+
+    const again = parseNote(serializeNote(note), note.filePath);
+    expect(again.frontmatter.archived).toBe(true);
+    expect(again.frontmatter.id).toBe("01JPMXYZ123");
+    expect(again.frontmatter.state).toBe("Doing");
+    expect(again.content).toContain("This is the note content.");
+  });
+
+  it("treats archived: false as active", () => {
+    const note = parseNote("---\nid: abc\narchived: false\n---\nbody", "/notes/abc.md");
+    expect(note.frontmatter.archived).toBe(false);
   });
 
   it("applies defaults when there is no frontmatter at all", () => {

@@ -58,6 +58,12 @@ export interface NoteFrontmatter {
   locked?: boolean;
   /** Whether the note is pinned to the top of lists */
   pinned?: boolean;
+  /**
+   * When true, the note is archived in place: kept on disk with its id,
+   * content, history, and metadata, but hidden from discovery views unless
+   * "Show archived notes" is on. Absent or false means active.
+   */
+  archived?: boolean;
   /** Excludes the note from Kanban and Eisenhower views */
   unmanaged?: boolean;
   /** Position index within a Kanban column (persists drag-and-drop order) */

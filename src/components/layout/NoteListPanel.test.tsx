@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS } from "../../lib/settings";
+import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
+import { useSettingsStore } from "../../store/settings";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
 import { NoteListPanel } from "./NoteListPanel";
@@ -170,5 +173,113 @@ describe("NoteListPanel — sorting by last modified", () => {
 
     const stamp = screen.getByTitle("2026-07-31T18:23:05Z");
     expect(stamp.textContent).toBe("2026-07-31");
+  });
+});
+
+describe("NoteListPanel — archive", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  function twoNotes(showArchived: boolean) {
+    const active = {
+      ...makeNote({ title: "Current" }),
+      id: "active",
+      filePath: "/vault/active.md",
+      fileName: "active.md",
+      content: "current body",
+    };
+    active.frontmatter = { ...active.frontmatter, id: "active", title: "Current" };
+    const archived = {
+      ...makeNote({ title: "Old", archived: true, state: "Doing", tags: ["keep"], links: ["active"] }),
+      id: "old",
+      filePath: "/vault/old.md",
+      fileName: "old.md",
+      content: "preserved body",
+    };
+    archived.frontmatter = {
+      ...archived.frontmatter,
+      id: "old",
+      title: "Old",
+      archived: true,
+      state: "Doing",
+      tags: ["keep"],
+      links: ["active"],
+    };
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, showArchivedNotes: showArchived },
+    });
+    resetStores(active);
+    useNoteStore.setState({ notes: [active, archived], selectedNoteId: "active" });
+    return { active, archived };
+  }
+
+  it("hides archived notes from the list and from search by default", () => {
+    twoNotes(false);
+    render(<NoteListPanel />);
+    expect(screen.getByText("Current")).toBeInTheDocument();
+    expect(screen.queryByText("Old")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "Old" } });
+    expect(screen.queryByText("Old")).not.toBeInTheDocument();
+    expect(screen.queryByText("Current")).not.toBeInTheDocument();
+  });
+
+  it("shows archived notes with a mark when the setting is on", () => {
+    twoNotes(true);
+    render(<NoteListPanel />);
+    expect(screen.getByText("Old")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+  });
+
+  it("archives in place from the context menu", async () => {
+    twoNotes(false);
+    render(<NoteListPanel />);
+    fireEvent.contextMenu(screen.getByText("Current"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+
+    await waitFor(() => {
+      const saved = useNoteStore.getState().notes.find((n) => n.id === "active");
+      expect(saved?.frontmatter.archived).toBe(true);
+      expect(saved?.filePath).toBe("/vault/active.md");
+      expect(saved?.content).toBe("current body");
+      expect(saved?.frontmatter.state).toBe("Doing");
+    });
+    expect(tauriCommands.deleteNote).not.toHaveBeenCalled();
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/active.md",
+      expect.stringContaining("archived: true"),
+    );
+    // The note leaves the list, but a direct selection stays open.
+    expect(useNoteStore.getState().selectedNoteId).toBe("active");
+    expect(screen.queryByText("Current")).not.toBeInTheDocument();
+  });
+
+  it("unarchives without clearing previous metadata", async () => {
+    twoNotes(true);
+    render(<NoteListPanel />);
+    fireEvent.contextMenu(screen.getByText("Old"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unarchive" }));
+
+    await waitFor(() => {
+      const saved = useNoteStore.getState().notes.find((n) => n.id === "old");
+      expect(saved?.frontmatter.archived).toBe(false);
+      expect(saved?.frontmatter.state).toBe("Doing");
+      expect(saved?.frontmatter.tags).toEqual(["keep"]);
+      expect(saved?.frontmatter.links).toEqual(["active"]);
+      expect(saved?.content).toBe("preserved body");
+      expect(saved?.filePath).toBe("/vault/old.md");
+    });
+  });
+
+  it("does not offer archive on a locked note", () => {
+    const locked = makeNote({ title: "Locked", locked: true });
+    resetStores(locked);
+    render(<NoteListPanel />);
+    fireEvent.contextMenu(screen.getByText("Locked"));
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
   });
 });

@@ -44,14 +44,14 @@ Use `HELM_VAULTS` (comma-separated) instead of `HELM_VAULT`:
 | Tool | Description |
 |------|-------------|
 | `get_rules` | Vault conventions — call this first in any session |
-| `list_notes` | List notes with rich filtering (tag, state, quadrant, blocked, pinned, overdue, team member, vault) |
-| `read_note` | Full content + frontmatter + derived info (wiki links, inline tags, quadrant, overdue) |
-| `resolve_note` | Turn a title into a ULID — use before linking |
-| `search_notes` | Keyword search across title, content, tags with relevance ranking |
-| `get_eisenhower` | Active notes grouped into the 4 Eisenhower quadrants |
-| `get_kanban` | All notes grouped by state (Prepare / Doing / Maintain / Done) |
-| `get_backlinks` | Find all notes that link TO a given note (inbound references) |
-| `get_tag_tree` | Hierarchical tag tree with note counts |
+| `list_notes` | List notes with rich filtering (tag, state, quadrant, blocked, pinned, overdue, team member, vault). Excludes archived notes unless `include_archived` is true |
+| `read_note` | Full content + frontmatter + derived info (wiki links, inline tags, quadrant, overdue). Works for archived notes by ULID |
+| `resolve_note` | Turn a title into a ULID — use before linking. Excludes archived notes unless `include_archived` is true |
+| `search_notes` | Keyword search across title, content, tags with relevance ranking. Excludes archived notes unless `include_archived` is true |
+| `get_eisenhower` | Active notes grouped into the 4 Eisenhower quadrants. Excludes archived notes unless `include_archived` is true |
+| `get_kanban` | All notes grouped by state (Prepare / Doing / Maintain / Done). Excludes archived notes unless `include_archived` is true |
+| `get_backlinks` | Find all notes that link TO a given note (inbound references). Archived sources are excluded unless `include_archived` is true |
+| `get_tag_tree` | Hierarchical tag tree with note counts. Counts exclude archived notes unless `include_archived` is true |
 
 ### Write tools
 
@@ -73,7 +73,7 @@ Use `HELM_VAULTS` (comma-separated) instead of `HELM_VAULT`:
 
 | Tool | Description |
 |------|-------------|
-| `get_briefing` | One-call daily digest: overdue, due soon (7 days), blocked, doing, and stale Doing notes (untouched 14+ days) |
+| `get_briefing` | One-call daily digest: overdue, due soon (7 days), blocked, doing, and stale Doing notes (untouched 14+ days). Excludes archived notes unless `include_archived` is true |
 
 ## Note history
 
@@ -122,6 +122,7 @@ state: Prepare           # Prepare | Doing | Maintain | Done
 blocked: false
 locked: false            # if true, MCP server refuses all writes
 pinned: false
+archived: false          # true hides the note from default queries; absent or false means active
 deadline: 2026-03-20     # YYYY-MM-DD
 team: [Alice, Bob]
 links: [01JPMXYZ456]     # ULIDs of related notes
@@ -135,3 +136,4 @@ Markdown body. Use [[Note Title]] for wiki links and #tag for inline tags.
 - Call `resolve_note` before adding to `links`
 - `update_note` does a **shallow merge** — use `append_tags`/`append_links` to add without replacing
 - `locked: true` notes are read-only — unlock in the Helm app first
+- `archived: true` keeps the note on disk (same id, file, content, tags, links, and history) but list/search/board/briefing tools skip it unless you pass `include_archived: true`. `read_note` and `update_note` still work by ULID. The Helm app's **Show archived notes** setting does not affect these tools — pass `include_archived` yourself. Set the flag with `update_note` (`frontmatter.archived`); that write is refused when the note is locked.

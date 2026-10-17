@@ -245,6 +245,11 @@ function GeneralTab() {
         onChange={(v) => updateSettings({ showNoteCountOnTags: v })}
       />
       <CheckboxRow
+        label="Show archived notes"
+        checked={settings.showArchivedNotes}
+        onChange={(v) => updateSettings({ showArchivedNotes: v })}
+      />
+      <CheckboxRow
         label="Default to Markdown view"
         checked={settings.defaultNoteView === "markdown"}
         onChange={(v) => updateSettings({ defaultNoteView: v ? "markdown" : "editor" })}

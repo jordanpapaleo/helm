@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS } from "../lib/settings";
 import { useNoteStore } from "../store/notes";
+import { useSettingsStore } from "../store/settings";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
 import { DashboardView } from "./DashboardView";
@@ -535,5 +537,53 @@ describe("DashboardView — charts", () => {
     });
     render(<DashboardView />);
     expect(screen.getByText("Team Distribution")).toBeInTheDocument();
+  });
+});
+
+describe("DashboardView — archived notes", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  function archivedDoing() {
+    return makeNote({
+      id: "old",
+      filePath: "/vault/old.md",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "old",
+        title: "Old Doing",
+        state: "Doing",
+        blocked: true,
+        urgent: true,
+        important: true,
+        archived: true,
+        deadline: "2020-01-01",
+      },
+    });
+  }
+
+  it("excludes archived notes from counts and the briefing by default", () => {
+    useNoteStore.setState({
+      ...useNoteStore.getState(),
+      notes: [makeNote({ id: "live", filePath: "/vault/live.md" }), archivedDoing()],
+    });
+    render(<DashboardView />);
+    expect(screen.getByText(/1 notes in vault/i)).toBeInTheDocument();
+    expect(screen.queryByText("Old Doing")).not.toBeInTheDocument();
+  });
+
+  it("shows archived notes, marked, when the setting is on", () => {
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, showArchivedNotes: true },
+    });
+    useNoteStore.setState({
+      ...useNoteStore.getState(),
+      notes: [archivedDoing()],
+    });
+    render(<DashboardView />);
+    expect(screen.getByText(/1 notes in vault/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Old Doing").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Archived").length).toBeGreaterThan(0);
   });
 });

@@ -11,6 +11,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import matter from "gray-matter";
+import { excludeArchivedUnless, isArchived } from "./archive";
 import { buildBriefing } from "./briefing";
 import { listNoteHistory, snapshotNoteFile } from "./history";
 import { normalizeTimestamp, nowTimestamp, todayDate } from "./timestamps";
@@ -53,6 +54,8 @@ interface NoteData {
   deadline?: string;
   team?: string[];
   links?: string[];
+  /** true hides the note from default queries; absent or false means active */
+  archived?: boolean;
   [key: string]: unknown;
 }
 
@@ -211,6 +214,7 @@ function noteSummary(n: Note) {
     deadline: n.frontmatter.deadline,
     team: n.frontmatter.team,
     links: n.frontmatter.links ?? [],
+    archived: isArchived(n.frontmatter),
     vault: n.vaultName,
     preview: n.content.slice(0, 300).trim(),
   };
@@ -228,6 +232,13 @@ IDENTIFIERS
 LOCKED NOTES
 • Never modify a note where locked: true. Return an error explaining the note must be unlocked in Helm first.
 
+ARCHIVED NOTES
+• archived: true keeps the note in place (same file, id, content, tags, links, history, and workflow fields) but removes it from everyday views. Absent or false means active. Do not move it to Trash and do not mark it Done just to archive it.
+• list_notes, resolve_note, search_notes, get_eisenhower, get_kanban, get_backlinks, get_tag_tree, and get_briefing exclude archived notes unless include_archived is true.
+• read_note, update_note, delete_note, and the history tools still work by ULID, including for archived notes.
+• The Helm app's "Show archived notes" setting is a UI preference only. It does not change these tool defaults. Pass include_archived on the call that needs archived notes.
+• Set or clear the flag with update_note frontmatter.archived. That write is refused when the note is locked.
+
 FRONTMATTER FIELDS
 • id: ULID (system-generated, never change)
 • title: string
@@ -238,6 +249,7 @@ FRONTMATTER FIELDS
 • blocked: boolean — note is blocked from progress
 • locked: boolean — note is read-only (only changeable in the Helm app)
 • pinned: boolean — floats to top of lists
+• archived: boolean — true hides the note from default queries; absent or false means active. See ARCHIVED NOTES.
 • deadline: YYYY-MM-DD
 • team: string[] — team member names (freeform strings)
 • links: string[] — ULIDs of linked notes (outbound graph edges)
@@ -292,6 +304,14 @@ const server = new Server(
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
+const INCLUDE_ARCHIVED = {
+  include_archived: {
+    type: "boolean" as const,
+    description:
+      "Include notes with archived: true. Defaults to false. Independent of the Helm app's Show archived notes setting.",
+  },
+};
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
@@ -303,7 +323,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_notes",
       description:
-        "List notes with their metadata and a short preview. Supports rich filtering. Returns summaries — use read_note for full content.",
+        "List notes with their metadata and a short preview. Supports rich filtering. Archived notes are excluded unless include_archived is true. Returns summaries — use read_note for full content.",
       inputSchema: {
         type: "object",
         properties: {
@@ -341,6 +361,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description:
               "Filter to a specific vault by name (only relevant if multiple vaults are configured).",
           },
+          ...INCLUDE_ARCHIVED,
         },
       },
     },
@@ -359,11 +380,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "resolve_note",
       description:
-        "Look up one or more notes by title (case-insensitive, partial match). Returns their ULIDs. Use this before adding links to other notes.",
+        "Look up one or more notes by title (case-insensitive, partial match). Returns their ULIDs. Archived notes are excluded unless include_archived is true. Use this before adding links to other notes.",
       inputSchema: {
         type: "object",
         properties: {
           title: { type: "string", description: "Title substring to search for." },
+          ...INCLUDE_ARCHIVED,
         },
         required: ["title"],
       },
@@ -371,11 +393,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "search_notes",
       description:
-        "Search notes by keyword across title, content, and tags. Returns ranked results.",
+        "Search notes by keyword across title, content, and tags. Returns ranked results. Archived notes are excluded unless include_archived is true.",
       inputSchema: {
         type: "object",
         properties: {
           query: { type: "string", description: "Search terms." },
+          ...INCLUDE_ARCHIVED,
         },
         required: ["query"],
       },
@@ -383,23 +406,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "get_eisenhower",
       description:
-        "Get all active notes (state=Prepare or Doing) grouped into the four Eisenhower quadrants: do, schedule, delegate, eliminate.",
-      inputSchema: { type: "object", properties: {} },
+        "Get all active notes (state=Prepare or Doing) grouped into the four Eisenhower quadrants: do, schedule, delegate, eliminate. Archived notes are excluded unless include_archived is true.",
+      inputSchema: { type: "object", properties: { ...INCLUDE_ARCHIVED } },
     },
     {
       name: "get_kanban",
       description:
-        "Get all notes grouped by workflow state (Prepare, Doing, Maintain, Done). Useful for reviewing progress across the board.",
-      inputSchema: { type: "object", properties: {} },
+        "Get all notes grouped by workflow state (Prepare, Doing, Maintain, Done). Useful for reviewing progress across the board. Archived notes are excluded unless include_archived is true.",
+      inputSchema: { type: "object", properties: { ...INCLUDE_ARCHIVED } },
     },
     {
       name: "get_backlinks",
       description:
-        "Find all notes that link TO a given note (inbound references). Essential for zettelkasten graph navigation.",
+        "Find all notes that link TO a given note (inbound references). Essential for zettelkasten graph navigation. Archived sources are excluded unless include_archived is true. The target itself is returned even when archived.",
       inputSchema: {
         type: "object",
         properties: {
           id: { type: "string", description: "ULID of the note to find backlinks for." },
+          ...INCLUDE_ARCHIVED,
         },
         required: ["id"],
       },
@@ -407,8 +431,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "get_tag_tree",
       description:
-        "Return the full hierarchical tag tree with note counts at each level. Useful for understanding the vault's taxonomy.",
-      inputSchema: { type: "object", properties: {} },
+        "Return the full hierarchical tag tree with note counts at each level. Useful for understanding the vault's taxonomy. Counts exclude archived notes unless include_archived is true.",
+      inputSchema: { type: "object", properties: { ...INCLUDE_ARCHIVED } },
     },
     {
       name: "create_note",
@@ -489,7 +513,7 @@ Read get_rules for full merge semantics.`,
           frontmatter: {
             type: "object",
             description:
-              "Frontmatter fields to shallow-merge in. Safe fields: title, tags, links, urgent, important, state, blocked, pinned, deadline, team. Protected: id, locked (ignored if provided).",
+              "Frontmatter fields to shallow-merge in. Safe fields: title, tags, links, urgent, important, state, blocked, pinned, archived, deadline, team. Protected: id, locked (ignored if provided).",
           },
           append_tags: {
             type: "array",
@@ -558,8 +582,8 @@ Read get_rules for full merge semantics.`,
     {
       name: "get_briefing",
       description:
-        "One-call daily digest: overdue deadlines, deadlines due within 7 days, blocked notes, notes in Doing, and Doing notes untouched for 14+ days. Prefer this over assembling the picture from multiple list_notes calls.",
-      inputSchema: { type: "object", properties: {} },
+        "One-call daily digest: overdue deadlines, deadlines due within 7 days, blocked notes, notes in Doing, and Doing notes untouched for 14+ days. Prefer this over assembling the picture from multiple list_notes calls. Archived notes are excluded unless include_archived is true.",
+      inputSchema: { type: "object", properties: { ...INCLUDE_ARCHIVED } },
     },
   ],
 }));
@@ -583,7 +607,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── list_notes ─────────────────────────────────────────────────────────────
   if (name === "list_notes") {
-    let filtered = notes;
+    let filtered = excludeArchivedUnless(notes, args?.include_archived);
 
     if (args?.vault) {
       filtered = filtered.filter((n) => n.vaultName === String(args.vault));
@@ -664,7 +688,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── resolve_note ───────────────────────────────────────────────────────────
   if (name === "resolve_note") {
     const query = String(args?.title ?? "").toLowerCase();
-    const matches = notes.filter((n) => n.frontmatter.title?.toLowerCase().includes(query));
+    const matches = excludeArchivedUnless(notes, args?.include_archived).filter((n) =>
+      n.frontmatter.title?.toLowerCase().includes(query),
+    );
     if (matches.length === 0) {
       return { content: [{ type: "text", text: `No note found matching: "${args?.title}"` }] };
     }
@@ -696,7 +722,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const terms = query.split(/\s+/);
 
-    const scored = notes.map((n) => {
+    const scored = excludeArchivedUnless(notes, args?.include_archived).map((n) => {
       const titleLower = (n.frontmatter.title ?? "").toLowerCase();
       const contentLower = n.content.toLowerCase();
       const tagStr = (n.frontmatter.tags ?? []).join(" ").toLowerCase();
@@ -727,7 +753,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── get_eisenhower ─────────────────────────────────────────────────────────
   if (name === "get_eisenhower") {
-    const active = notes.filter(
+    const active = excludeArchivedUnless(notes, args?.include_archived).filter(
       (n) => n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing",
     );
     const quadrants: Record<Quadrant, ReturnType<typeof noteSummary>[]> = {
@@ -757,7 +783,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       Maintain: [],
       Done: [],
     };
-    for (const n of notes) {
+    for (const n of excludeArchivedUnless(notes, args?.include_archived)) {
       // `??` not `||` — a cleared (empty) state means the note is unmanaged, and
       // the `state in columns` guard below intentionally leaves it off the board.
       // Do not "fix" this into `||`: that would bucket unmanaged notes into Prepare.
@@ -783,7 +809,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Check both frontmatter links (ULID refs) and wiki links (title refs)
     const targetTitle = target.frontmatter.title?.toLowerCase() ?? "";
 
-    const backlinks = notes
+    const backlinks = excludeArchivedUnless(notes, args?.include_archived)
       .filter((n) => n.frontmatter.id !== id)
       .filter((n) => {
         const linksToId = (n.frontmatter.links ?? []).includes(id);
@@ -841,7 +867,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return ensureNode(rest, cur[head].children);
     }
 
-    for (const note of notes) {
+    for (const note of excludeArchivedUnless(notes, args?.include_archived)) {
       for (const tag of note.frontmatter.tags ?? []) {
         const parts = tag.split("/").filter(Boolean);
         const node = ensureNode(parts, tree);
@@ -1120,7 +1146,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── get_briefing ───────────────────────────────────────────────────────────
   if (name === "get_briefing") {
     const today = todayDate();
-    const b = buildBriefing(notes, today);
+    const b = buildBriefing(excludeArchivedUnless(notes, args?.include_archived), today);
     return {
       content: [
         {
@@ -1148,7 +1174,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // ── Resources ─────────────────────────────────────────────────────────────────
 
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  const notes = listAllNotes();
+  // Resource catalog is discovery. Read by note://{id} still opens an archived note.
+  const notes = excludeArchivedUnless(listAllNotes(), false);
   return {
     resources: notes.map((n) => ({
       uri: `note://${n.frontmatter.id}`,

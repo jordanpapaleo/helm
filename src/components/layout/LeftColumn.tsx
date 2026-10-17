@@ -3,12 +3,14 @@ import { confirm } from "@tauri-apps/plugin-dialog";
 import React, { useMemo, useState } from "react";
 import { ulid } from "ulid";
 import { addVault, removeVault } from "../../hooks/useVault";
+import { visibleNotes } from "../../lib/archive";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
-import { type TagNode, useNoteStore } from "../../store/notes";
+import { buildTagTree, type TagNode, useNoteStore } from "../../store/notes";
+import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { type Grouping, useUIStore, type View } from "../../store/ui";
@@ -325,9 +327,14 @@ export function LeftColumn() {
     activeVaultId,
     setActiveVaultId,
     knownFolderPaths,
-    tagTree,
     selectedNoteId,
   } = useNoteStore();
+  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
+  const discoveryNotes = useMemo(
+    () => visibleNotes(notes, showArchivedNotes),
+    [notes, showArchivedNotes],
+  );
+  const tagTree = useMemo(() => buildTagTree(discoveryNotes), [discoveryNotes]);
   const trashCount = useTrashStore((s) => s.items.length);
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
@@ -339,8 +346,9 @@ export function LeftColumn() {
   );
 
   const vaultNotes = useMemo(
-    () => (activeVaultId ? notes.filter((n) => n.vaultId === activeVaultId) : notes),
-    [notes, activeVaultId],
+    () =>
+      activeVaultId ? discoveryNotes.filter((n) => n.vaultId === activeVaultId) : discoveryNotes,
+    [discoveryNotes, activeVaultId],
   );
 
   const tree = useMemo(
@@ -627,7 +635,7 @@ export function LeftColumn() {
                     />
                     <span className="flex-1 truncate">{vault.name}</span>
                     <span className="text-xs opacity-40">
-                      {notes.filter((n) => n.vaultId === vault.id).length}
+                      {discoveryNotes.filter((n) => n.vaultId === vault.id).length}
                     </span>
                   </button>
                   <button

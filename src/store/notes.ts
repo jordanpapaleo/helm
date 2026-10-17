@@ -4,6 +4,7 @@
  * full-text search index for note discovery.
  */
 import { create } from "zustand";
+import { visibleNotes } from "../lib/archive";
 import { serializeNote, slugify } from "../lib/note-parser";
 import { buildIndex, type NoteIndex, searchNotes } from "../lib/search";
 import {
@@ -18,6 +19,7 @@ import {
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import type { Note, VaultConfig } from "../types/note";
+import { useSettingsStore } from "./settings";
 import { reportError } from "./toast";
 
 /**
@@ -58,7 +60,7 @@ function ensureNode(parts: string[], current: Record<string, TagNode>): TagNode 
  * Each note is indexed in the tree by all its tags.
  * @internal
  */
-function buildTagTree(notes: Note[]): Record<string, TagNode> {
+export function buildTagTree(notes: Note[]): Record<string, TagNode> {
   const tree: Record<string, TagNode> = emptyTagMap();
   for (const note of notes) {
     for (const tag of note.frontmatter.tags ?? []) {
@@ -261,7 +263,8 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       set({ searchQuery: query, searchResults: [] });
       return;
     }
-    const results = searchNotes(searchIndex, notes, query);
+    const showArchived = useSettingsStore.getState().settings.showArchivedNotes;
+    const results = visibleNotes(searchNotes(searchIndex, notes, query), showArchived);
     set({ searchQuery: query, searchResults: results });
   },
   setKnownFolderPaths: (paths) => set({ knownFolderPaths: paths }),

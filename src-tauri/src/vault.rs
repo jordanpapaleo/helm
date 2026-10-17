@@ -26,11 +26,44 @@ pub struct NoteFile {
     pub content: String,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+/// Per-vault remote-sync preferences. Missing on configs saved before sync
+/// existed; `Default` keeps those vaults disconnected.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSyncPrefs {
+    /// Remote sync is off until the user connects a remote.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Pull when the app opens, once sync is enabled.
+    #[serde(default = "default_true")]
+    pub pull_on_startup: bool,
+    /// Push after a local checkpoint, once sync is enabled.
+    #[serde(default = "default_true")]
+    pub auto_push: bool,
+}
+
+impl Default for VaultSyncPrefs {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            pull_on_startup: true,
+            auto_push: true,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VaultConfig {
     pub id: String,
     pub name: String,
     pub path: String,
+    /// Optional Git remote sync. Absent in older config files.
+    #[serde(default)]
+    pub sync: VaultSyncPrefs,
 }
 
 #[tauri::command]
@@ -201,6 +234,15 @@ fn is_hidden_path(path: &std::path::Path) -> bool {
         std::path::Component::Normal(name) => name.to_string_lossy().starts_with('.'),
         _ => false,
     })
+}
+
+/// A working-tree change worth checkpointing. Git metadata and dot-directories
+/// (including `.helm-history` and `.helm-sync-backups`) are not user edits.
+fn is_user_vault_change(vault: &std::path::Path, path: &std::path::Path) -> bool {
+    match path.strip_prefix(vault) {
+        Ok(rel) => !rel.as_os_str().is_empty() && !is_hidden_path(rel),
+        Err(_) => false,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -502,12 +544,45 @@ mod tests {
     }
 
     #[test]
+    fn user_vault_changes_ignore_git_and_history() {
+        let vault = std::path::Path::new("/vault");
+        assert!(is_user_vault_change(vault, std::path::Path::new("/vault/note.md")));
+        assert!(is_user_vault_change(vault, std::path::Path::new("/vault/assets/pic.png")));
+        assert!(!is_user_vault_change(vault, std::path::Path::new("/vault/.git/index")));
+        assert!(!is_user_vault_change(vault, std::path::Path::new("/vault/.helm-history/01/1.md")));
+        assert!(!is_user_vault_change(
+            vault,
+            std::path::Path::new("/vault/.helm-sync-backups/1/note.md"),
+        ));
+        assert!(!is_user_vault_change(vault, std::path::Path::new("/other/note.md")));
+    }
+
+    #[test]
     fn delete_asset_impl_refuses_markdown_files() {
         let dir = temp_dir("asset-refuse-md");
         let md = dir.join("note.md");
         fs::write(&md, "content").unwrap();
         assert!(delete_asset_impl(md.to_str().unwrap()).is_err());
         assert!(md.exists(), "markdown file must not be deleted");
+    }
+
+    #[test]
+    fn vault_config_without_sync_stays_disconnected() {
+        let raw = r#"{"id":"v1","name":"Vault","path":"/tmp/vault"}"#;
+        let cfg: VaultConfig = serde_json::from_str(raw).unwrap();
+        assert!(!cfg.sync.enabled);
+        assert!(cfg.sync.pull_on_startup);
+        assert!(cfg.sync.auto_push);
+        assert_eq!(cfg.id, "v1");
+    }
+
+    #[test]
+    fn vault_config_preserves_explicit_sync_prefs() {
+        let raw = r#"{"id":"v1","name":"Vault","path":"/tmp/vault","sync":{"enabled":true,"pullOnStartup":false,"autoPush":false}}"#;
+        let cfg: VaultConfig = serde_json::from_str(raw).unwrap();
+        assert!(cfg.sync.enabled);
+        assert!(!cfg.sync.pull_on_startup);
+        assert!(!cfg.sync.auto_push);
     }
 
     #[test]
@@ -581,6 +656,15 @@ pub async fn watch_vault(app: AppHandle, vault_path: String) -> Result<(), Strin
                     );
                 if has_dir_event {
                     let _ = app_clone.emit("vault-dirs-changed", &vault_path);
+                }
+
+                // Notes, assets, and external/MCP edits. Hidden paths (.git,
+                // .helm-history) are ignored so a checkpoint cannot loop on
+                // its own metadata.
+                let vault = std::path::Path::new(&vault_path);
+                let mutated = event.paths.iter().any(|p| is_user_vault_change(vault, p));
+                if mutated {
+                    let _ = app_clone.emit("vault-mutated", &vault_path);
                 }
             }
         }

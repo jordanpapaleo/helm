@@ -1,6 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import type { Note } from "../../types/note";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
@@ -38,6 +39,12 @@ function makeNote(overrides: Partial<Note> = {}): Note {
 describe("NoteEditor — opening a note must not schedule a save", () => {
   beforeEach(() => {
     useNoteStore.setState({ notes: [], selectedNoteId: null, vaults: [], activeVaultId: null });
+    useGitSyncStore.setState({
+      byVaultId: {},
+      barrierPaths: [],
+      heldNoteIds: [],
+      heldDrafts: {},
+    });
     vi.useFakeTimers();
   });
 
@@ -152,5 +159,61 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
     );
 
     expect(ref.current?.getEditor()?.getText()).toContain("Rewritten externally");
+  });
+
+  it("releases a sync hold on reload and keeps the unsaved buffer", () => {
+    const onSave = vi.fn();
+    const note = makeNote();
+    const ref = createRef<NoteEditorHandle>();
+    const { rerender } = render(<NoteEditor ref={ref} note={note} onSave={onSave} />);
+
+    act(() => {
+      ref.current?.getEditor()?.commands.insertContent(" edited");
+    });
+    rerender(
+      <NoteEditor
+        ref={ref}
+        note={{ ...note, content: "Pulled from the other computer" }}
+        onSave={onSave}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(onSave).not.toHaveBeenCalled();
+    expect(useGitSyncStore.getState().isHeld(note.id)).toBe(true);
+    expect(ref.current?.getEditor()?.getText()).toContain("edited");
+
+    const other = makeNote({
+      id: "01JPMXYZ456",
+      filePath: "/vault/b.md",
+      fileName: "b.md",
+      content: "Note B body",
+      frontmatter: { ...makeNote().frontmatter, id: "01JPMXYZ456", title: "Note B" },
+    });
+    rerender(<NoteEditor ref={ref} note={other} onSave={onSave} />);
+    expect(useGitSyncStore.getState().isHeld(note.id)).toBe(false);
+    expect(useGitSyncStore.getState().heldDraft(note.id)).toContain("edited");
+
+    rerender(
+      <NoteEditor
+        ref={ref}
+        note={{ ...note, content: "Pulled from the other computer" }}
+        onSave={onSave}
+      />,
+    );
+    expect(useGitSyncStore.getState().isHeld(note.id)).toBe(false);
+    expect(ref.current?.getEditor()?.getText()).toContain("edited");
+    expect(ref.current?.getEditor()?.getText()).not.toContain("Pulled from the other computer");
+
+    act(() => {
+      ref.current?.getEditor()?.commands.insertContent(" more");
+    });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(onSave).toHaveBeenCalled();
+    expect(onSave.mock.calls.at(-1)?.[0]).toContain("edited");
   });
 });

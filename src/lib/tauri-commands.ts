@@ -81,4 +81,86 @@ export const tauriCommands = {
   // Prints the webview's print-media rendering to `path` (`.pdf` is appended
   // if missing). Resolves with the path actually written.
   exportPdf: (path: string): Promise<string> => invoke("export_pdf", { path }),
+
+  gitSyncInspect: (vaultPath: string): Promise<GitInspectReport> =>
+    invoke("git_sync_inspect", { vaultPath }),
+
+  gitSyncTestConnection: (remoteUrl: string): Promise<GitConnectionTest> =>
+    invoke("git_sync_test_connection", { remoteUrl }),
+
+  gitSyncPreviewConnect: (
+    vaultPath: string,
+    remoteUrl: string,
+    branch: string,
+  ): Promise<GitConnectPreview> =>
+    invoke("git_sync_preview_connect", { vaultPath, remoteUrl, branch }),
+
+  gitSyncConnect: (
+    vaultPath: string,
+    remoteUrl: string,
+    branch: string,
+  ): Promise<GitConnectResult> => invoke("git_sync_connect", { vaultPath, remoteUrl, branch }),
+
+  gitSyncStatus: (vaultPath: string, enabled: boolean): Promise<GitSyncOutcome> =>
+    invoke("git_sync_status", { vaultPath, enabled }),
+
+  gitSyncCheckpoint: (vaultPath: string): Promise<GitSyncOutcome> =>
+    invoke("git_sync_checkpoint", { vaultPath }),
+
+  gitSyncPull: (vaultPath: string): Promise<GitSyncOutcome> =>
+    invoke("git_sync_pull", { vaultPath }),
+
+  gitSyncPush: (vaultPath: string): Promise<GitSyncOutcome> =>
+    invoke("git_sync_push", { vaultPath }),
+
+  gitSyncNow: (vaultPath: string): Promise<GitSyncOutcome> =>
+    invoke("git_sync_sync_now", { vaultPath }),
+
+  gitSyncStartup: (vaultPath: string, autoPush: boolean): Promise<GitSyncOutcome> =>
+    invoke("git_sync_startup", { vaultPath, autoPush }),
 };
+
+export interface GitSyncOutcome {
+  state: string;
+  message: string;
+  ahead: number;
+  behind: number;
+  pendingCommits: number;
+  dirty: boolean;
+  lastSuccessMs: number | null;
+  /** Remote tip last fetched. A later replace-remote action pins force-with-lease to this. */
+  remoteOid: string | null;
+  attentionPaths: string[];
+  committed: boolean;
+  pushed: boolean;
+  branch: string | null;
+  originUrl: string | null;
+}
+
+export interface GitConnectPreview {
+  files: string[];
+  commitsAhead: number;
+  branch: string;
+  originUrl: string | null;
+  warnings: string[];
+}
+
+export interface GitConnectResult {
+  outcome: GitSyncOutcome;
+  files: string[];
+  warnings: string[];
+}
+
+export interface GitInspectReport {
+  gitAvailable: boolean;
+  isRepo: boolean;
+  vaultIsRoot: boolean;
+  originUrl: string | null;
+  branch: string | null;
+  message: string | null;
+}
+
+export interface GitConnectionTest {
+  ok: boolean;
+  message: string;
+}

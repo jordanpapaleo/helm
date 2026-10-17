@@ -5,6 +5,19 @@
  */
 
 /**
+ * Optional Git remote sync for one vault. Missing on configs saved before
+ * sync existed; those vaults stay disconnected.
+ */
+export interface VaultSyncPrefs {
+  /** Remote sync is off until the user connects a remote. */
+  enabled: boolean;
+  /** Pull when the app opens, once sync is enabled. */
+  pullOnStartup: boolean;
+  /** Push after a local checkpoint, once sync is enabled. */
+  autoPush: boolean;
+}
+
+/**
  * Configuration for a single vault (a folder of .md files).
  */
 export interface VaultConfig {
@@ -14,6 +27,8 @@ export interface VaultConfig {
   name: string;
   /** Absolute path on disk */
   path: string;
+  /** Optional Git remote sync. Absent means sync is off. */
+  sync?: VaultSyncPrefs;
 }
 
 /**

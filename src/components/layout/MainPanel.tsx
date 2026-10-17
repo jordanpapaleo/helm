@@ -13,6 +13,7 @@ import {
 import { usePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
+import { decideEditorSync } from "../../lib/git-sync";
 import {
   extractInlineTags,
   extractWikiLinks,
@@ -24,6 +25,7 @@ import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fractio
 import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
+import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -58,6 +60,8 @@ interface MarkdownTextareaHandle {
 const MarkdownTextarea = forwardRef<
   MarkdownTextareaHandle,
   {
+    noteId: string;
+    vaultPath: string | null;
     content: string;
     onSave: (md: string) => void | Promise<void>;
     locked?: boolean;
@@ -70,7 +74,15 @@ const MarkdownTextarea = forwardRef<
     initialScrollFraction?: number | null;
   }
 >(function MarkdownTextarea(
-  { content, onSave, locked, initialCursorOffset = null, initialScrollFraction = null },
+  {
+    noteId,
+    vaultPath,
+    content,
+    onSave,
+    locked,
+    initialCursorOffset = null,
+    initialScrollFraction = null,
+  },
   ref,
 ) {
   const [value, setValue] = useState(content);
@@ -84,6 +96,11 @@ const MarkdownTextarea = forwardRef<
   valueRef.current = value;
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const noteIdRef = useRef(noteId);
+  noteIdRef.current = noteId;
+  const vaultPathRef = useRef(vaultPath);
+  vaultPathRef.current = vaultPath;
+  const dirtyRef = useRef(false);
 
   // Tracks the last content we handed to onSave so we can tell our own saves
   // apart from external file changes (Claude Code, the MCP server, the file
@@ -91,7 +108,16 @@ const MarkdownTextarea = forwardRef<
   // lastSavedContentRef — every onSave call site must go through commitSave.
   const lastSavedContentRef = useRef(content);
   const commitSave = useCallback((md: string) => {
+    const id = noteIdRef.current;
+    if (useGitSyncStore.getState().isWriteBlocked(id, vaultPathRef.current)) {
+      dirtyRef.current = true;
+      useGitSyncStore.getState().preserveHeldDraft(id, md);
+      return;
+    }
     lastSavedContentRef.current = md;
+    dirtyRef.current = false;
+    useGitSyncStore.getState().clearHeldDraft(id);
+    useGitSyncStore.getState().releaseNote(id);
     return onSaveRef.current(md);
   }, []);
 
@@ -142,6 +168,7 @@ const MarkdownTextarea = forwardRef<
     const [prefix, suffix] = wrap;
     const selected = val.slice(start, end);
     const next = val.slice(0, start) + prefix + selected + suffix + val.slice(end);
+    dirtyRef.current = true;
     setValue(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -159,6 +186,7 @@ const MarkdownTextarea = forwardRef<
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (locked) return;
     const next = e.target.value;
+    dirtyRef.current = true;
     setValue(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -178,34 +206,64 @@ const MarkdownTextarea = forwardRef<
   // textarea — assigning a new `value` otherwise drops the caret to the end.
   const pendingCaretRef = useRef<number | null>(null);
 
-  // Follow the file when it is rewritten underneath us (Claude Code, the MCP
-  // server, the file watcher, a bulk tag rename/delete in the store). Without
-  // this the textarea keeps showing the pre-write body and blurring flushes it
-  // back over the change. Mirrors NoteEditor's external-change effect.
+  // Follow the file when it is rewritten underneath us (a pull, Claude Code, the
+  // MCP server, the file watcher, a bulk tag rename/delete in the store). A
+  // clean box adopts the incoming text. Keystrokes that overlap a different
+  // incoming body stay on screen and are not written back — the same hold the
+  // rich editor uses. Leaving the note releases that hold and keeps the buffer.
   useEffect(() => {
-    // Our own save coming back around through the store is not an external
-    // change. Normalize first: gray-matter reintroduces a leading "\n" on parse,
-    // so a strict === would reload on every save round trip.
-    if (normalizeContent(content) === normalizeContent(lastSavedContentRef.current)) return;
-    // Rule: only adopt when the text in the box still matches what we last wrote
-    // to disk. If the user has unsaved local edits, adopting would silently
-    // throw their typing away, so we keep the local text and let their next
-    // save win — and the external version is snapshotted to `.helm-history/`
-    // before that save overwrites it, so nothing becomes unrecoverable.
-    if (normalizeContent(valueRef.current) !== normalizeContent(lastSavedContentRef.current))
+    const store = useGitSyncStore.getState();
+    const draft = store.heldDraft(noteId);
+    const incomingNorm = normalizeContent(content);
+    if (
+      draft &&
+      normalizeContent(draft) !== incomingNorm &&
+      normalizeContent(valueRef.current) === incomingNorm &&
+      !dirtyRef.current
+    ) {
+      dirtyRef.current = true;
+      lastSavedContentRef.current = content;
+      store.releaseNote(noteId);
+      setValue(draft);
       return;
-    // Cancel any pending auto-save so it cannot overwrite the external change.
+    }
+    const decision = decideEditorSync({
+      dirtySinceFlush:
+        dirtyRef.current ||
+        normalizeContent(valueRef.current) !== normalizeContent(lastSavedContentRef.current),
+      flushedContent: lastSavedContentRef.current,
+      incomingContent: content,
+    });
+    if (decision === "keep-editor") return;
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
+    if (decision === "hold") {
+      dirtyRef.current = true;
+      store.preserveHeldDraft(noteId, valueRef.current);
+      store.holdNote(noteId);
+      return;
+    }
+    store.releaseNote(noteId);
+    store.clearHeldDraft(noteId);
+    dirtyRef.current = false;
     // Best effort on the caret: the local text is unedited, so a raw index is
-    // still meaningful — hold it where it is, clamped to the new body. We do
-    // not diff the two bodies to chase the caret's semantic position.
+    // still meaningful — hold it where it is, clamped to the new body.
     pendingCaretRef.current = Math.min(textareaRef.current?.selectionStart ?? 0, content.length);
     setValue(content);
     lastSavedContentRef.current = content;
-  }, [content]);
+  }, [content, noteId]);
+
+  useEffect(() => {
+    return () => {
+      const id = noteIdRef.current;
+      const store = useGitSyncStore.getState();
+      if (!store.isHeld(id) && !store.isWriteBlocked(id, vaultPathRef.current)) return;
+      if (dirtyRef.current || store.isHeld(id)) store.preserveHeldDraft(id, valueRef.current);
+      store.releaseNote(id);
+    };
+  }, []);
 
   // Runs before paint so the caret never visibly jumps. No-ops for ordinary
   // typing, where the browser already keeps the caret in place.
@@ -439,8 +497,22 @@ export function MainPanel() {
     };
   }, [startPdfExport]);
 
+  const syncHoldReported = useRef<string | null>(null);
+
   async function handleSave(content: string) {
     if (!selectedNote) return;
+    if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) {
+      if (syncHoldReported.current !== selectedNote.id) {
+        syncHoldReported.current = selectedNote.id;
+        reportError(
+          "Sync kept this note",
+          new Error(
+            "Your latest edits are still in the editor and were not written over the synced file.",
+          ),
+        );
+      }
+      return;
+    }
 
     // Opening, focusing, or blurring a note is not a modification. Bail before
     // touching disk so viewing a note never bumps `updated`. Edge newlines are
@@ -516,6 +588,7 @@ export function MainPanel() {
 
   async function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
     if (!selectedNote) return;
+    if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
     const updated = {
       ...selectedNote,
       frontmatter: {
@@ -541,6 +614,7 @@ export function MainPanel() {
 
   async function handleDelete() {
     if (!selectedNote || selectedNote.frontmatter.locked) return;
+    if (useGitSyncStore.getState().isBarrierActive(selectedVaultPath ?? "")) return;
     const confirmed = await confirm(
       `Move "${selectedNote.frontmatter.title || "Untitled"}" to Trash?`,
       { title: "Move to Trash", kind: "warning" },
@@ -587,6 +661,8 @@ export function MainPanel() {
               <MarkdownTextarea
                 key={selectedNote.id}
                 ref={markdownTextareaRef}
+                noteId={selectedNote.id}
+                vaultPath={selectedVaultPath}
                 content={selectedNote.content}
                 onSave={handleSave}
                 locked={selectedNote.frontmatter.locked}

@@ -5,6 +5,8 @@ import { addVault, removeVault } from "../../hooks/useVault";
 import { visibleNotes } from "../../lib/archive";
 import { createNote } from "../../lib/create-note";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
+import { syncPrefs } from "../../lib/git-sync";
+import { syncConnectedVaults } from "../../lib/git-sync-runtime";
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { listTemplateChoices } from "../../lib/templates";
@@ -15,6 +17,7 @@ import { useTrashStore } from "../../store/trash";
 import { type Grouping, useUIStore, type View } from "../../store/ui";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
 import { RenameInput } from "../sidebar/RenameInput";
+import { VaultSyncButton } from "./VaultSyncButton";
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "uil:dashboard" },
@@ -616,6 +619,7 @@ export function LeftColumn() {
                       {discoveryNotes.filter((n) => n.vaultId === vault.id).length}
                     </span>
                   </button>
+                  <VaultSyncButton vault={vault} />
                   <button
                     type="button"
                     onClick={(e) => handleRemoveVault(vault.id, e)}
@@ -627,6 +631,21 @@ export function LeftColumn() {
                 </div>
               </li>
             ))}
+            {vaults.filter((vault) => syncPrefs(vault).enabled).length > 1 &&
+              activeVaultId === null && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void syncConnectedVaults(vaults, "sync");
+                    }}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-sm text-base-content/70 hover:bg-base-200"
+                  >
+                    <Icon icon="uil:sync" className="h-4 w-4" aria-hidden="true" />
+                    <span>Sync all</span>
+                  </button>
+                </li>
+              )}
             <li>
               <button
                 type="button"

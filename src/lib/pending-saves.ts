@@ -25,8 +25,14 @@ export function hasPendingSaves(): boolean {
   return [...flushers.values()].some((f) => f.isPending());
 }
 
+/** Flush every pending save and report how many failed. A failure does not block the others. */
+export async function flushPendingSavesSettled(): Promise<{ failed: number }> {
+  const pending = [...flushers.values()].filter((f) => f.isPending());
+  const results = await Promise.allSettled(pending.map((f) => f.flush()));
+  return { failed: results.filter((result) => result.status === "rejected").length };
+}
+
 /** Flush every pending save; a failing flusher never blocks the others. */
 export async function flushPendingSaves(): Promise<void> {
-  const pending = [...flushers.values()].filter((f) => f.isPending());
-  await Promise.allSettled(pending.map((f) => f.flush()));
+  await flushPendingSavesSettled();
 }

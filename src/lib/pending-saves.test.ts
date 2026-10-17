@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   flushPendingSaves,
+  flushPendingSavesSettled,
   hasPendingSaves,
   registerSaveFlusher,
   unregisterSaveFlusher,
@@ -56,6 +57,13 @@ describe("pending-saves registry", () => {
     registerSaveFlusher("b", { isPending: () => true, flush: flushB });
     await expect(flushPendingSaves()).resolves.toBeUndefined();
     expect(flushB).toHaveBeenCalledOnce();
+    unregisterSaveFlusher("a");
+    unregisterSaveFlusher("b");
+    registerSaveFlusher("a", {
+      isPending: () => true,
+      flush: () => Promise.reject(new Error("disk full")),
+    });
+    await expect(flushPendingSavesSettled()).resolves.toEqual({ failed: 1 });
   });
 
   it("unregistered flushers are not called", async () => {

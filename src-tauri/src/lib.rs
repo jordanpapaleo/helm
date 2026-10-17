@@ -1,8 +1,14 @@
+mod git_sync;
 mod pdf;
 mod vault;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use git_sync::{
+    git_sync_checkpoint, git_sync_connect, git_sync_inspect, git_sync_preview_connect,
+    git_sync_pull, git_sync_push, git_sync_startup, git_sync_status, git_sync_sync_now,
+    git_sync_test_connection,
+};
 use vault::*;
 use tauri::menu::{
     AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
@@ -409,6 +415,16 @@ pub fn run() {
             delete_folder,
             rename_folder,
             pdf::export_pdf,
+            git_sync_inspect,
+            git_sync_test_connection,
+            git_sync_preview_connect,
+            git_sync_connect,
+            git_sync_status,
+            git_sync_checkpoint,
+            git_sync_pull,
+            git_sync_push,
+            git_sync_sync_now,
+            git_sync_startup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

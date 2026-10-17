@@ -186,7 +186,9 @@ User preferences accessible from the sidebar:
 
 - **General**: Preference checkboxes, including **Show archived notes** (off by default, persisted in localStorage)
 
-All settings are persisted to localStorage and applied immediately on change.
+- **Sync**: Optional per-vault Git remote. Off by default, so a vault with no sync settings behaves as before. Connect shows the files that will be uploaded, then Helm can pull on startup and push after local checkpoints. Sync now, Pull, and Push are also on each connected vault in the sidebar. Conflicts keep the local notes and need attention. Sync does not force-push, reset the worktree, or delete untracked files. Replacing the remote or the local copy is a separate recovery action ([#48](https://github.com/jordanpapaleo/helm/issues/48)). Time Machine snapshots in `.helm-history/` stay on this machine.
+
+All settings except sync are persisted to localStorage and applied immediately on change. Sync preferences are stored with the vault in the Tauri config.
 
 ### Pinned & Locked Notes
 
@@ -303,7 +305,8 @@ src/
       MainPanel.tsx         # Editor + property panel
       LeftColumn.tsx        # Sidebar (search, views, tags, note list)
     settings/
-      SettingsModal.tsx     # Typography and theme controls
+      SettingsModal.tsx     # Typography, theme, and Git sync controls
+      SyncTab.tsx           # Per-vault remote connect, pull, and push
     sidebar/
       NewNoteButton.tsx     # Create a note
       TagTree.tsx           # Hierarchical tag navigation

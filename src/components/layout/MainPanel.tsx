@@ -24,6 +24,7 @@ import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fractio
 import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
+import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -439,8 +440,22 @@ export function MainPanel() {
     };
   }, [startPdfExport]);
 
+  const syncHoldReported = useRef<string | null>(null);
+
   async function handleSave(content: string) {
     if (!selectedNote) return;
+    if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) {
+      if (syncHoldReported.current !== selectedNote.id) {
+        syncHoldReported.current = selectedNote.id;
+        reportError(
+          "Sync kept this note",
+          new Error(
+            "Your latest edits are still in the editor and were not written over the synced file.",
+          ),
+        );
+      }
+      return;
+    }
 
     // Opening, focusing, or blurring a note is not a modification. Bail before
     // touching disk so viewing a note never bumps `updated`. Edge newlines are
@@ -516,6 +531,7 @@ export function MainPanel() {
 
   async function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
     if (!selectedNote) return;
+    if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
     const updated = {
       ...selectedNote,
       frontmatter: {
@@ -541,6 +557,7 @@ export function MainPanel() {
 
   async function handleDelete() {
     if (!selectedNote || selectedNote.frontmatter.locked) return;
+    if (useGitSyncStore.getState().isBarrierActive(selectedVaultPath ?? "")) return;
     const confirmed = await confirm(
       `Move "${selectedNote.frontmatter.title || "Untitled"}" to Trash?`,
       { title: "Move to Trash", kind: "warning" },

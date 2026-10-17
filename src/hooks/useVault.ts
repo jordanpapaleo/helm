@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { ulid } from "ulid";
+import { noteVaultMutated, startupVault } from "../lib/git-sync-runtime";
 import { parseNote, serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
@@ -140,6 +141,7 @@ export function useVault() {
     let unlistenChanged: (() => void) | undefined;
     let unlistenDeleted: (() => void) | undefined;
     let unlistenDirs: (() => void) | undefined;
+    let unlistenMutated: (() => void) | undefined;
 
     async function init() {
       try {
@@ -158,6 +160,11 @@ export function useVault() {
 
         useNoteStore.getState().setVaults(vaults);
         if (vaults.length > 0) {
+          // Pull connected vaults before they can be edited. A failure opens
+          // the local files; startupVault records the status.
+          for (const vault of vaults) {
+            await startupVault(vault);
+          }
           await Promise.all(vaults.map(loadVault));
           await refreshFolders(vaults);
         }
@@ -208,6 +215,12 @@ export function useVault() {
           }
         });
 
+        // Working-tree edits, including assets and MCP writes. Git metadata is
+        // filtered out on the Rust side so a checkpoint cannot sync itself.
+        unlistenMutated = await listen<string>("vault-mutated", (event) => {
+          noteVaultMutated(event.payload);
+        });
+
         // Listen for directory create/remove events — refresh the folder list
         unlistenDirs = await listen<string>("vault-dirs-changed", () => {
           const { vaults: currentVaults } = useNoteStore.getState();
@@ -238,6 +251,7 @@ export function useVault() {
       unlistenChanged?.();
       unlistenDeleted?.();
       unlistenDirs?.();
+      unlistenMutated?.();
     };
   }, []);
 

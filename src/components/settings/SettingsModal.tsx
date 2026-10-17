@@ -1,11 +1,13 @@
+import { Icon } from "@iconify/react";
 import { useState } from "react";
 import { THEMES } from "../../lib/themes";
 import { useSettingsStore } from "../../store/settings";
 import { useThemeStore } from "../../store/theme";
+import { SyncTab } from "./SyncTab";
 
 // ── Tab types ────────────────────────────────────────────────────────────────
 
-type Tab = "typography" | "themes" | "general";
+type Tab = "typography" | "themes" | "general" | "sync";
 
 interface TabDef {
   id: Tab;
@@ -82,6 +84,11 @@ const TABS: TabDef[] = [
   { id: "typography", label: "Typography", icon: <TypographyIcon /> },
   { id: "themes", label: "Themes", icon: <PaletteIcon /> },
   { id: "general", label: "General", icon: <SlidersIcon /> },
+  {
+    id: "sync",
+    label: "Sync",
+    icon: <Icon icon="uil:cloud" className="h-4 w-4" aria-hidden="true" />,
+  },
 ];
 
 // ── Slider row ────────────────────────────────────────────────────────────────
@@ -327,6 +334,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           {activeTab === "typography" && <TypographyTab />}
           {activeTab === "themes" && <ThemesTab />}
           {activeTab === "general" && <GeneralTab />}
+          {activeTab === "sync" && <SyncTab />}
         </div>
       </div>
     </div>

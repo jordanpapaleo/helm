@@ -79,10 +79,11 @@ import {
 } from "react";
 import { wikiLinkCandidates } from "../../lib/archive";
 import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-position";
-import { normalizeContent } from "../../lib/note-parser";
+import { decideEditorSync } from "../../lib/git-sync";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { tauriCommands } from "../../lib/tauri-commands";
+import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -169,6 +170,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // Tracks the last content we wrote to disk so we can distinguish our own
     // saves from external file changes (e.g. from Claude Code or MCP server).
     const lastSavedContentRef = useRef(note.content);
+    const dirtyRef = useRef(false);
 
     // vaultPath is needed inside handlePaste but must not be captured in the memoized
     // extensions array — keep it in a ref so handlePaste always reads the current value.
@@ -422,16 +424,29 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
       if (!editor) return;
-      if (normalizeContent(note.content) === normalizeContent(lastSavedContentRef.current)) return;
-      // Cancel any pending auto-save so it doesn't overwrite the external change
+      const decision = decideEditorSync({
+        dirtySinceFlush: dirtyRef.current,
+        flushedContent: lastSavedContentRef.current,
+        incomingContent: note.content,
+      });
+      if (decision === "keep-editor") return;
+      // Cancel any pending auto-save so it doesn't overwrite the external change.
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
       }
+      if (decision === "hold") {
+        // The file on disk is the synced version. Leave the newer keystrokes
+        // in the editor and block writes until the note is reloaded.
+        useGitSyncStore.getState().holdNote(note.id);
+        return;
+      }
+      useGitSyncStore.getState().releaseNote(note.id);
+      dirtyRef.current = false;
       // emitUpdate: false — reloading from disk must not look like a user edit.
       editor.commands.setContent(note.content, { emitUpdate: false });
       lastSavedContentRef.current = note.content;
-    }, [note.content]);
+    }, [note.content, note.id]);
 
     // Carry the cursor and the scroll position over from the markdown textarea.
     // The editor mounts fresh on every toggle, so this happens exactly once. It
@@ -479,14 +494,22 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     const triggerSave = useCallback(() => {
       if (!editor) return;
       const md = getEditorMarkdown(editor);
+      const vaultPath =
+        useNoteStore.getState().vaults.find((vault) => vault.id === note.vaultId)?.path ?? null;
+      if (useGitSyncStore.getState().isWriteBlocked(note.id, vaultPath)) {
+        dirtyRef.current = true;
+        return;
+      }
       lastSavedContentRef.current = md; // mark as our own save so the file watcher doesn't reload
+      dirtyRef.current = false;
       return onSave(md);
-    }, [editor, onSave]);
+    }, [editor, note.id, note.vaultId, onSave]);
 
     // Auto-save 1s after the user stops typing
     useEffect(() => {
       if (!editor) return;
       const handler = () => {
+        dirtyRef.current = true;
         if (!autoSaveRef.current) return;
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {

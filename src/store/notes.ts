@@ -19,6 +19,7 @@ import {
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import type { Note, VaultConfig } from "../types/note";
+import { useProjectStore } from "./projects";
 import { useSettingsStore } from "./settings";
 import { reportError } from "./toast";
 
@@ -295,6 +296,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     if (!trimmed || newPath === oldPath) return;
 
     await tauriCommands.renameFolder(oldPath, newPath);
+    await useProjectStore.getState().retarget(oldPath, newPath);
 
     const oldPrefix = `${oldPath}/`;
     set((state) => {

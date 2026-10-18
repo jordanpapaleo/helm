@@ -14,6 +14,18 @@ import matter from "gray-matter";
 import { excludeArchivedUnless, isArchived } from "./archive";
 import { buildBriefing } from "./briefing";
 import { listNoteHistory, snapshotNoteFile } from "./history";
+import {
+  captureThinkingNote,
+  createProjectDir,
+  membersOf,
+  moveNoteToCategoryFile,
+  type Project,
+  type ProjectCategoryId,
+  projectIdForPath,
+  promoteProjectDir,
+  readProjects,
+  walkMarkdownFiles,
+} from "./projects";
 import { normalizeTimestamp, nowTimestamp, todayDate } from "./timestamps";
 
 // ── Vault resolution ──────────────────────────────────────────────────────────
@@ -94,9 +106,7 @@ function listAllNotes(): Note[] {
   const notes: Note[] = [];
   for (const vault of VAULTS) {
     if (!fs.existsSync(vault.path)) continue;
-    const files = fs.readdirSync(vault.path).filter((f) => f.endsWith(".md"));
-    for (const file of files) {
-      const filePath = path.join(vault.path, file);
+    for (const filePath of walkMarkdownFiles(vault.path)) {
       try {
         const raw = fs.readFileSync(filePath, "utf-8");
         const { data, content } = matter(raw);
@@ -104,7 +114,7 @@ function listAllNotes(): Note[] {
           frontmatter: normalizeNoteData(data),
           content,
           filePath,
-          fileName: file,
+          fileName: path.basename(filePath),
           vaultName: vault.name,
         });
       } catch {
@@ -207,7 +217,11 @@ function getQuadrant(fm: NoteData): Quadrant {
 
 // ── Summary shape for list responses ─────────────────────────────────────────
 
+/** Projects discovered for the current tool call. */
+let loadedProjects: Project[] = [];
+
 function noteSummary(n: Note) {
+  const projectId = projectIdForPath(n.filePath, loadedProjects);
   return {
     id: n.frontmatter.id,
     title: n.frontmatter.title,
@@ -222,11 +236,28 @@ function noteSummary(n: Note) {
     team: n.frontmatter.team,
     links: n.frontmatter.links ?? [],
     archived: isArchived(n.frontmatter),
+    unmanaged: n.frontmatter.unmanaged === true,
     ...(n.frontmatter.template === true ? { template: true } : {}),
+    ...(projectId ? { project_id: projectId } : {}),
     vault: n.vaultName,
     preview: n.content.slice(0, 300).trim(),
   };
 }
+
+function restrictToProject(list: Note[], projectId: unknown): Note[] | string {
+  if (projectId === undefined || projectId === null || projectId === "") return list;
+  const project = loadedProjects.find((item) => item.id === String(projectId));
+  if (!project) return `Project not found: ${projectId}`;
+  return membersOf(list, project);
+}
+
+const PROJECT_ID_ARG = {
+  project_id: {
+    type: "string" as const,
+    description:
+      "Limit to notes inside this project. Membership is the project folder and its descendants. Omit for every vault.",
+  },
+};
 
 // ── Rules & conventions ───────────────────────────────────────────────────────
 
@@ -307,6 +338,17 @@ NOTE HISTORY (TIME MACHINE)
 
 DAILY DIGEST
 • Prefer get_briefing over assembling overdue/blocked/doing state from multiple list_notes calls.
+
+PROJECTS
+• A project is a folder with helm-project.json at its root. The id in that file is the project identity — never the folder name.
+• Every project uses the same folders: thinking/, features/, bugs/, and context/ (shown in Helm as Context / Docs). The main page is an ordinary note referenced by mainPageId.
+• A repository is optional. Projects work with repository: null.
+• Nested projects are rejected. A note belongs to a project only when its file is inside that project folder. Wiki links do not add membership.
+• Thinking and Context notes are created unmanaged (state cleared) so they stay off Kanban, Eisenhower, and the briefing until someone marks them managed.
+• Features and Bugs classify the note. Creating one does not set state to Doing. Moving a note between categories renames the file only — id, content, links, history, and workflow fields stay as they are.
+• The main page stays at the project root. Its overview fields are purpose, plan, nextAction, leftOff, and blockers.
+• list_notes, get_kanban, get_eisenhower, and get_briefing accept project_id. Unmanaged notes stay off those boards and the briefing.
+• The Helm app's Enable Projects setting only hides navigation. These tools still read and write project files.
 `.trim();
 
 // ── Server ────────────────────────────────────────────────────────────────────
@@ -375,6 +417,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description:
               "Filter to a specific vault by name (only relevant if multiple vaults are configured).",
           },
+          ...PROJECT_ID_ARG,
           ...INCLUDE_ARCHIVED,
         },
       },
@@ -421,13 +464,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "get_eisenhower",
       description:
         "Get all active notes (state=Prepare or Doing) grouped into the four Eisenhower quadrants: do, schedule, delegate, eliminate. Archived notes are excluded unless include_archived is true.",
-      inputSchema: { type: "object", properties: { ...INCLUDE_ARCHIVED } },
+      inputSchema: { type: "object", properties: { ...PROJECT_ID_ARG, ...INCLUDE_ARCHIVED } },
     },
     {
       name: "get_kanban",
       description:
-        "Get all notes grouped by workflow state (Prepare, Doing, Maintain, Done). Useful for reviewing progress across the board. Archived notes are excluded unless include_archived is true.",
-      inputSchema: { type: "object", properties: { ...INCLUDE_ARCHIVED } },
+        "Get all notes grouped by workflow state (Prepare, Doing, Maintain, Done). Unmanaged notes are excluded. Archived notes are excluded unless include_archived is true.",
+      inputSchema: { type: "object", properties: { ...PROJECT_ID_ARG, ...INCLUDE_ARCHIVED } },
     },
     {
       name: "get_backlinks",
@@ -601,14 +644,104 @@ Read get_rules for full merge semantics.`,
     {
       name: "get_briefing",
       description:
-        "One-call daily digest: overdue deadlines, deadlines due within 7 days, blocked notes, notes in Doing, and Doing notes untouched for 14+ days. Prefer this over assembling the picture from multiple list_notes calls. Archived notes are excluded unless include_archived is true.",
-      inputSchema: { type: "object", properties: { ...INCLUDE_ARCHIVED } },
+        "One-call daily digest: overdue deadlines, deadlines due within 7 days, blocked notes, notes in Doing, and Doing notes untouched for 14+ days. Prefer this over assembling the picture from multiple list_notes calls. Unmanaged notes are excluded. Archived notes are excluded unless include_archived is true.",
+      inputSchema: { type: "object", properties: { ...PROJECT_ID_ARG, ...INCLUDE_ARCHIVED } },
+    },
+    {
+      name: "list_projects",
+      description:
+        "List Helm projects discovered from helm-project.json files. A project works without a repository.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "get_project",
+      description:
+        "Read one project: metadata, main page, category counts, and member note ids. Pass the project id, not the folder name.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "string", description: "Project id from list_projects." },
+        },
+        required: ["project_id"],
+      },
+    },
+    {
+      name: "create_project",
+      description:
+        "Create a project folder with thinking/, features/, bugs/, context/, a main page, and helm-project.json. Refuses nested projects and an existing folder (promote that folder instead).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Display name. The folder is a slug of this name." },
+          repository: {
+            type: "string",
+            description:
+              "Optional source repository URL or path. Omit to leave the project unassociated.",
+          },
+          vault: {
+            type: "string",
+            description: "Vault name. Defaults to the first configured vault.",
+          },
+        },
+        required: ["name"],
+      },
+    },
+    {
+      name: "promote_folder",
+      description:
+        "Turn an existing folder into a project. Adds any missing standard folders and a main page. Does not move or overwrite existing notes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "Absolute folder path, or a path relative to the vault.",
+          },
+          repository: { type: "string", description: "Optional repository URL or path." },
+          vault: {
+            type: "string",
+            description: "Vault name. Defaults to the first configured vault.",
+          },
+        },
+        required: ["path"],
+      },
+    },
+    {
+      name: "capture_to_thinking",
+      description:
+        "Capture a note into a project's Thinking folder. No planning fields. The note is unmanaged and is not marked Doing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "string" },
+          title: { type: "string" },
+          content: { type: "string", description: "Optional markdown body." },
+        },
+        required: ["project_id", "title"],
+      },
+    },
+    {
+      name: "move_note_to_category",
+      description:
+        "Move a project note into thinking, features, bugs, or context. Renames the file only: the id, content, links, history, and workflow fields are unchanged. Refuses the main page and locked notes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Note ULID." },
+          category: {
+            type: "string",
+            enum: ["thinking", "features", "bugs", "context"],
+          },
+        },
+        required: ["id", "category"],
+      },
     },
   ],
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  loadedProjects = readProjects(VAULTS);
   const notes = listAllNotes();
 
   // ── get_rules ──────────────────────────────────────────────────────────────
@@ -627,6 +760,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── list_notes ─────────────────────────────────────────────────────────────
   if (name === "list_notes") {
     let filtered = excludeArchivedUnless(notes, args?.include_archived);
+    const scoped = restrictToProject(filtered, args?.project_id);
+    if (typeof scoped === "string") return { content: [{ type: "text", text: scoped }] };
+    filtered = scoped;
 
     if (args?.vault) {
       filtered = filtered.filter((n) => n.vaultName === String(args.vault));
@@ -772,8 +908,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── get_eisenhower ─────────────────────────────────────────────────────────
   if (name === "get_eisenhower") {
-    const active = excludeArchivedUnless(notes, args?.include_archived).filter(
-      (n) => n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing",
+    const scoped = restrictToProject(
+      excludeArchivedUnless(notes, args?.include_archived),
+      args?.project_id,
+    );
+    if (typeof scoped === "string") return { content: [{ type: "text", text: scoped }] };
+    const active = scoped.filter(
+      (n) =>
+        n.frontmatter.unmanaged !== true &&
+        (n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing"),
     );
     const quadrants: Record<Quadrant, ReturnType<typeof noteSummary>[]> = {
       do: [],
@@ -802,7 +945,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       Maintain: [],
       Done: [],
     };
-    for (const n of excludeArchivedUnless(notes, args?.include_archived)) {
+    const kanbanNotes = restrictToProject(
+      excludeArchivedUnless(notes, args?.include_archived),
+      args?.project_id,
+    );
+    if (typeof kanbanNotes === "string") return { content: [{ type: "text", text: kanbanNotes }] };
+    for (const n of kanbanNotes) {
+      if (n.frontmatter.unmanaged === true) continue;
       // `??` not `||` — a cleared (empty) state means the note is unmanaged, and
       // the `state in columns` guard below intentionally leaves it off the board.
       // Do not "fix" this into `||`: that would bucket unmanaged notes into Prepare.
@@ -1170,8 +1319,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── get_briefing ───────────────────────────────────────────────────────────
   if (name === "get_briefing") {
+    const scoped = restrictToProject(
+      excludeArchivedUnless(notes, args?.include_archived),
+      args?.project_id,
+    );
+    if (typeof scoped === "string") return { content: [{ type: "text", text: scoped }] };
     const today = todayDate();
-    const b = buildBriefing(excludeArchivedUnless(notes, args?.include_archived), today);
+    const b = buildBriefing(scoped, today);
     return {
       content: [
         {
@@ -1188,6 +1342,161 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             null,
             2,
           ),
+        },
+      ],
+    };
+  }
+
+  if (name === "list_projects") {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            loadedProjects.map((project) => ({
+              id: project.id,
+              name: project.name,
+              root: project.rootPath,
+              main_page_id: project.mainPageId,
+              status: project.status,
+              repository: project.repository,
+              vault: VAULTS.find((vault) => vault.path === project.vaultPath)?.name ?? null,
+            })),
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
+  if (name === "get_project") {
+    const project = loadedProjects.find((item) => item.id === String(args?.project_id ?? ""));
+    if (!project) {
+      return { content: [{ type: "text", text: `Project not found: ${args?.project_id}` }] };
+    }
+    const members = membersOf(notes, project);
+    const main = members.find((note) => note.frontmatter.id === project.mainPageId) ?? null;
+    const count = (category: string) =>
+      members.filter((note) => note.filePath.includes(`${path.sep}${category}${path.sep}`)).length;
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              id: project.id,
+              name: project.name,
+              root: project.rootPath,
+              status: project.status,
+              repository: project.repository,
+              main_page: main
+                ? {
+                    id: main.frontmatter.id,
+                    title: main.frontmatter.title,
+                    path: main.filePath,
+                    purpose: main.frontmatter.purpose ?? "",
+                    plan: main.frontmatter.plan ?? "",
+                    nextAction: main.frontmatter.nextAction ?? "",
+                    leftOff: main.frontmatter.leftOff ?? "",
+                    blockers: main.frontmatter.blockers ?? "",
+                    content: main.content,
+                  }
+                : null,
+              counts: {
+                thinking: count("thinking"),
+                features: count("features"),
+                bugs: count("bugs"),
+                context: count("context"),
+                members: members.length,
+              },
+              note_ids: members.map((note) => note.frontmatter.id),
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
+  if (name === "create_project" || name === "promote_folder") {
+    const vaultName = args?.vault ? String(args.vault) : undefined;
+    const vault = vaultName
+      ? (VAULTS.find((item) => item.name === vaultName) ?? VAULTS[0])
+      : VAULTS[0];
+    if (!vault) {
+      return {
+        content: [{ type: "text", text: "No vault configured. Set HELM_VAULT or HELM_VAULTS." }],
+      };
+    }
+    const repository = args?.repository ? String(args.repository) : null;
+    const result =
+      name === "create_project"
+        ? createProjectDir(vault, String(args?.name ?? ""), repository)
+        : promoteProjectDir(vault, String(args?.path ?? ""), repository);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  }
+
+  if (name === "capture_to_thinking") {
+    const project = loadedProjects.find((item) => item.id === String(args?.project_id ?? ""));
+    if (!project) {
+      return { content: [{ type: "text", text: `Project not found: ${args?.project_id}` }] };
+    }
+    const captured = captureThinkingNote(
+      project,
+      String(args?.title ?? "Untitled"),
+      args?.content ? String(args.content) : "",
+    );
+    return { content: [{ type: "text", text: JSON.stringify(captured, null, 2) }] };
+  }
+
+  if (name === "move_note_to_category") {
+    const id = String(args?.id ?? "");
+    const note = notes.find((item) => item.frontmatter.id === id);
+    if (!note) return { content: [{ type: "text", text: `Note not found: ${id}` }] };
+    if (note.frontmatter.locked) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Refused: "${note.frontmatter.title}" is locked. Unlock it in Helm first.`,
+          },
+        ],
+      };
+    }
+    const project = projectIdForPath(note.filePath, loadedProjects);
+    const record = loadedProjects.find((item) => item.id === project);
+    if (!record) {
+      return { content: [{ type: "text", text: "That note is not in a project." }] };
+    }
+    const category = String(args?.category ?? "") as ProjectCategoryId;
+    if (!["thinking", "features", "bugs", "context"].includes(category)) {
+      return { content: [{ type: "text", text: `Unknown category: ${args?.category}` }] };
+    }
+    const before = fs.readFileSync(note.filePath);
+    const moved = moveNoteToCategoryFile({
+      noteId: note.frontmatter.id,
+      filePath: note.filePath,
+      fileName: note.fileName,
+      project: record,
+      category,
+      takenPaths: notes.map((item) => item.filePath),
+    });
+    if (!moved.ok) return { content: [{ type: "text", text: moved.error }] };
+    const after = fs.readFileSync(moved.to);
+    if (!before.equals(after)) {
+      return {
+        content: [{ type: "text", text: "Refused: category move changed the note bytes." }],
+      };
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ id, from: moved.from, to: moved.to }, null, 2),
         },
       ],
     };

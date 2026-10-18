@@ -10,14 +10,14 @@ import { type DragDropEventHandlers, DragDropProvider, useDroppable } from "@dnd
 import { useSortable } from "@dnd-kit/react/sortable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NewNoteMenu } from "../components/sidebar/NewNoteMenu";
-import { isArchived, visibleNotes } from "../lib/archive";
+import { useScopedWorkflowNotes } from "../hooks/useScopedWorkflowNotes";
+import { isArchived } from "../lib/archive";
 import { NOTE_STATES } from "../lib/constants";
 import { createNote } from "../lib/create-note";
 import { serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
-import { useSettingsStore } from "../store/settings";
 import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
 import type { Note, NoteState } from "../types/note";
@@ -125,12 +125,8 @@ function KanbanColumn({
 }
 
 export function KanbanView() {
-  const { notes: allNotes, updateNote, vaults, activeVaultId } = useNoteStore();
-  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
-  const notes = useMemo(
-    () => visibleNotes(allNotes, showArchivedNotes),
-    [allNotes, showArchivedNotes],
-  );
+  const { updateNote, vaults, activeVaultId } = useNoteStore();
+  const { notes, project } = useScopedWorkflowNotes();
   const vault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const [items, setItems] = useState<Record<string, string[]>>(() => {
@@ -252,6 +248,8 @@ export function KanbanView() {
     void createNote({
       templateId,
       recordNavigation: true,
+      folderPath: project?.rootPath,
+      vaultId: vault?.id,
       overrides: { state },
     });
   }
@@ -264,7 +262,9 @@ export function KanbanView() {
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-col h-full p-6 gap-4 overflow-hidden">
-        <h2 className="shrink-0 text-xl font-bold">Kanban</h2>
+        <h2 className="shrink-0 text-xl font-bold">
+          {project ? `${project.name} — Kanban` : "Kanban"}
+        </h2>
         <div className="flex flex-1 gap-4 min-h-0">
           {NOTE_STATES.map((state) => (
             <KanbanColumn

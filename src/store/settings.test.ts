@@ -30,6 +30,30 @@ describe("useSettingsStore", () => {
       expect(result.current.settings.showArchivedNotes).toBe(DEFAULT_SETTINGS.showArchivedNotes);
     });
 
+    it("keeps Projects off by default and persists the opt-in", () => {
+      const { result } = renderHook(() => useSettingsStore());
+      expect(result.current.settings.enableProjects).toBe(false);
+      act(() => {
+        result.current.updateSettings({ enableProjects: true });
+      });
+      expect(result.current.settings.enableProjects).toBe(true);
+      const stored = JSON.parse(localStorage.getItem("helm-settings") ?? "{}");
+      expect(stored.enableProjects).toBe(true);
+
+      localStorage.setItem("helm-settings", JSON.stringify({ fontSize: 18 }));
+      const reloaded = JSON.parse(localStorage.getItem("helm-settings") ?? "{}");
+      expect(reloaded.enableProjects).toBeUndefined();
+      act(() => {
+        useSettingsStore.setState({
+          settings: {
+            ...DEFAULT_SETTINGS,
+            ...JSON.parse(localStorage.getItem("helm-settings") ?? "{}"),
+          },
+        });
+      });
+      expect(result.current.settings.enableProjects).toBe(false);
+    });
+
     it("persists show archived notes, which defaults to off", () => {
       const { result } = renderHook(() => useSettingsStore());
       expect(result.current.settings.showArchivedNotes).toBe(false);

@@ -47,6 +47,11 @@ export interface NoteDraftOverrides {
   addTags?: string[];
   /** Inline `#tag` written into the body when the body does not already contain it. */
   appendInlineTag?: string;
+  /**
+   * Project capture sets this for Thinking and Context. Absent leaves the
+   * field off the new note (managed).
+   */
+  unmanaged?: boolean;
 }
 
 export function isTemplateNote(note: Note): boolean {
@@ -206,6 +211,8 @@ export function instantiateNote(args: {
     state: applied.state ?? "Prepare",
     blocked: false,
   };
+
+  if (applied.unmanaged !== undefined) frontmatter.unmanaged = applied.unmanaged;
 
   if (template) frontmatter.template = false;
 

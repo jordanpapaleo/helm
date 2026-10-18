@@ -1,9 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseNote } from "../../lib/note-parser";
+import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
+import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
@@ -377,5 +379,67 @@ describe("NoteListPanel — new note menu", () => {
     const parsed = parseNote(raw ?? "", filePath ?? "");
     expect(parsed.content.trim()).toBe("#work");
     expect(parsed.frontmatter.tags).toEqual(["work"]);
+  });
+});
+
+describe("NoteListPanel — category move", () => {
+  it("renames the file and leaves workflow fields alone", async () => {
+    vi.clearAllMocks();
+    const kitchen: Project = {
+      id: "01PROJECT0000000000000001",
+      name: "Kitchen",
+      mainPageId: "01MAIN",
+      status: "active",
+      repository: null,
+      rootPath: "/vault/kitchen",
+      metaPath: "/vault/kitchen/helm-project.json",
+      vaultId: "v1",
+      vaultPath: "/vault",
+    };
+    const idea = makeNote({
+      id: "01IDEA",
+      title: "Skylight",
+      state: "Prepare",
+      unmanaged: true,
+      links: ["01OTHER"],
+    });
+    idea.id = "01IDEA";
+    idea.filePath = "/vault/kitchen/thinking/skylight.md";
+    idea.fileName = "skylight.md";
+    idea.content = "See [[Other]]";
+
+    useNoteStore.setState({
+      notes: [idea],
+      selectedNoteId: null,
+      vaults: [VAULT],
+      activeVaultId: "v1",
+      tagTree: {},
+      searchIndex: null,
+      searchQuery: "",
+      searchResults: [],
+      knownFolderPaths: [],
+    });
+    useProjectStore.setState({ projects: [kitchen] });
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useUIStore.setState({ selectedGrouping: { type: "all", id: null } });
+
+    render(<NoteListPanel />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: /Skylight/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move to category" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Features" }));
+
+    await waitFor(() =>
+      expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+        "/vault/kitchen/thinking/skylight.md",
+        "/vault/kitchen/features/skylight.md",
+      ),
+    );
+    const moved = useNoteStore.getState().notes[0];
+    expect(moved?.id).toBe("01IDEA");
+    expect(moved?.frontmatter.state).toBe("Prepare");
+    expect(moved?.frontmatter.unmanaged).toBe(true);
+    expect(moved?.frontmatter.links).toEqual(["01OTHER"]);
+    expect(moved?.content).toBe("See [[Other]]");
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
   });
 });

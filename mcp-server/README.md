@@ -73,7 +73,13 @@ Use `HELM_VAULTS` (comma-separated) instead of `HELM_VAULT`:
 
 | Tool | Description |
 |------|-------------|
-| `get_briefing` | One-call daily digest: overdue, due soon (7 days), blocked, doing, and stale Doing notes (untouched 14+ days). Excludes archived notes unless `include_archived` is true |
+| `get_briefing` | One-call daily digest: overdue, due soon (7 days), blocked, doing, and stale Doing notes (untouched 14+ days). Excludes archived notes unless `include_archived` is true. Excludes unmanaged notes. Pass `project_id` to limit the digest to one project |
+| `list_projects` | Discover projects from `helm-project.json` |
+| `get_project` | One project's metadata, main page, and member notes |
+| `create_project` | Create the standard folders, main page, and metadata. Repository is optional |
+| `promote_folder` | Turn an existing folder into a project without moving or overwriting its notes |
+| `capture_to_thinking` | Add an unmanaged note to a project's Thinking folder |
+| `move_note_to_category` | Move a note into thinking, features, bugs, or context. The id, content, links, and workflow fields stay put |
 
 ## Note history
 

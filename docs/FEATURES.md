@@ -228,6 +228,18 @@ Creation context is the only reason to set workflow fields, and it overrides tho
 
 Locked templates can still be used. Notes in Trash are not listed. With no templates, the menu offers Blank only and that choice matches the previous blank-note behavior.
 
+### Projects
+
+Projects are off until **Settings → General → Enable Projects**. Turning the setting off hides project navigation and scoped boards. It does not delete or move project files, and turning it back on restores them.
+
+A project is a folder with `helm-project.json` at its root. The file holds a stable project id and the id of the main page. The folder name is only a label. Clicking a project opens that main page. Expanding it shows the same four folders for every project: Thinking, Features, Bugs, and Context / Docs.
+
+The main page edits purpose, plan / milestone, next action, where work left off, and blockers or decisions, next to a count of that project's Doing and blocked notes. Dashboard, Kanban, and Eisenhower from the project include only that project's notes. All Notes and the unscoped boards stay global.
+
+New notes in Thinking and Context / Docs start unmanaged, so they stay off the boards and the daily briefing until you mark them managed. Features and Bugs are a classification, not a commitment: a new note there is not marked Doing. Moving a note between those folders keeps its id, history, links, and workflow fields. Use **Move to category** in the note list.
+
+A repository URL is optional. Home projects and software projects use the same structure, and a project works with no repository at all. Promoting an existing folder adds the missing folders and a main page without moving or overwriting notes. A project cannot sit inside another project.
+
 ### Archived notes
 
 **Archive** keeps a note for recall without deleting it or changing its workflow. The file, id, content, tags, links, history, and other frontmatter stay where they are. Only `archived: true` is set. Unarchive sets `archived: false` and restores the note to everyday views with that metadata intact.

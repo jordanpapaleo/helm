@@ -54,7 +54,7 @@ src-tauri/
     vault.rs        # commands: list/read/write/delete/rename notes+folders, assets, snapshot_note, list_note_history, watch_vault (+ #[cfg(test)] unit tests)
   capabilities/default.json  # window permission list — new windows MUST be added here
 mcp-server/
-  index.ts          # MCP server for Claude Desktop — 16 tools incl. note history + get_briefing
+  index.ts          # MCP server for Claude Desktop — 22 tools incl. note history, briefing, projects
   history.ts        # snapshot/list history (KEEP IN SYNC with vault.rs)
   briefing.ts       # daily digest (KEEP IN SYNC with src/lib/briefing.ts)
 ```
@@ -109,7 +109,7 @@ Markdown content here. You can use [[Wiki Links]] and #inline-tags.
 
 `mcp-server/` is a standalone Node.js MCP server for Claude Desktop (run via `node --import tsx/esm index.ts`). It reads/writes the vault directly via the filesystem (not through Tauri). Configured via `HELM_VAULT` (single) or `HELM_VAULTS` (comma-separated) env vars. Register in `~/Library/Application Support/Claude/claude_desktop_config.json`.
 
-16 tools: reads (list/read/resolve/search/eisenhower/kanban/backlinks/tag-tree/rules), writes (create/update/delete — update and delete snapshot the previous version to `.helm-history/` first), history (get_note_history / read_note_version / restore_note_version), and `get_briefing` (daily digest). It writes to the vault root only (no folder support yet). Smoke-test it over stdio by piping JSON-RPC `initialize` + `tools/list` lines into the process.
+22 tools: reads (list/read/resolve/search/eisenhower/kanban/backlinks/tag-tree/rules), writes (create/update/delete — update and delete snapshot the previous version to `.helm-history/` first), history (get_note_history / read_note_version / restore_note_version), `get_briefing` (daily digest), and projects (list/get/create/promote/capture_to_thinking/move_note_to_category). Note reads walk the vault recursively. Project writes go into the project folder. Smoke-test it over stdio by piping JSON-RPC `initialize` + `tools/list` lines into the process.
 
 ## Releasing
 

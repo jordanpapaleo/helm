@@ -6,9 +6,12 @@ import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { createNote, creationTargetFromUI } from "../../lib/create-note";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
+import { moveNoteToCategory } from "../../lib/project-actions";
+import { PROJECT_CATEGORIES, projectForPath } from "../../lib/projects";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp, timestampDate } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
+import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
@@ -36,6 +39,8 @@ export function NoteListPanel() {
   } = useNoteStore();
   const { items: trashItems, removeFromTrash, permanentlyDelete, addToTrash } = useTrashStore();
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
+  const enableProjects = useSettingsStore((s) => s.settings.enableProjects);
+  const projects = useProjectStore((s) => s.projects);
   const [search, setSearch] = useState("");
   const [menu, setMenu] = useState<MenuState>(null);
   // null means no note is being renamed inline
@@ -107,6 +112,19 @@ export function NoteListPanel() {
       updateNote(updated);
     } catch (e) {
       reportError("Failed to toggle pin", e);
+    }
+  }
+
+  async function handleMoveToCategory(
+    note: Note,
+    category: (typeof PROJECT_CATEGORIES)[number]["id"],
+  ) {
+    const project = projectForPath(note.filePath, projects);
+    if (!project) return;
+    try {
+      await moveNoteToCategory(note, project, category);
+    } catch (e) {
+      reportError("Failed to move note", e);
     }
   }
 
@@ -319,6 +337,22 @@ export function NoteListPanel() {
                               onClick: () => handleMoveNote(note, f.path),
                             })),
                           },
+                          ...(enableProjects &&
+                          projectForPath(note.filePath, projects) &&
+                          projectForPath(note.filePath, projects)?.mainPageId !== note.id
+                            ? [
+                                {
+                                  kind: "submenu" as const,
+                                  label: "Move to category",
+                                  items: PROJECT_CATEGORIES.map((category) => ({
+                                    label: category.label,
+                                    onClick: () => {
+                                      void handleMoveToCategory(note, category.id);
+                                    },
+                                  })),
+                                },
+                              ]
+                            : []),
                           ...(note.frontmatter.locked
                             ? []
                             : [

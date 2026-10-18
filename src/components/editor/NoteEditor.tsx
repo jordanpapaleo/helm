@@ -1,6 +1,7 @@
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, Extension, useEditor } from "@tiptap/react";
+import { registerEditorDraft } from "../../lib/editor-draft";
 import { richCodeBlock } from "./CodeBlockView";
 import {
   CodeBlockGapCursor,
@@ -391,6 +392,11 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       },
       [editor],
     );
+
+    useEffect(() => {
+      if (!editor) return;
+      return registerEditorDraft(note.id, () => getEditorMarkdown(editor));
+    }, [editor, note.id]);
 
     useImperativeHandle(
       ref,

@@ -1,13 +1,15 @@
 import { Icon } from "@iconify/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { THEMES } from "../../lib/themes";
 import { useSettingsStore } from "../../store/settings";
 import { useThemeStore } from "../../store/theme";
+import { useToolsStore } from "../../store/tools";
 import { SyncTab } from "./SyncTab";
+import { ToolsTab } from "./ToolsTab";
 
 // ── Tab types ────────────────────────────────────────────────────────────────
 
-type Tab = "typography" | "themes" | "general" | "sync";
+type Tab = "typography" | "themes" | "general" | "sync" | "tools";
 
 interface TabDef {
   id: Tab;
@@ -81,6 +83,11 @@ function SlidersIcon() {
 }
 
 const TABS: TabDef[] = [
+  {
+    id: "tools",
+    label: "Tools",
+    icon: <Icon icon="uil:apps" className="h-4 w-4" aria-hidden="true" />,
+  },
   { id: "typography", label: "Typography", icon: <TypographyIcon /> },
   { id: "themes", label: "Themes", icon: <PaletteIcon /> },
   { id: "general", label: "General", icon: <SlidersIcon /> },
@@ -272,7 +279,9 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("typography");
+  const [activeTab, setActiveTab] = useState<Tab>(useToolsStore.getState().settingsSection);
+
+  useEffect(() => () => useToolsStore.getState().resetSettingsSection(), []);
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop captures clicks outside the dialog
@@ -335,6 +344,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           {activeTab === "themes" && <ThemesTab />}
           {activeTab === "general" && <GeneralTab />}
           {activeTab === "sync" && <SyncTab />}
+          {activeTab === "tools" && <ToolsTab />}
         </div>
       </div>
     </div>

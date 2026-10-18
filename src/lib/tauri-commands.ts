@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import type { WriterConnection, WriterEvent, WriterMode, WriterProvider } from "../tools/writer";
 import type { VaultConfig } from "../types/note";
 
 export interface NoteFile {
@@ -14,6 +15,29 @@ export interface HistoryEntry {
 }
 
 export const tauriCommands = {
+  writerKeyStatus: (provider: WriterProvider): Promise<boolean> =>
+    invoke("writer_key_status", { provider }),
+  writerKeySet: (provider: WriterProvider, key: string): Promise<void> =>
+    invoke("writer_key_set", { provider, key }),
+  writerKeyRemove: (provider: WriterProvider): Promise<void> =>
+    invoke("writer_key_remove", { provider }),
+  writerApiModels: (provider: WriterProvider): Promise<string[]> =>
+    invoke("writer_api_models", { provider }),
+  writerLogin: (provider: WriterProvider): Promise<void> => invoke("writer_login", { provider }),
+  writerConnections: (): Promise<WriterConnection[]> => invoke("writer_connections"),
+  writerSend: (
+    requestId: string,
+    provider: WriterProvider,
+    prompt: string,
+    onEvent: (event: WriterEvent) => void,
+    mode: WriterMode = "subscription",
+    model = "",
+  ): Promise<void> => {
+    const events = new Channel<WriterEvent>();
+    events.onmessage = onEvent;
+    return invoke("writer_send", { requestId, provider, prompt, events, mode, model });
+  },
+  writerCancel: (requestId: string): Promise<void> => invoke("writer_cancel", { requestId }),
   /** Quit the whole process (not just the current window). */
   exitApp: (): Promise<void> => invoke("exit_app"),
 

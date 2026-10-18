@@ -13,6 +13,7 @@ import {
 import { usePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
+import { registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
 import {
   extractInlineTags,
@@ -92,6 +93,7 @@ const MarkdownTextarea = forwardRef<
 
   // Read latest state through refs so the flusher registered on mount never
   // captures stale values.
+  useEffect(() => registerEditorDraft(noteId, () => valueRef.current), [noteId]);
   const valueRef = useRef(value);
   valueRef.current = value;
   const onSaveRef = useRef(onSave);

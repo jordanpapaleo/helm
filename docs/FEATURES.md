@@ -403,3 +403,26 @@ A persistent toolbar provides Back/Forward navigation and independent left/right
 Drag the vertical separators to resize each column, or focus a separator and use Left/Right arrows for 10px steps. Panel visibility and completed width changes persist across restarts. Hiding panels preserves the center editor and its pending edits.
 
 At narrow widths Helm reduces panels to their minimum widths, then temporarily hides the right panel followed by the left area to reserve 320px for the center. Explicitly opening either side gives that side priority. Growing the window restores the requested layout and remembered widths.
+
+## Writer tool (subscription prototype)
+
+Open **Settings → Tools**, enable **Writer**, and open the right panel. Choose **Codex · ChatGPT subscription** or **Claude Code · Claude subscription**. Install the corresponding command-line client first; Helm discovers it on PATH and in common macOS/Linux installation locations. The sign-in button launches that client's browser flow. Terminal fallback: `codex login` or `claude auth login`, then **Check connection**.
+
+In Subscription mode, Writer uses the client-owned subscription sign-in and refuses API-key authentication. API-key billing is a separate, explicitly selected connection. Provider plan limits still apply. Recent CLI versions are required for the isolated invocation flags; update the client if a reply ends immediately without output.
+
+Type a message and Send (or Enter; Shift+Enter adds a new line). Writer follows the open note by default. A **Using: Note title** indicator shows which note's latest draft will be sent with your next message; click it to preview the context. Unsaved text is included. Switching notes does not send anything or clear the conversation. Each sent message keeps its note-context snapshot, so earlier notes remain available in the conversation. Turn off **Use open note** for conversation-only messages; earlier context remains until **New chat**. When no note is open, only the conversation is sent.
+
+Replies are plain text/Markdown source, with **Copy** for pasting through the editor. Claude delivers incremental text; the Codex CLI delivers its assistant message when ready. **Stop reply** cancels the native client. Hiding/reopening the right panel preserves the conversation and composer. Disabling Writer cancels a running reply. Conversations are scoped to the active vault and provider and stay in memory for this app session; transcript saving and a recent-chat picker are follow-up work.
+
+The clients run in an app-owned workspace with shell, file, MCP/connector, and other agent tools disabled. They cannot directly modify notes. Explicitly submitted text goes to the selected provider; it is subject to that provider's subscription data controls. Helm's core note editing remains local.
+
+
+### API-key connections
+
+In **Settings → Tools**, choose OpenAI or Claude, then **Connection → API key · API billing**. Paste a key and click **Save key**. Helm stores the key through the operating system credential store (macOS Keychain / Linux Secret Service), never in localStorage or vault files. The key input clears after saving; keys cannot be read back through the UI. **Remove key** removes that provider's saved credential without affecting subscription sign-in.
+
+Use **Load available models** to fetch the provider catalog, then choose or type a text-generation model ID in **API model**. Catalog loading sends no note content and does not generate a reply. A catalog entry alone does not guarantee inference access. Subscription connections have an optional model field; blank keeps the CLI's default. Model preferences are remembered separately for each provider and connection mode.
+
+The Writer header labels **API billing** and its model. API requests go directly from Rust to the fixed official OpenAI Responses or Anthropic Messages endpoint, with streaming and Stop support. Keys are never sent through a CLI or exposed in stream errors. A failed API request does not retry through a subscription, and subscription requests do not fall back to API billing. API mode needs no installed CLI. Switching providers or billing modes keeps a separate in-memory conversation for each connection; changing the model keeps the current conversation.
+
+Automated checks cover secret-free preferences, key-setup UI, explicit mode/model routing, protocol parsing, errors, and cancellation. Real API inference and OS credential-store prompts require a configured key and remain a manual verification step; Linux Secret Service has not been exercised on the macOS development machine.

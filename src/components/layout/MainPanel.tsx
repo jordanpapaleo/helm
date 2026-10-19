@@ -622,6 +622,10 @@ export function MainPanel() {
 
   async function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
     if (!selectedNote) return;
+    // A locked note stays read-only except for the unlock toggle itself.
+    if (selectedNote.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) {
+      return;
+    }
     if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
     const updated = {
       ...selectedNote,
@@ -688,6 +692,7 @@ export function MainPanel() {
                 project={openProject}
                 notes={notes}
                 frontmatter={selectedNote.frontmatter}
+                locked={selectedNote.frontmatter.locked}
                 onChange={(patch) => {
                   void handleFrontmatterChange(patch);
                 }}

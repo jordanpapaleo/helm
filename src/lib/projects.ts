@@ -87,8 +87,21 @@ export interface PromoteFolderInput {
   now: string;
 }
 
+/** Collapse `.` and `..` so a path cannot pretend to sit inside a vault. */
 export function normalizePath(path: string): string {
-  return path.replace(/\/+$/, "");
+  const absolute = path.startsWith("/");
+  const parts: string[] = [];
+  for (const part of path.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (parts.length > 0) parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  const joined = parts.join("/");
+  if (absolute) return joined ? `/${joined}` : "/";
+  return joined;
 }
 
 export function isSameOrInside(path: string, root: string): boolean {

@@ -11,7 +11,9 @@ import {
   type CreateProjectInput,
   collectFolderPaths,
   emptyRepository,
+  normalizePath,
   type PlannedPage,
+  PROJECT_META_FILENAME,
   type Project,
   type ProjectCategoryId,
   planCategoryMove,
@@ -117,8 +119,17 @@ export async function promoteFolder(input: {
   repository?: string | null;
 }): Promise<{ project: Project; mainPage: Note }> {
   const now = nowTimestamp();
+  const inputs = snapshotInputs();
+  const marker = `${normalizePath(input.folderPath)}/${PROJECT_META_FILENAME}`;
+  // list_project_files returns every marker, including invalid JSON that
+  // discovery skips. Notes alone would miss that file and promotion would
+  // overwrite it.
+  const markers = await tauriCommands.listProjectFiles(input.vaultPath);
+  if (markers.some((file) => normalizePath(file.path) === marker)) {
+    inputs.existingFilePaths = [...inputs.existingFilePaths, marker];
+  }
   const plan = planPromoteFolder({
-    ...snapshotInputs(),
+    ...inputs,
     vaultId: input.vaultId,
     vaultPath: input.vaultPath,
     folderPath: input.folderPath,

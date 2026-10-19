@@ -176,6 +176,40 @@ describe("planPromoteFolder", () => {
     expect(plan.project.id).toBe("01PROJECT0000000000000002");
   });
 
+  it("treats a path that climbs out of the vault as outside it", () => {
+    const plan = planPromoteFolder({
+      vaultId: "v1",
+      vaultPath: "/vault",
+      folderPath: "/vault/../outside",
+      repository: null,
+      existingFilePaths: [],
+      projects: [],
+      projectId: "01P",
+      mainPageId: "01M",
+      now: NOW,
+    });
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.error).toMatch(/inside the vault/);
+  });
+
+  it("refuses to promote over an existing metadata file", () => {
+    const plan = planPromoteFolder({
+      vaultId: "v1",
+      vaultPath: "/vault",
+      folderPath: "/vault/renovation",
+      repository: null,
+      existingFilePaths: ["/vault/renovation/helm-project.json"],
+      projects: [],
+      projectId: "01P",
+      mainPageId: "01M",
+      now: NOW,
+    });
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.error).toMatch(/project metadata/);
+  });
+
   it("refuses the vault root and a folder that contains a project", () => {
     expect(
       planPromoteFolder({

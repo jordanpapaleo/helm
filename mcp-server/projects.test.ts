@@ -56,6 +56,29 @@ describe("project files", () => {
     expect(fs.existsSync(path.join(folder, "bugs"))).toBe(true);
   });
 
+  it("does not promote a relative path that resolves outside the vault", () => {
+    const outside = fs.mkdtempSync(path.join(path.dirname(vault), "helm-outside-"));
+    const relative = path.relative(vault, outside);
+    expect(relative.startsWith("..")).toBe(true);
+
+    const result = promoteProjectDir(ref(), relative, null);
+    expect(result.ok).toBe(false);
+    expect(fs.existsSync(path.join(outside, "helm-project.json"))).toBe(false);
+    expect(fs.existsSync(path.join(outside, "thinking"))).toBe(false);
+  });
+
+  it("does not overwrite an existing non-markdown project marker", () => {
+    const folder = path.join(vault, "renovation");
+    fs.mkdirSync(folder);
+    const marker = path.join(folder, "helm-project.json");
+    fs.writeFileSync(marker, "{ not valid");
+
+    const result = promoteProjectDir(ref(), folder, null);
+    expect(result.ok).toBe(false);
+    expect(fs.readFileSync(marker, "utf8")).toBe("{ not valid");
+    expect(fs.existsSync(path.join(folder, "thinking"))).toBe(false);
+  });
+
   it("rejects a nested project", () => {
     const parent = createProjectDir(ref(), "House", null);
     expect(parent.ok).toBe(true);

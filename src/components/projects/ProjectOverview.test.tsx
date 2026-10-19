@@ -79,4 +79,25 @@ describe("ProjectOverview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Kanban" }));
     expect(onOpenView).toHaveBeenCalledWith("kanban");
   });
+
+  it("does not edit overview fields when the main page is locked", () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectOverview
+        project={project}
+        frontmatter={frontmatter({ locked: true, purpose: "Keep this" })}
+        locked
+        onChange={onChange}
+        onMetaChange={vi.fn()}
+        onOpenView={vi.fn()}
+        notes={[]}
+      />,
+    );
+
+    const purpose = screen.getByLabelText("Purpose");
+    expect(purpose).toBeDisabled();
+    fireEvent.change(purpose, { target: { value: "Changed anyway" } });
+    fireEvent.blur(purpose);
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

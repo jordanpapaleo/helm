@@ -16,6 +16,8 @@ interface ProjectOverviewProps {
   project: Project;
   notes: Note[];
   frontmatter: NoteFrontmatter;
+  /** Main page is read-only. Overview fields write that note, so they lock too. */
+  locked?: boolean;
   onChange: (patch: Partial<NoteFrontmatter>) => void;
   onMetaChange: (patch: { status?: ProjectStatus; repository?: string | null }) => void;
   onOpenView: (view: "dashboard" | "kanban" | "eisenhower") => void;
@@ -41,6 +43,7 @@ export function ProjectOverview({
   project,
   notes,
   frontmatter,
+  locked = false,
   onChange,
   onMetaChange,
   onOpenView,
@@ -68,6 +71,7 @@ export function ProjectOverview({
   ).length;
 
   function commitField(key: OverviewKey) {
+    if (locked) return;
     if (draft[key] === overviewValue(frontmatter, key)) return;
     onChange({ [key]: draft[key] });
   }
@@ -105,11 +109,13 @@ export function ProjectOverview({
             <textarea
               value={draft[field.key]}
               rows={field.key === "nextAction" ? 2 : 3}
+              readOnly={locked}
+              disabled={locked}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, [field.key]: event.target.value }))
               }
               onBlur={() => commitField(field.key)}
-              className="w-full resize-y rounded-lg border border-base-300 bg-base-100 px-2 py-1 text-sm text-base-content"
+              className={`w-full resize-y rounded-lg border border-base-300 bg-base-100 px-2 py-1 text-sm text-base-content ${locked ? "cursor-not-allowed opacity-60" : ""}`}
             />
           </label>
         ))}

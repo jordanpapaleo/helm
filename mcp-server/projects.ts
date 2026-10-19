@@ -182,16 +182,21 @@ export function promoteProjectDir(
   repository: string | null,
 ): { ok: true; project: Project; mainPagePath: string } | { ok: false; error: string } {
   const now = nowTimestamp();
-  const absolute = path.isAbsolute(folderPath) ? folderPath : path.join(vault.path, folderPath);
+  // path.join keeps `..`, so `/vault/../outside` would look like a child of the
+  // vault to a string-prefix check. Resolve first, then test containment.
+  const absolute = path.resolve(vault.path, folderPath);
   if (!fs.existsSync(absolute) || !fs.statSync(absolute).isDirectory()) {
     return { ok: false, error: `Folder not found: ${folderPath}` };
   }
+  const existingFilePaths = walkMarkdownFiles(vault.path);
+  const marker = path.join(absolute, PROJECT_META_FILENAME);
+  if (fs.existsSync(marker)) existingFilePaths.push(marker);
   const plan = planPromoteFolder({
     vaultId: "",
     vaultPath: vault.path,
     folderPath: absolute,
     repository,
-    existingFilePaths: walkMarkdownFiles(vault.path),
+    existingFilePaths,
     projects: readProjects([vault]),
     projectId: ulid(),
     mainPageId: ulid(),

@@ -8,6 +8,11 @@ export interface NoteFile {
   content: string;
 }
 
+export interface ProjectFile {
+  path: string;
+  content: string;
+}
+
 export interface HistoryEntry {
   /** Snapshot time as unix epoch milliseconds */
   ts_ms: number;
@@ -84,6 +89,17 @@ export const tauriCommands = {
     invoke("list_note_history", { vaultPath, noteId }),
 
   listFolders: (vaultPath: string): Promise<string[]> => invoke("list_folders", { vaultPath }),
+
+  /** helm-project.json files under the vault. Notes are not included. */
+  listProjectFiles: (vaultPath: string): Promise<ProjectFile[]> =>
+    invoke("list_project_files", { vaultPath }),
+
+  /** Read a non-note vault file (project metadata). Same IPC as readNote. */
+  readTextFile: (filePath: string): Promise<string> => invoke("read_note", { filePath }),
+
+  /** Write a non-note vault file (project metadata). Same IPC as writeNote. */
+  writeTextFile: (filePath: string, content: string): Promise<void> =>
+    invoke("write_note", { filePath, content }),
 
   createFolder: (path: string): Promise<void> => invoke("create_folder", { path }),
 

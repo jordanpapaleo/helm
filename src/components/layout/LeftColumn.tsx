@@ -7,14 +7,19 @@ import { createNote } from "../../lib/create-note";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { syncPrefs } from "../../lib/git-sync";
 import { syncConnectedVaults } from "../../lib/git-sync-runtime";
+import { createProject, promoteFolder } from "../../lib/project-actions";
+import { folderDisplayName, normalizePath, type Project, pathsOverlap } from "../../lib/projects";
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { listTemplateChoices } from "../../lib/templates";
 import { buildTagTree, type TagNode, useNoteStore } from "../../store/notes";
+import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { type Grouping, useUIStore, type View } from "../../store/ui";
+import { CreateProjectDialog } from "../projects/CreateProjectDialog";
+import { ProjectsSidebar } from "../projects/ProjectsSidebar";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
 import { RenameInput } from "../sidebar/RenameInput";
 import { VaultSyncButton } from "./VaultSyncButton";
@@ -37,6 +42,9 @@ function FolderGroupings({
   renamingFolderPath,
   onRenameCommit,
   onRenameCancel,
+  projects,
+  projectsEnabled,
+  onOpenProject,
 }: {
   depth?: number;
   nodes: TreeNode[];
@@ -48,6 +56,9 @@ function FolderGroupings({
   renamingFolderPath: string | null;
   onRenameCommit: (oldPath: string, newName: string) => void;
   onRenameCancel: () => void;
+  projects: Project[];
+  projectsEnabled: boolean;
+  onOpenProject: (project: Project) => void;
 }) {
   const { selectedGrouping } = useUIStore();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -69,6 +80,10 @@ function FolderGroupings({
         const isActive = selectedGrouping.type === "folder" && selectedGrouping.id === node.path;
         const count = noteCount(node.path);
         const isRenaming = renamingFolderPath === node.path;
+        const projectRoot = projectsEnabled
+          ? projects.find((project) => normalizePath(project.rootPath) === normalizePath(node.path))
+          : undefined;
+        const label = folderDisplayName(node.path, node.name, projects, projectsEnabled);
 
         return (
           <React.Fragment key={node.path}>
@@ -106,7 +121,7 @@ function FolderGroupings({
                 {isRenaming ? (
                   <div className="flex flex-1 min-w-0 items-center gap-1.5 pr-2">
                     <Icon
-                      icon="uil:folder"
+                      icon={projectRoot ? "uil:briefcase" : "uil:folder"}
                       className="h-3.5 w-3.5 shrink-0 opacity-60"
                       aria-hidden="true"
                     />
@@ -120,15 +135,19 @@ function FolderGroupings({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => onNavigate({ type: "folder", id: node.path })}
+                    onClick={() =>
+                      projectRoot
+                        ? onOpenProject(projectRoot)
+                        : onNavigate({ type: "folder", id: node.path })
+                    }
                     className="flex flex-1 min-w-0 items-center gap-1.5 pr-2"
                   >
                     <Icon
-                      icon="uil:folder"
+                      icon={projectRoot ? "uil:briefcase" : "uil:folder"}
                       className="h-3.5 w-3.5 shrink-0 opacity-60"
                       aria-hidden="true"
                     />
-                    <span className="flex-1 truncate text-left">{node.name}</span>
+                    <span className="flex-1 truncate text-left">{label}</span>
                     {count > 0 && <span className="shrink-0 text-xs opacity-40">{count}</span>}
                   </button>
                 )}
@@ -151,6 +170,9 @@ function FolderGroupings({
                 renamingFolderPath={renamingFolderPath}
                 onRenameCommit={onRenameCommit}
                 onRenameCancel={onRenameCancel}
+                projects={projects}
+                projectsEnabled={projectsEnabled}
+                onOpenProject={onOpenProject}
               />
             )}
           </React.Fragment>
@@ -321,6 +343,7 @@ type MenuState =
 
 export function LeftColumn() {
   const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [renamingFolderPath, setRenamingFolderPath] = useState<string | null>(null);
   const [renamingTag, setRenamingTag] = useState<string | null>(null);
   const [folderMenu, setFolderMenu] = useState<MenuState>(null);
@@ -329,6 +352,8 @@ export function LeftColumn() {
   const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, selectedNoteId } =
     useNoteStore();
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
+  const enableProjects = useSettingsStore((s) => s.settings.enableProjects);
+  const projects = useProjectStore((s) => s.projects);
   const discoveryNotes = useMemo(
     () => visibleNotes(notes, showArchivedNotes),
     [notes, showArchivedNotes],
@@ -388,6 +413,71 @@ export function LeftColumn() {
 
   function handleCreateNoteInFolder(folderPath: string, templateId: string | null) {
     void createNote({ folderPath, vaultId: activeVault?.id, templateId });
+  }
+
+  const vaultProjects =
+    enableProjects && activeVault
+      ? projects.filter((project) => project.vaultId === activeVault.id)
+      : [];
+
+  function openProject(project: Project) {
+    const mainPage = notes.find((note) => note.id === project.mainPageId);
+    if (!mainPage) {
+      reportError(
+        "Project main page is missing",
+        new Error(`No note with id ${project.mainPageId}`),
+      );
+    }
+    navigate({
+      view: "notes",
+      selectedNoteId: mainPage?.id ?? null,
+      selectedGrouping: { type: "folder", id: project.rootPath },
+    });
+  }
+
+  function openFolder(folderPath: string) {
+    navigate({
+      view: "notes",
+      selectedNoteId,
+      selectedGrouping: { type: "folder", id: folderPath },
+    });
+  }
+
+  async function handleCreateProject(name: string, repository: string) {
+    if (!activeVault) return;
+    setCreateProjectOpen(false);
+    try {
+      const created = await createProject({
+        vaultId: activeVault.id,
+        vaultPath: activeVault.path,
+        parentPath: activeVault.path,
+        name,
+        repository,
+      });
+      openProject(created.project);
+    } catch (error) {
+      reportError("Failed to create project", error);
+    }
+  }
+
+  async function handlePromoteFolder(folderPath: string) {
+    if (!activeVault) return;
+    try {
+      const created = await promoteFolder({
+        vaultId: activeVault.id,
+        vaultPath: activeVault.path,
+        folderPath,
+      });
+      openProject(created.project);
+    } catch (error) {
+      reportError("Failed to promote folder", error);
+    }
+  }
+
+  function canPromote(folderPath: string): boolean {
+    if (!enableProjects || !activeVault) return false;
+    if (normalizePath(folderPath) === normalizePath(activeVault.path)) return false;
+    return !projects.some((project) => pathsOverlap(folderPath, project.rootPath));
   }
 
   // Single create-folder path shared by the root "New folder" button and the
@@ -556,6 +646,17 @@ export function LeftColumn() {
         label: "Rename",
         onClick: () => setRenamingFolderPath(folderPath),
       },
+      ...(canPromote(folderPath)
+        ? [
+            {
+              kind: "action" as const,
+              label: "Promote to Project",
+              onClick: () => {
+                void handlePromoteFolder(folderPath);
+              },
+            },
+          ]
+        : []),
       { kind: "separator" },
       {
         kind: "action",
@@ -677,6 +778,22 @@ export function LeftColumn() {
               </button>
             </div>
 
+            {enableProjects && (
+              <ProjectsSidebar
+                projects={vaultProjects}
+                selectedFolder={selectedGrouping.type === "folder" ? selectedGrouping.id : null}
+                onOpenProject={openProject}
+                onOpenFolder={openFolder}
+                onCreate={() => setCreateProjectOpen(true)}
+                onCaptureThinking={(project) => {
+                  void createNote({
+                    folderPath: `${project.rootPath}/thinking`,
+                    vaultId: activeVault?.id,
+                  });
+                }}
+              />
+            )}
+
             <ul className="py-1">
               {/* All notes */}
               <li>
@@ -720,6 +837,9 @@ export function LeftColumn() {
                 renamingFolderPath={renamingFolderPath}
                 onRenameCommit={handleRenameFolder}
                 onRenameCancel={() => setRenamingFolderPath(null)}
+                projects={vaultProjects}
+                projectsEnabled={enableProjects}
+                onOpenProject={openProject}
               />
             </ul>
 
@@ -786,6 +906,15 @@ export function LeftColumn() {
           <Icon icon="uil:setting" className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </div>
+
+      {createProjectOpen && (
+        <CreateProjectDialog
+          onCancel={() => setCreateProjectOpen(false)}
+          onCreate={(name, repository) => {
+            void handleCreateProject(name, repository);
+          }}
+        />
+      )}
 
       {folderMenu && (
         <ContextMenu

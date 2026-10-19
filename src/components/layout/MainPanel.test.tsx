@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { todayDate } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
+import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
@@ -862,5 +864,51 @@ describe("MainPanel archive", () => {
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Unarchive note" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Archive note" })).not.toBeInTheDocument();
+  });
+});
+
+describe("MainPanel — locked project overview", () => {
+  const kitchen: Project = {
+    id: "01PROJECT0000000000000001",
+    name: "Kitchen",
+    mainPageId: "01JPMXYZ123",
+    status: "active",
+    repository: null,
+    rootPath: "/vault/kitchen",
+    metaPath: "/vault/kitchen/helm-project.json",
+    vaultId: "v1",
+    vaultPath: "/vault",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useProjectStore.setState({ projects: [] });
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  it("does not write overview fields on a locked main page", () => {
+    const note = makeNote({
+      filePath: "/vault/kitchen/kitchen.md",
+      fileName: "kitchen.md",
+    });
+    note.frontmatter = { ...note.frontmatter, locked: true, unmanaged: true, state: "" };
+    useProjectStore.setState({ projects: [kitchen] });
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, enableProjects: true, defaultNoteView: "markdown" },
+    });
+    useNoteStore.setState({
+      notes: [note],
+      selectedNoteId: note.id,
+      vaults: [VAULT],
+      activeVaultId: VAULT.id,
+    });
+    useUIStore.setState({ activeView: "notes", markdownMode: true });
+    render(<MainPanel />);
+
+    const purpose = screen.getByLabelText("Purpose");
+    expect(purpose).toBeDisabled();
+    fireEvent.change(purpose, { target: { value: "Should not save" } });
+    fireEvent.blur(purpose);
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
   });
 });

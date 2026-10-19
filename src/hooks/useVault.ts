@@ -3,9 +3,11 @@ import { useEffect, useState } from "react";
 import { ulid } from "ulid";
 import { noteVaultMutated, startupVault } from "../lib/git-sync-runtime";
 import { parseNote, serializeNote } from "../lib/note-parser";
+import { projectFromMetaFile } from "../lib/projects";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
+import { useProjectStore } from "../store/projects";
 import type { Note, VaultConfig } from "../types/note";
 
 // Track which vault paths already have a Rust watcher running.
@@ -93,6 +95,20 @@ async function refreshFolders(vaults: VaultConfig[]): Promise<void> {
   useNoteStore.getState().setKnownFolderPaths(allPaths);
 }
 
+/** Rediscover projects from helm-project.json. Missing or invalid files are skipped. */
+async function refreshProjects(vaults: VaultConfig[]): Promise<void> {
+  const results = await Promise.all(
+    vaults.map(async (vault) => {
+      const files = await tauriCommands.listProjectFiles(vault.path).catch(() => []);
+      return files.flatMap((file) => {
+        const project = projectFromMetaFile(file.path, file.content, vault.id, vault.path);
+        return project ? [project] : [];
+      });
+    }),
+  );
+  useProjectStore.getState().setProjects(results.flat());
+}
+
 /**
  * Add a new vault: repair its frontmatter, persist config, load notes, start watcher.
  */
@@ -107,6 +123,7 @@ export async function addVault(path: string): Promise<void> {
   store.addVaultConfig(vault);
   await tauriCommands.setVaults(updatedVaults);
   await loadVault(vault);
+  await refreshProjects(updatedVaults);
 }
 
 /**
@@ -125,6 +142,9 @@ export async function removeVault(id: string): Promise<void> {
   if (store.activeVaultId === id) {
     store.setActiveVaultId(null);
   }
+  useProjectStore
+    .getState()
+    .setProjects(useProjectStore.getState().projects.filter((project) => project.vaultId !== id));
   await tauriCommands.setVaults(updatedVaults);
 }
 
@@ -167,6 +187,7 @@ export function useVault() {
           }
           await Promise.all(vaults.map(loadVault));
           await refreshFolders(vaults);
+          await refreshProjects(vaults);
         }
 
         // Listen for file creates/modifications
@@ -219,12 +240,15 @@ export function useVault() {
         // filtered out on the Rust side so a checkpoint cannot sync itself.
         unlistenMutated = await listen<string>("vault-mutated", (event) => {
           noteVaultMutated(event.payload);
+          const { vaults: currentVaults } = useNoteStore.getState();
+          void refreshProjects(currentVaults);
         });
 
         // Listen for directory create/remove events — refresh the folder list
         unlistenDirs = await listen<string>("vault-dirs-changed", () => {
           const { vaults: currentVaults } = useNoteStore.getState();
-          refreshFolders(currentVaults);
+          void refreshFolders(currentVaults);
+          void refreshProjects(currentVaults);
         });
 
         // Listen for confirmed file deletions

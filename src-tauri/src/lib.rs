@@ -3,20 +3,20 @@ mod pdf;
 mod vault;
 mod writer;
 mod writer_api;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
 use git_sync::{
     git_sync_checkpoint, git_sync_connect, git_sync_inspect, git_sync_preview_connect,
     git_sync_pull, git_sync_push, git_sync_startup, git_sync_status, git_sync_sync_now,
     git_sync_test_connection,
 };
-use vault::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::menu::{
     AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use vault::*;
 
 /// Label of the primary window.
 const MAIN_WINDOW: &str = "main";
@@ -155,11 +155,13 @@ pub fn run() {
         })
         .setup(|app| {
             // ── Global quick-capture shortcut (⌘⇧Space / Ctrl+Shift+Space) ─
-            let capture_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space);
+            let capture_shortcut =
+                Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space);
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, shortcut, event| {
-                        if event.state() == ShortcutState::Pressed && shortcut == &capture_shortcut {
+                        if event.state() == ShortcutState::Pressed && shortcut == &capture_shortcut
+                        {
                             open_capture_window(app);
                         }
                     })
@@ -194,7 +196,11 @@ pub fn run() {
                 .build(app)?;
 
             let app_menu = SubmenuBuilder::new(app, "Helm")
-                .item(&PredefinedMenuItem::about(app, Some("About Helm"), Some(about_metadata))?)
+                .item(&PredefinedMenuItem::about(
+                    app,
+                    Some("About Helm"),
+                    Some(about_metadata),
+                )?)
                 .item(&check_updates_item)
                 .separator()
                 .item(&settings_item)
@@ -372,24 +378,60 @@ pub fn run() {
             app.on_menu_event(move |_app, event| {
                 let id = event.id().as_ref();
                 match id {
-                    "quit" => { let _ = app_handle.emit("quit-app", ()); }
-                    "new_note" => { let _ = app_handle.emit("new-note", ()); }
-                    "export_pdf" => { let _ = app_handle.emit("export-pdf", ()); }
-                    "toggle_markdown" => { let _ = app_handle.emit("toggle-markdown", ()); }
-                    "open_settings" => { let _ = app_handle.emit("open-settings", ()); }
-                    "check_for_updates" => { let _ = app_handle.emit("check-for-updates", ()); }
-                    "add_vault" => { let _ = app_handle.emit("add-vault", ()); }
-                    "mcp_setup" => { let _ = app_handle.emit("show-mcp-setup", ()); }
-                    "font_size_increase" => { let _ = app_handle.emit("font-size-change", "increase"); }
-                    "font_size_decrease" => { let _ = app_handle.emit("font-size-change", "decrease"); }
-                    "font_size_reset" => { let _ = app_handle.emit("font-size-change", "reset"); }
-                    "heading_1" => { let _ = app_handle.emit("format-heading", 1u8); }
-                    "heading_2" => { let _ = app_handle.emit("format-heading", 2u8); }
-                    "heading_3" => { let _ = app_handle.emit("format-heading", 3u8); }
-                    "heading_4" => { let _ = app_handle.emit("format-heading", 4u8); }
-                    "heading_5" => { let _ = app_handle.emit("format-heading", 5u8); }
-                    "heading_6" => { let _ = app_handle.emit("format-heading", 6u8); }
-                    "paragraph_fmt" => { let _ = app_handle.emit("format-paragraph", ()); }
+                    "quit" => {
+                        let _ = app_handle.emit("quit-app", ());
+                    }
+                    "new_note" => {
+                        let _ = app_handle.emit("new-note", ());
+                    }
+                    "export_pdf" => {
+                        let _ = app_handle.emit("export-pdf", ());
+                    }
+                    "toggle_markdown" => {
+                        let _ = app_handle.emit("toggle-markdown", ());
+                    }
+                    "open_settings" => {
+                        let _ = app_handle.emit("open-settings", ());
+                    }
+                    "check_for_updates" => {
+                        let _ = app_handle.emit("check-for-updates", ());
+                    }
+                    "add_vault" => {
+                        let _ = app_handle.emit("add-vault", ());
+                    }
+                    "mcp_setup" => {
+                        let _ = app_handle.emit("show-mcp-setup", ());
+                    }
+                    "font_size_increase" => {
+                        let _ = app_handle.emit("font-size-change", "increase");
+                    }
+                    "font_size_decrease" => {
+                        let _ = app_handle.emit("font-size-change", "decrease");
+                    }
+                    "font_size_reset" => {
+                        let _ = app_handle.emit("font-size-change", "reset");
+                    }
+                    "heading_1" => {
+                        let _ = app_handle.emit("format-heading", 1u8);
+                    }
+                    "heading_2" => {
+                        let _ = app_handle.emit("format-heading", 2u8);
+                    }
+                    "heading_3" => {
+                        let _ = app_handle.emit("format-heading", 3u8);
+                    }
+                    "heading_4" => {
+                        let _ = app_handle.emit("format-heading", 4u8);
+                    }
+                    "heading_5" => {
+                        let _ = app_handle.emit("format-heading", 5u8);
+                    }
+                    "heading_6" => {
+                        let _ = app_handle.emit("format-heading", 6u8);
+                    }
+                    "paragraph_fmt" => {
+                        let _ = app_handle.emit("format-paragraph", ());
+                    }
                     other if other.starts_with("set_theme_") => {
                         let theme_id = &other["set_theme_".len()..];
                         let _ = app_handle.emit("set-theme", theme_id);
@@ -425,6 +467,7 @@ pub fn run() {
             snapshot_note,
             list_note_history,
             list_folders,
+            list_project_files,
             create_folder,
             delete_folder,
             rename_folder,

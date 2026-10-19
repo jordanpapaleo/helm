@@ -7,6 +7,11 @@ export interface Settings {
   showNoteCountOnTags: boolean;
   /** When false, archived notes are hidden from discovery views. */
   showArchivedNotes: boolean;
+  /**
+   * Projects are off until the user opts in. Turning this off hides project
+   * navigation and scoped views; it does not delete project files.
+   */
+  enableProjects: boolean;
   defaultNoteView: "editor" | "markdown";
 }
 
@@ -18,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pinnedNotesFloat: true,
   showNoteCountOnTags: true,
   showArchivedNotes: false,
+  enableProjects: false,
   defaultNoteView: "editor",
 };
 

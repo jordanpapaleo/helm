@@ -13,7 +13,10 @@ fn validate_path(file_path: &str) -> Result<PathBuf, String> {
         return Err(format!("Path must be absolute: {}", file_path));
     }
     // Reject paths with .. components
-    if path.components().any(|c| c == std::path::Component::ParentDir) {
+    if path
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
         return Err(format!("Path traversal not allowed: {}", file_path));
     }
     Ok(path)
@@ -88,7 +91,9 @@ pub async fn set_vaults(app: AppHandle, vaults: Vec<VaultConfig>) -> Result<(), 
 #[tauri::command]
 pub async fn get_vault_path(app: AppHandle) -> Result<Option<String>, String> {
     let store = app.store("config.json").map_err(|e| e.to_string())?;
-    Ok(store.get("vault_path").and_then(|v| v.as_str().map(|s| s.to_string())))
+    Ok(store
+        .get("vault_path")
+        .and_then(|v| v.as_str().map(|s| s.to_string())))
 }
 
 #[tauri::command]
@@ -124,6 +129,56 @@ pub async fn list_folders(vault_path: String) -> Result<Vec<String>, String> {
     let mut folders = Vec::new();
     collect_folders(&path, &mut folders)?;
     Ok(folders)
+}
+
+/// KEEP IN SYNC with src/lib/projects.ts PROJECT_META_FILENAME.
+const PROJECT_META_FILENAME: &str = "helm-project.json";
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ProjectFile {
+    pub path: String,
+    pub content: String,
+}
+
+fn collect_project_files(dir: &PathBuf, out: &mut Vec<ProjectFile>) -> Result<(), String> {
+    let marker = dir.join(PROJECT_META_FILENAME);
+    if marker.is_file() {
+        let content = fs::read_to_string(&marker).map_err(|e| e.to_string())?;
+        out.push(ProjectFile {
+            path: marker.to_string_lossy().to_string(),
+            content,
+        });
+    }
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        // Hidden dirs (.git, .helm-history) are not part of the vault.
+        if name_str.starts_with('.') || name_str == "assets" {
+            continue;
+        }
+        collect_project_files(&path, out)?;
+    }
+    Ok(())
+}
+
+fn list_project_files_impl(vault_path: &str) -> Result<Vec<ProjectFile>, String> {
+    let path = validate_path(vault_path)?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let mut files = Vec::new();
+    collect_project_files(&path, &mut files)?;
+    Ok(files)
+}
+
+#[tauri::command]
+pub async fn list_project_files(vault_path: String) -> Result<Vec<ProjectFile>, String> {
+    list_project_files_impl(&vault_path)
 }
 
 fn collect_notes(dir: &PathBuf, notes: &mut Vec<NoteFile>) -> Result<(), String> {
@@ -183,7 +238,11 @@ fn atomic_write(path: &std::path::Path, content: &[u8]) -> Result<(), String> {
     let file_name = path
         .file_name()
         .ok_or_else(|| format!("Path has no file name: {}", path.display()))?;
-    let tmp = parent.join(format!(".{}.tmp-{}", file_name.to_string_lossy(), std::process::id()));
+    let tmp = parent.join(format!(
+        ".{}.tmp-{}",
+        file_name.to_string_lossy(),
+        std::process::id()
+    ));
 
     fs::write(&tmp, content).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| {
@@ -211,7 +270,13 @@ fn write_asset_impl(vault_path: &str, filename: &str, data: &[u8]) -> Result<Str
         .unwrap_or_default();
     let safe_name: String = base_name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let safe_name = safe_name.trim_matches('.').to_string();
     if safe_name.is_empty() {
@@ -224,7 +289,11 @@ fn write_asset_impl(vault_path: &str, filename: &str, data: &[u8]) -> Result<Str
 }
 
 #[tauri::command]
-pub async fn write_asset(vault_path: String, filename: String, data: Vec<u8>) -> Result<String, String> {
+pub async fn write_asset(
+    vault_path: String,
+    filename: String,
+    data: Vec<u8>,
+) -> Result<String, String> {
     write_asset_impl(&vault_path, &filename, &data)
 }
 
@@ -340,19 +409,35 @@ const HISTORY_MIN_AGE_SECS: u64 = 300;
 const HISTORY_MAX_KEEP: usize = 50;
 
 #[tauri::command]
-pub async fn snapshot_note(vault_path: String, note_id: String, file_path: String) -> Result<(), String> {
-    snapshot_note_impl(&vault_path, &note_id, &file_path, HISTORY_MIN_AGE_SECS, HISTORY_MAX_KEEP)
+pub async fn snapshot_note(
+    vault_path: String,
+    note_id: String,
+    file_path: String,
+) -> Result<(), String> {
+    snapshot_note_impl(
+        &vault_path,
+        &note_id,
+        &file_path,
+        HISTORY_MIN_AGE_SECS,
+        HISTORY_MAX_KEEP,
+    )
 }
 
 #[tauri::command]
-pub async fn list_note_history(vault_path: String, note_id: String) -> Result<Vec<HistoryEntry>, String> {
+pub async fn list_note_history(
+    vault_path: String,
+    note_id: String,
+) -> Result<Vec<HistoryEntry>, String> {
     list_note_history_impl(&vault_path, &note_id)
 }
 
 fn delete_asset_impl(file_path: &str) -> Result<(), String> {
     let path = validate_path(file_path)?;
     if path.extension().and_then(|e| e.to_str()) == Some("md") {
-        return Err(format!("Refusing to delete a note file as an asset: {}", file_path));
+        return Err(format!(
+            "Refusing to delete a note file as an asset: {}",
+            file_path
+        ));
     }
     fs::remove_file(&path).map_err(|e| e.to_string())
 }
@@ -475,7 +560,14 @@ mod tests {
         let note = dir.join("note.md");
         fs::write(&note, "version one").unwrap();
 
-        snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 0, 50).unwrap();
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            0,
+            50,
+        )
+        .unwrap();
 
         let entries = list_note_history_impl(dir.to_str().unwrap(), "01ABC").unwrap();
         assert_eq!(entries.len(), 1);
@@ -486,7 +578,14 @@ mod tests {
     fn snapshot_note_is_a_noop_when_the_file_does_not_exist() {
         let dir = temp_dir("snap-missing");
         let note = dir.join("nope.md");
-        snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 0, 50).unwrap();
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            0,
+            50,
+        )
+        .unwrap();
         let entries = list_note_history_impl(dir.to_str().unwrap(), "01ABC").unwrap();
         assert_eq!(entries.len(), 0);
     }
@@ -496,10 +595,24 @@ mod tests {
         let dir = temp_dir("snap-coalesce");
         let note = dir.join("note.md");
         fs::write(&note, "v1").unwrap();
-        snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 300, 50).unwrap();
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            300,
+            50,
+        )
+        .unwrap();
         fs::write(&note, "v2").unwrap();
         // Second snapshot within the 300s window is skipped
-        snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 300, 50).unwrap();
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            300,
+            50,
+        )
+        .unwrap();
 
         let entries = list_note_history_impl(dir.to_str().unwrap(), "01ABC").unwrap();
         assert_eq!(entries.len(), 1);
@@ -511,7 +624,8 @@ mod tests {
         let note = dir.join("note.md");
         for i in 0..5 {
             fs::write(&note, format!("v{}", i)).unwrap();
-            snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 0, 3).unwrap();
+            snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 0, 3)
+                .unwrap();
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         let entries = list_note_history_impl(dir.to_str().unwrap(), "01ABC").unwrap();
@@ -525,10 +639,24 @@ mod tests {
         let dir = temp_dir("snap-order");
         let note = dir.join("note.md");
         fs::write(&note, "a").unwrap();
-        snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 0, 50).unwrap();
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            0,
+            50,
+        )
+        .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(5));
         fs::write(&note, "b").unwrap();
-        snapshot_note_impl(dir.to_str().unwrap(), "01ABC", note.to_str().unwrap(), 0, 50).unwrap();
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            0,
+            50,
+        )
+        .unwrap();
 
         let entries = list_note_history_impl(dir.to_str().unwrap(), "01ABC").unwrap();
         assert_eq!(entries.len(), 2);
@@ -538,7 +666,9 @@ mod tests {
 
     #[test]
     fn hidden_paths_are_detected() {
-        assert!(is_hidden_path(std::path::Path::new("/v/.helm-history/01A/1.md")));
+        assert!(is_hidden_path(std::path::Path::new(
+            "/v/.helm-history/01A/1.md"
+        )));
         assert!(is_hidden_path(std::path::Path::new("/v/.git/x.md")));
         assert!(!is_hidden_path(std::path::Path::new("/v/notes/real.md")));
     }
@@ -546,15 +676,30 @@ mod tests {
     #[test]
     fn user_vault_changes_ignore_git_and_history() {
         let vault = std::path::Path::new("/vault");
-        assert!(is_user_vault_change(vault, std::path::Path::new("/vault/note.md")));
-        assert!(is_user_vault_change(vault, std::path::Path::new("/vault/assets/pic.png")));
-        assert!(!is_user_vault_change(vault, std::path::Path::new("/vault/.git/index")));
-        assert!(!is_user_vault_change(vault, std::path::Path::new("/vault/.helm-history/01/1.md")));
+        assert!(is_user_vault_change(
+            vault,
+            std::path::Path::new("/vault/note.md")
+        ));
+        assert!(is_user_vault_change(
+            vault,
+            std::path::Path::new("/vault/assets/pic.png")
+        ));
+        assert!(!is_user_vault_change(
+            vault,
+            std::path::Path::new("/vault/.git/index")
+        ));
+        assert!(!is_user_vault_change(
+            vault,
+            std::path::Path::new("/vault/.helm-history/01/1.md")
+        ));
         assert!(!is_user_vault_change(
             vault,
             std::path::Path::new("/vault/.helm-sync-backups/1/note.md"),
         ));
-        assert!(!is_user_vault_change(vault, std::path::Path::new("/other/note.md")));
+        assert!(!is_user_vault_change(
+            vault,
+            std::path::Path::new("/other/note.md")
+        ));
     }
 
     #[test]
@@ -583,6 +728,32 @@ mod tests {
         assert!(cfg.sync.enabled);
         assert!(!cfg.sync.pull_on_startup);
         assert!(!cfg.sync.auto_push);
+    }
+
+    #[test]
+    fn list_project_files_impl_finds_project_metadata_and_skips_hidden_dirs() {
+        let dir = temp_dir("project-files");
+        fs::write(
+            dir.join("helm-project.json"),
+            r#"{"id":"p1","name":"Vault Root","mainPageId":"m1"}"#,
+        )
+        .unwrap();
+        let nested = dir.join("kitchen");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("helm-project.json"), "{\"id\":\"p2\"}").unwrap();
+        let hidden = dir.join(".git");
+        fs::create_dir(&hidden).unwrap();
+        fs::write(hidden.join("helm-project.json"), "{\"id\":\"hidden\"}").unwrap();
+
+        let found = list_project_files_impl(dir.to_str().unwrap()).unwrap();
+        let paths: Vec<String> = found.iter().map(|file| file.path.clone()).collect();
+        assert!(paths
+            .iter()
+            .any(|path| path.ends_with("kitchen/helm-project.json")));
+        assert!(paths
+            .iter()
+            .any(|path| path.ends_with(&format!("{}/helm-project.json", dir.to_string_lossy()))));
+        assert!(found.iter().all(|file| !file.path.contains("/.git/")));
     }
 
     #[test]

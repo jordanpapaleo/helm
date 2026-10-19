@@ -22,12 +22,14 @@ import {
   serializeNote,
 } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
+import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
@@ -43,6 +45,7 @@ import { NoteEditor, type NoteEditorHandle } from "../editor/NoteEditor";
 import { NoteHistoryModal } from "../editor/NoteHistoryModal";
 import { NotePrintView } from "../editor/NotePrintView";
 import { PropertyPanel } from "../editor/PropertyPanel";
+import { ProjectOverview } from "../projects/ProjectOverview";
 
 interface MarkdownTextareaHandle {
   textarea: HTMLTextAreaElement | null;
@@ -398,10 +401,12 @@ function extractAssetPaths(content: string): Set<string> {
 }
 
 export function MainPanel() {
-  const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode } = useUIStore();
+  const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
   const { notes, vaults, selectedNoteId, updateNote, setNoteTitleLive, removeNote, selectNote } =
     useNoteStore();
   const { settings } = useSettingsStore();
+  const enableProjects = settings.enableProjects;
+  const projects = useProjectStore((state) => state.projects);
   const selectedNote = notes.find((n) => n.id === selectedNoteId);
   const editorRef = useRef<NoteEditorHandle>(null);
   const [findOpen, setFindOpen] = useState(false);
@@ -593,8 +598,34 @@ export function MainPanel() {
     setNoteTitleLive(selectedNote.id, title);
   }
 
+  const openProject =
+    enableProjects && selectedNote
+      ? (projects.find(
+          (project) =>
+            project.mainPageId === selectedNote.id &&
+            isProjectMember(selectedNote.filePath, project.rootPath),
+        ) ?? null)
+      : null;
+
+  async function handleProjectMeta(
+    project: Project,
+    patch: { status?: Project["status"]; repository?: string | null },
+  ) {
+    const next = { ...project, ...patch };
+    useProjectStore.getState().upsert(next);
+    try {
+      await tauriCommands.writeTextFile(next.metaPath, serializeProjectMeta(next));
+    } catch (error) {
+      reportError("Failed to save project", error);
+    }
+  }
+
   async function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
     if (!selectedNote) return;
+    // A locked note stays read-only except for the unlock toggle itself.
+    if (selectedNote.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) {
+      return;
+    }
     if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
     const updated = {
       ...selectedNote,
@@ -656,6 +687,27 @@ export function MainPanel() {
               onExportPdf={() => startPdfExport(selectedNote.id)}
               exportingPdf={pdfJob !== null}
             />
+            {openProject && (
+              <ProjectOverview
+                project={openProject}
+                notes={notes}
+                frontmatter={selectedNote.frontmatter}
+                locked={selectedNote.frontmatter.locked}
+                onChange={(patch) => {
+                  void handleFrontmatterChange(patch);
+                }}
+                onMetaChange={(patch) => {
+                  void handleProjectMeta(openProject, patch);
+                }}
+                onOpenView={(view) =>
+                  navigate({
+                    view,
+                    selectedNoteId: selectedNote.id,
+                    selectedGrouping: { type: "folder", id: openProject.rootPath },
+                  })
+                }
+              />
+            )}
             {historyOpen && selectedVaultPath && (
               <NoteHistoryModal
                 note={selectedNote}

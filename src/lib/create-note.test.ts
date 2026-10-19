@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useNoteStore } from "../store/notes";
+import { useProjectStore } from "../store/projects";
 import { useToastStore } from "../store/toast";
 import { useUIStore } from "../store/ui";
 import type { Note, VaultConfig } from "../types/note";
 import { createNote } from "./create-note";
 import { parseNote } from "./note-parser";
+import type { Project } from "./projects";
 import { tauriCommands } from "./tauri-commands";
 
 vi.mock("./tauri-commands", () => ({
@@ -54,6 +56,7 @@ beforeEach(() => {
     searchResults: [],
     knownFolderPaths: [],
   });
+  useProjectStore.setState({ projects: [] });
   useUIStore.setState({
     activeView: "kanban",
     selectedGrouping: { type: "all", id: null },
@@ -119,6 +122,29 @@ describe("createNote", () => {
     expect(created?.frontmatter.state).toBe("Prepare");
     expect(created?.filePath.startsWith("/work/")).toBe(true);
     expect(useNoteStore.getState().notes).toHaveLength(2);
+  });
+
+  it("captures a Thinking note as unmanaged and does not mark a Feature Doing", async () => {
+    const kitchen: Project = {
+      id: "01PROJECT0000000000000001",
+      name: "Kitchen",
+      mainPageId: "01MAINPAGE000000000000001",
+      status: "active",
+      repository: null,
+      rootPath: "/work/kitchen",
+      metaPath: "/work/kitchen/helm-project.json",
+      vaultId: "v1",
+      vaultPath: "/work",
+    };
+    useProjectStore.setState({ projects: [kitchen] });
+
+    const thinking = await createNote({ folderPath: "/work/kitchen/thinking", templateId: null });
+    expect(thinking?.frontmatter.unmanaged).toBe(true);
+    expect(thinking?.frontmatter.state).toBe("");
+
+    const feature = await createNote({ folderPath: "/work/kitchen/features", templateId: null });
+    expect(feature?.frontmatter.unmanaged).toBeUndefined();
+    expect(feature?.frontmatter.state).toBe("Prepare");
   });
 
   it("reports a write failure and does not add the note", async () => {

@@ -59,6 +59,8 @@ Note content in standard markdown. You can reference other notes with [[Wiki Lin
 | `deadline` | string (ISO date) | no | Optional deadline. |
 | `team` | string[] | no | Optional list of responsible people. |
 | `links` | string[] | no | ULIDs of notes this note links to (populated from `[[wiki links]]` on save). |
+| `unmanaged` | boolean | no | When true, the note stays off Kanban, Eisenhower, and the briefing. Thinking and Context notes start this way. |
+| `purpose`, `plan`, `nextAction`, `leftOff`, `blockers` | string | no | Overview fields on a project main page. |
 
 ---
 
@@ -194,6 +196,41 @@ To load all notes, read every `.md` file in the vault directory **recursively** 
 The `id` field is the canonical identifier for cross-referencing notes. Build a lookup map of `id → note` after loading.
 
 ---
+
+## Projects
+
+Projects are optional. The Helm app hides them until **Enable Projects** is on. That setting does not delete files, and it does not affect this reference: if `helm-project.json` is in a vault, the project is real.
+
+A project is a folder. Its identity is the `id` in `helm-project.json` at the folder root, not the folder name. `mainPageId` is the ULID of an ordinary note. Renaming or moving the folder keeps both ids. The main page resolves by id.
+
+Every project uses the same folders:
+
+| Folder | Shown as | Created notes |
+|---|---|---|
+| `thinking/` | Thinking | Unmanaged. A dumping ground. Not on Kanban, Eisenhower, or the briefing until marked managed. |
+| `features/` | Features | Managed, and not marked Doing. The folder classifies the note. |
+| `bugs/` | Bugs | Same as Features. |
+| `context/` | Context / Docs | Unmanaged reference material. |
+
+The main page stays at the project root. Its frontmatter holds `purpose`, `plan`, `nextAction`, `leftOff`, and `blockers`. It is unmanaged.
+
+A note is a member only when its file is inside the project folder. Wiki links do not grant membership. Do not put a project inside another project.
+
+Moving a note between those folders renames the file. Do not change its id, body, links, history, or workflow fields to move it. History lives at `.helm-history/<id>/` and follows the id.
+
+`repository` in `helm-project.json` is optional. `null` is a complete project. It is not the vault's sync remote.
+
+```json
+{
+  "id": "01PROJECT0000000000000001",
+  "name": "Kitchen",
+  "mainPageId": "01MAINPAGE000000000000001",
+  "status": "active",
+  "repository": null
+}
+```
+
+`status` is `active`, `paused`, or `done`.
 
 ## File Naming and Folders
 

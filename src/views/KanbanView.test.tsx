@@ -1,9 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseNote } from "../lib/note-parser";
+import type { Project } from "../lib/projects";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
+import { useProjectStore } from "../store/projects";
 import { useSettingsStore } from "../store/settings";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
@@ -51,7 +53,12 @@ beforeEach(() => {
     searchResults: [],
     knownFolderPaths: [],
   });
-  useUIStore.setState({ activeView: "kanban" });
+  useUIStore.setState({
+    activeView: "kanban",
+    selectedGrouping: { type: "all", id: null },
+  });
+  useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  useProjectStore.setState({ projects: [] });
 });
 
 describe("KanbanView — unmanaged notes", () => {
@@ -173,5 +180,73 @@ describe("KanbanView — new note menu", () => {
     expect(parsed.frontmatter.kanbanOrder).toBeUndefined();
     expect(raw).not.toContain("kanbanOrder");
     expect(useUIStore.getState().activeView).toBe("notes");
+  });
+});
+
+describe("KanbanView — project scope", () => {
+  it("shows only the open project's managed notes and keeps All Notes global", () => {
+    const kitchen: Project = {
+      id: "01PROJECT0000000000000001",
+      name: "Kitchen",
+      mainPageId: "01MAIN",
+      status: "active",
+      repository: null,
+      rootPath: "/vault/kitchen",
+      metaPath: "/vault/kitchen/helm-project.json",
+      vaultId: "v1",
+      vaultPath: "/vault",
+    };
+    useProjectStore.setState({ projects: [kitchen] });
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "in",
+          filePath: "/vault/kitchen/features/tile.md",
+          fileName: "tile.md",
+          frontmatter: {
+            id: "in",
+            title: "Tile the backsplash",
+            created: "2026-01-01",
+            updated: "2026-01-01",
+            tags: [],
+            urgent: false,
+            important: false,
+            state: "Doing",
+            blocked: false,
+          },
+        }),
+        makeNote({
+          id: "out",
+          filePath: "/vault/elsewhere.md",
+          fileName: "elsewhere.md",
+          frontmatter: {
+            id: "out",
+            title: "Outside the project",
+            created: "2026-01-01",
+            updated: "2026-01-01",
+            tags: [],
+            urgent: false,
+            important: false,
+            state: "Doing",
+            blocked: false,
+          },
+        }),
+      ],
+    });
+    useUIStore.setState({
+      activeView: "kanban",
+      selectedGrouping: { type: "folder", id: "/vault/kitchen" },
+    });
+
+    const view = render(<KanbanView />);
+    expect(screen.getByRole("heading", { name: "Kitchen — Kanban" })).toBeInTheDocument();
+    expect(screen.getByText("Tile the backsplash")).toBeInTheDocument();
+    expect(screen.queryByText("Outside the project")).not.toBeInTheDocument();
+
+    useUIStore.setState({ selectedGrouping: { type: "all", id: null } });
+    view.rerender(<KanbanView />);
+    expect(screen.getByRole("heading", { name: "Kanban" })).toBeInTheDocument();
+    expect(screen.getByText("Outside the project")).toBeInTheDocument();
   });
 });

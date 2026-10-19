@@ -21,4 +21,16 @@ describe("SettingsModal show archived notes", () => {
     expect(useSettingsStore.getState().settings.showArchivedNotes).toBe(true);
     expect(JSON.parse(localStorage.getItem("helm-settings") ?? "{}").showArchivedNotes).toBe(true);
   });
+
+  it("defaults Projects off and persists Enable Projects", () => {
+    render(<SettingsModal onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+
+    const checkbox = screen.getByRole("checkbox", { name: "Enable Projects" });
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+    expect(useSettingsStore.getState().settings.enableProjects).toBe(true);
+    expect(JSON.parse(localStorage.getItem("helm-settings") ?? "{}").enableProjects).toBe(true);
+  });
 });

@@ -39,10 +39,7 @@ fn detach_from_terminal() {
             }
         }
 
-        let devnull = libc::open(
-            b"/dev/null\0".as_ptr() as *const libc::c_char,
-            libc::O_RDWR,
-        );
+        let devnull = libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
         if devnull >= 0 {
             libc::dup2(devnull, libc::STDIN_FILENO);
             libc::dup2(devnull, libc::STDOUT_FILENO);

@@ -5,11 +5,13 @@
  */
 import { ulid } from "ulid";
 import { useNoteStore } from "../store/notes";
+import { useProjectStore } from "../store/projects";
 import { reportError } from "../store/toast";
 import type { Grouping } from "../store/ui";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
 import { serializeNote } from "./note-parser";
+import { creationDefaultsForFolder } from "./projects";
 import { tauriCommands } from "./tauri-commands";
 import { instantiateNote, type NoteDraftOverrides } from "./templates";
 import { nowTimestamp } from "./timestamps";
@@ -76,6 +78,9 @@ export async function createNote(options: CreateNoteOptions = {}): Promise<Note 
     : null;
 
   const id = ulid();
+  const folderDefaults = creationDefaultsForFolder(folderPath, useProjectStore.getState().projects);
+  const overrides: NoteDraftOverrides | undefined =
+    folderDefaults || options.overrides ? { ...folderDefaults, ...options.overrides } : undefined;
   const note = instantiateNote({
     template,
     notes,
@@ -83,7 +88,7 @@ export async function createNote(options: CreateNoteOptions = {}): Promise<Note 
     now: nowTimestamp(),
     vaultId: vault.id,
     folderPath,
-    overrides: options.overrides,
+    overrides,
   });
 
   try {

@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useNoteStore } from "../../store/notes";
+import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import type { Note, VaultConfig } from "../../types/note";
 import { LeftColumn } from "./LeftColumn";
@@ -67,6 +69,8 @@ function resetStores() {
     // A single real folder "parent" with no notes/subfolders inside it.
     knownFolderPaths: ["/vault/parent"],
   });
+  useProjectStore.setState({ projects: [] });
+  useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
 }
 
 describe("LeftColumn — New Subfolder (Bug A)", () => {
@@ -290,5 +294,67 @@ describe("LeftColumn — New Note Here", () => {
     });
     expect(screen.queryByRole("menuitem", { name: "Defect" })).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Blank" })).toBeInTheDocument();
+  });
+});
+
+describe("LeftColumn — projects", () => {
+  const kitchen: Project = {
+    id: "01PROJECT0000000000000001",
+    name: "Kitchen",
+    mainPageId: "01MAINPAGE000000000000001",
+    status: "active",
+    repository: null,
+    rootPath: "/vault/kitchen",
+    metaPath: "/vault/kitchen/helm-project.json",
+    vaultId: "v1",
+    vaultPath: "/vault",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+  });
+
+  it("hides project navigation until Projects is enabled, then opens the main page", () => {
+    useProjectStore.setState({ projects: [kitchen] });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: kitchen.mainPageId,
+          filePath: "/vault/kitchen/kitchen.md",
+          fileName: "kitchen.md",
+          frontmatter: {
+            id: kitchen.mainPageId,
+            title: "Kitchen",
+            created: "2026-01-01",
+            updated: "2026-01-01",
+            tags: [],
+            urgent: false,
+            important: false,
+            state: "",
+            blocked: false,
+            unmanaged: true,
+          },
+        }),
+      ],
+    });
+
+    const { rerender } = render(<LeftColumn />);
+    expect(screen.queryByTestId("projects-nav")).not.toBeInTheDocument();
+
+    act(() => {
+      useSettingsStore.setState({
+        settings: { ...DEFAULT_SETTINGS, enableProjects: true },
+      });
+    });
+    rerender(<LeftColumn />);
+
+    expect(screen.getByTestId("projects-nav")).toBeInTheDocument();
+    expect(screen.queryByText("Context / Docs")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Kitchen" }));
+    expect(screen.getByText("Context / Docs")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kitchen" }));
+    expect(useNoteStore.getState().selectedNoteId).toBe(kitchen.mainPageId);
   });
 });

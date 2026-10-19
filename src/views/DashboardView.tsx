@@ -3,14 +3,13 @@
  * Displays summary chips for Eisenhower quadrants, tag/state/team distribution
  * charts, and a filterable note list. Clicking a chip filters all content to that subset.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { isArchived, visibleNotes } from "../lib/archive";
+import { useScopedWorkflowNotes } from "../hooks/useScopedWorkflowNotes";
+import { isArchived } from "../lib/archive";
 import { buildBriefing } from "../lib/briefing";
 import { NOTE_STATES } from "../lib/constants";
 import { timestampDate, todayDate } from "../lib/timestamps";
-import { useNoteStore } from "../store/notes";
-import { useSettingsStore } from "../store/settings";
 import { useThemeStore } from "../store/theme";
 import { useUIStore } from "../store/ui";
 import type { Note } from "../types/note";
@@ -239,12 +238,7 @@ function BriefingCard({ notes, onNoteClick }: { notes: Note[]; onNoteClick: (n: 
  */
 export function DashboardView() {
   const { colors, strokeColor } = useChartColors();
-  const { notes: allNotes } = useNoteStore();
-  const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
-  const notes = useMemo(
-    () => visibleNotes(allNotes, showArchivedNotes),
-    [allNotes, showArchivedNotes],
-  );
+  const { notes, project } = useScopedWorkflowNotes();
   const { navigate, selectedGrouping } = useUIStore();
   const [activeFilter, setActiveFilter] = useState<Filter>("all");
   const [resizeKey, setResizeKey] = useState(0);
@@ -313,7 +307,9 @@ export function DashboardView() {
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      <h2 className="mb-2 text-xl font-bold">Dashboard</h2>
+      <h2 className="mb-2 text-xl font-bold">
+        {project ? `${project.name} — Dashboard` : "Dashboard"}
+      </h2>
       <p className="mb-6 text-sm opacity-50">{notes.length} notes in vault</p>
 
       <BriefingCard notes={notes} onNoteClick={handleNoteClick} />

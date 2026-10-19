@@ -1,6 +1,7 @@
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, Extension, useEditor } from "@tiptap/react";
+import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { richCodeBlock } from "./CodeBlockView";
 import {
   CodeBlockGapCursor,
@@ -392,6 +393,11 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       [editor],
     );
 
+    useEffect(() => {
+      if (!editor) return;
+      return registerEditorDraft(note.id, () => getEditorMarkdown(editor));
+    }, [editor, note.id]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -439,12 +445,14 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       const draft = store.heldDraft(note.id);
       if (draft && normalizeContent(draft) !== normalizeContent(note.content)) {
         editor.commands.setContent(draft, { emitUpdate: false });
+        notifyEditorDraft(note.id);
         lastSavedContentRef.current = note.content;
         dirtyRef.current = true;
         store.releaseNote(note.id);
         return;
       }
       editor.commands.setContent(note.content, { emitUpdate: false });
+      notifyEditorDraft(note.id);
       lastSavedContentRef.current = note.content;
       dirtyRef.current = false;
       store.releaseNote(note.id);
@@ -492,6 +500,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       dirtyRef.current = false;
       // emitUpdate: false — reloading from disk must not look like a user edit.
       editor.commands.setContent(note.content, { emitUpdate: false });
+      notifyEditorDraft(note.id);
       lastSavedContentRef.current = note.content;
     }, [note.content, note.id]);
 
@@ -560,6 +569,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       if (!editor) return;
       const handler = () => {
         dirtyRef.current = true;
+        notifyEditorDraft(noteIdRef.current);
         if (!autoSaveRef.current) return;
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {

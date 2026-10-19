@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { todayDate } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
@@ -136,6 +137,22 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     expect(stamp.slice(0, 10)).toBe(todayDate());
     expect(tauriCommands.snapshotNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes markdown keystrokes to the live draft before the save debounce", () => {
+    setup(makeNote(), true);
+    const seen: string[] = [];
+    const stop = subscribeEditorDrafts(() => {
+      const draft = readEditorDraft("01JPMXYZ123");
+      if (draft) seen.push(draft);
+    });
+    fireEvent.change(screen.getByDisplayValue("Test content"), {
+      target: { value: "Test content plus a keystroke" },
+    });
+    expect(readEditorDraft("01JPMXYZ123")).toBe("Test content plus a keystroke");
+    expect(seen.at(-1)).toBe("Test content plus a keystroke");
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    stop();
   });
 
   it("still bumps `updated` for an explicit frontmatter edit", async () => {

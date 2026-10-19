@@ -1,8 +1,11 @@
 import { act, render } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
+import { useSettingsStore } from "../../store/settings";
 import type { Note } from "../../types/note";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
 
@@ -45,6 +48,7 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
       heldNoteIds: [],
       heldDrafts: {},
     });
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS } });
     vi.useFakeTimers();
   });
 
@@ -120,6 +124,30 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
 
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0][0]).toContain("edited");
+  });
+
+  it("publishes rich-text edits to the live draft even when auto-save is off", () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, autoSaveOnEdit: false } });
+    const onSave = vi.fn();
+    const ref = createRef<NoteEditorHandle>();
+    const seen: string[] = [];
+    const stop = subscribeEditorDrafts(() => {
+      const draft = readEditorDraft("01JPMXYZ123");
+      if (draft?.includes("edited")) seen.push(draft);
+    });
+    render(<NoteEditor ref={ref} note={makeNote()} onSave={onSave} />);
+
+    act(() => {
+      ref.current?.getEditor()?.commands.insertContent(" edited");
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(readEditorDraft("01JPMXYZ123")).toContain("edited");
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(onSave).not.toHaveBeenCalled();
+    stop();
   });
 
   it("saves wiki links with unescaped brackets", () => {

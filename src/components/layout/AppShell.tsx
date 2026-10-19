@@ -4,6 +4,7 @@ import { useLayoutStore } from "../../store/layout";
 import { useUIStore } from "../../store/ui";
 import { SettingsModal } from "../settings/SettingsModal";
 import { GlobalNewNoteMenu } from "../sidebar/NewNoteMenu";
+import { ToolHost } from "../tools/ToolHost";
 import { AppToolbar } from "./AppToolbar";
 import { LeftColumn } from "./LeftColumn";
 import { MainPanel } from "./MainPanel";
@@ -111,8 +112,10 @@ export function AppShell() {
           aria-label="Extension panel"
           hidden={!geometry.right}
           style={{ width: geometry.right ? geometry.widths.right : 0 }}
-          className="min-h-0 shrink-0 overflow-auto bg-base-100"
-        />
+          className="min-h-0 shrink-0 overflow-hidden bg-base-100"
+        >
+          <ToolHost />
+        </aside>
       </div>
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       <GlobalNewNoteMenu />

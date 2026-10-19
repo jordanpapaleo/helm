@@ -13,6 +13,7 @@ import {
 import { usePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
+import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
 import {
   extractInlineTags,
@@ -92,8 +93,14 @@ const MarkdownTextarea = forwardRef<
 
   // Read latest state through refs so the flusher registered on mount never
   // captures stale values.
+  useEffect(() => registerEditorDraft(noteId, () => valueRef.current), [noteId]);
   const valueRef = useRef(value);
   valueRef.current = value;
+  // Publish after render so readers see valueRef. `value` is the trigger, not an input.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keystrokes and programmatic setValue must refresh open previews
+  useEffect(() => {
+    notifyEditorDraft(noteId);
+  }, [value, noteId]);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
   const noteIdRef = useRef(noteId);

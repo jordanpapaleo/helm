@@ -1,6 +1,8 @@
 mod git_sync;
 mod pdf;
 mod vault;
+mod writer;
+mod writer_api;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,6 +36,7 @@ const CLOSE_WATCHDOG: Duration = Duration::from_secs(8);
 /// leave a headless process alive.
 #[tauri::command]
 fn exit_app(app: AppHandle) {
+    writer::cancel_all(&app.state::<writer::WriterRequests>());
     app.exit(0);
 }
 
@@ -112,6 +115,7 @@ fn handle_main_window_close(tracker: &CloseTracker, app: &AppHandle) {
     match tracker.record_request() {
         CloseAction::ForceExit => {
             eprintln!("Repeat close request; frontend did not quit — forcing exit.");
+            writer::cancel_all(&app.state::<writer::WriterRequests>());
             app.exit(0);
         }
         CloseAction::AwaitFrontend => {
@@ -122,6 +126,7 @@ fn handle_main_window_close(tracker: &CloseTracker, app: &AppHandle) {
                     "Frontend did not quit within {}s of the close request — forcing exit.",
                     CLOSE_WATCHDOG.as_secs()
                 );
+                writer::cancel_all(&app.state::<writer::WriterRequests>());
                 app.exit(0);
             });
         }
@@ -134,6 +139,7 @@ pub fn run() {
     let close_tracker = Arc::new(CloseTracker::default());
 
     tauri::Builder::default()
+        .manage(writer::WriterRequests::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -396,6 +402,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             exit_app,
+            writer_api::writer_key_status,
+            writer_api::writer_key_set,
+            writer_api::writer_key_remove,
+            writer_api::writer_api_models,
+            writer::writer_connections,
+            writer::writer_login,
+            writer::writer_send,
+            writer::writer_cancel,
             get_vault_path,
             set_vault_path,
             get_vaults,

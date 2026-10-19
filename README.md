@@ -1,6 +1,6 @@
 # Helm
 
-Helm is a personal knowledge management app for macOS and Linux. Notes are plain markdown files with YAML frontmatter stored in a folder on your computer — your **vault**. Helm never touches a server; everything stays on your device.
+Helm is a personal knowledge management app for macOS and Linux. Notes are plain markdown files with YAML frontmatter stored in a folder on your computer — your **vault**. Core note editing stays on your device. Optional Git sync and the Writer tool connect only when configured and used; Writer sends submitted messages and the open note’s text when note context is enabled to your selected AI provider.
 
 ---
 
@@ -251,7 +251,7 @@ Changes apply live in the editor as you adjust them.
 - All notes are plain `.md` files — readable and editable with any text editor.
 - Compatible with Obsidian vaults and other tools that use the `[[wiki link]]` convention.
 - Sync with iCloud Drive, Dropbox, or git — just point Helm at your synced folder.
-- No account, no cloud, no telemetry.
+- Core notes need no account. Optional sync and Writer use your configured services; Helm adds no telemetry.
 
 ---
 

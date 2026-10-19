@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
-import { useEffect, useRef, useState } from "react";
-import { readEditorDraft } from "../../lib/editor-draft";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { reportError, useToastStore } from "../../store/toast";
@@ -8,31 +8,46 @@ import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import { EMPTY_WRITER_SESSION, useWriterStore } from "../../store/writer";
 
+const idleSubscribe = () => () => {};
+
+function useLiveEditorDraft(noteId: string | undefined, active: boolean): string | undefined {
+  return useSyncExternalStore(
+    active ? subscribeEditorDrafts : idleSubscribe,
+    () => (active && noteId ? readEditorDraft(noteId) : undefined),
+    () => (active && noteId ? readEditorDraft(noteId) : undefined),
+  );
+}
+
+function noteBody(note: { id: string; content: string }, heldDraft: string | undefined): string {
+  return readEditorDraft(note.id) ?? heldDraft ?? note.content;
+}
+
 export function ToolHost() {
   const { writerEnabled, provider, mode, apiModels, subscriptionModels, showToolsSettings } =
     useToolsStore();
   const { activeVaultId, selectedNoteId, notes } = useNoteStore();
   const { activeView, selectedGrouping } = useUIStore();
-  const scope = `${activeVaultId ?? "all"}:${provider}:${mode}`;
   const { sessions, running, patch, clear, send, stop } = useWriterStore();
+  // The open note owns the chat. Clicking a vault in the sidebar only changes
+  // activeVaultId, so keying the session on that id would store this note's
+  // snapshot in another vault's conversation.
+  const openNote =
+    activeView === "notes" && selectedGrouping.type !== "trash"
+      ? notes.find((note) => note.id === selectedNoteId)
+      : undefined;
+  const scope = `${openNote?.vaultId ?? activeVaultId ?? "all"}:${provider}:${mode}`;
   const session = sessions[scope] ?? EMPTY_WRITER_SESSION;
   const [preview, setPreview] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const followReply = useRef(true);
-  const attached = notes.find(
-    (note) =>
-      session.followNote &&
-      activeView === "notes" &&
-      selectedGrouping.type !== "trash" &&
-      note.id === selectedNoteId,
-  );
+  const attached = session.followNote ? openNote : undefined;
   const busy = running !== null;
-  const content = attached
-    ? (readEditorDraft(attached.id) ??
-      useGitSyncStore.getState().heldDraft(attached.id) ??
-      attached.content)
-    : "";
+  const liveDraft = useLiveEditorDraft(attached?.id, preview && Boolean(attached));
+  const heldDraft = useGitSyncStore((state) =>
+    attached ? state.heldDrafts[attached.id] : undefined,
+  );
+  const content = attached ? (liveDraft ?? heldDraft ?? attached.content) : "";
   const settings = () => {
     showToolsSettings();
     useUIStore.getState().setSettingsOpen(true);
@@ -54,10 +69,7 @@ export function ToolHost() {
     const snapshot = attached
       ? {
           title: attached.frontmatter.title,
-          content:
-            readEditorDraft(attached.id) ??
-            useGitSyncStore.getState().heldDraft(attached.id) ??
-            attached.content,
+          content: noteBody(attached, useGitSyncStore.getState().heldDraft(attached.id)),
         }
       : undefined;
     followReply.current = true;

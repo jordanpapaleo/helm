@@ -1,3 +1,9 @@
+## v1.6.0 — 2026-10-19
+
+- Fix project promotion paths, metadata collisions, and locked overviews.
+- Add opt-in Projects with scoped planning views.
+- chore: update version to 1.5.0 in package-lock.json and Cargo.lock
+
 ## v1.5.0 — 2026-10-19
 
 - fix: keep Writer preview current and chats in the note's vault

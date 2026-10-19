@@ -1,3 +1,9 @@
+## v1.5.0 — 2026-10-19
+
+- fix: keep Writer preview current and chats in the note's vault
+- chore: update version to 1.4.0 in package-lock.json and Cargo.lock
+- feat: add Writer companion with subscription and API connections
+
 ## v1.4.0 — 2026-10-17
 
 - Keep sync preview and editor holds aligned with what Git does

@@ -1,3 +1,8 @@
+## v1.6.1 — 2026-10-20
+
+- Leave a project, link its repository, and move notes in.
+- chore: update version to 1.6.0 in package-lock.json and Cargo.lock
+
 ## v1.6.0 — 2026-10-19
 
 - Fix project promotion paths, metadata collisions, and locked overviews.

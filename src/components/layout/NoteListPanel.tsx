@@ -7,7 +7,7 @@ import { createNote, creationTargetFromUI } from "../../lib/create-note";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
 import { serializeNote } from "../../lib/note-parser";
 import { moveNoteToCategory } from "../../lib/project-actions";
-import { PROJECT_CATEGORIES, projectForPath } from "../../lib/projects";
+import { moveDestinations, PROJECT_CATEGORIES, projectForPath } from "../../lib/projects";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp, timestampDate } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
@@ -52,8 +52,14 @@ export function NoteListPanel() {
     if (!vault) return [];
     const vaultFolderPaths = knownFolderPaths.filter((fp) => fp.startsWith(`${vault.path}/`));
     const tree = buildTree(notes, vault.path, vaultFolderPaths);
-    return getAllFolderPaths(tree, vault.path);
-  }, [knownFolderPaths, notes, vault]);
+    const folders = getAllFolderPaths(tree, vault.path);
+    if (!enableProjects) return folders;
+    return moveDestinations(
+      folders,
+      projects.filter((project) => project.vaultId === vault.id),
+      vault.path,
+    );
+  }, [enableProjects, knownFolderPaths, notes, projects, vault]);
 
   const filteredNotes = useMemo(() => {
     const visible = visibleNotes(notes, showArchivedNotes);
@@ -133,7 +139,11 @@ export function NoteListPanel() {
     if (newFilePath === note.filePath) return;
     try {
       await tauriCommands.renameNote(note.filePath, newFilePath);
-      updateNote({ ...note, filePath: newFilePath });
+      updateNote({
+        ...note,
+        filePath: newFilePath,
+        fileName: newFilePath.split("/").pop() ?? note.fileName,
+      });
     } catch (e) {
       reportError("Failed to move note", e);
     }

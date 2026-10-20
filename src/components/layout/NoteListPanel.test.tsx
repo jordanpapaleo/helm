@@ -443,3 +443,75 @@ describe("NoteListPanel — category move", () => {
     expect(tauriCommands.writeNote).not.toHaveBeenCalled();
   });
 });
+
+describe("NoteListPanel — move into a project", () => {
+  it("lists the project in Move to and renames the file without changing the note", async () => {
+    vi.clearAllMocks();
+    const kitchen: Project = {
+      id: "01PROJECT0000000000000001",
+      name: "Kitchen",
+      mainPageId: "01MAIN",
+      status: "active",
+      repository: null,
+      rootPath: "/vault/kitchen",
+      metaPath: "/vault/kitchen/helm-project.json",
+      vaultId: "v1",
+      vaultPath: "/vault",
+    };
+    const idea = makeNote({
+      id: "01IDEA",
+      title: "Skylight",
+      state: "Doing",
+      links: ["01OTHER"],
+    });
+    idea.id = "01IDEA";
+    idea.filePath = "/vault/idea.md";
+    idea.fileName = "idea.md";
+    idea.content = "Keep this body";
+    idea.frontmatter = {
+      ...idea.frontmatter,
+      id: "01IDEA",
+      title: "Skylight",
+      state: "Doing",
+      links: ["01OTHER"],
+    };
+
+    useNoteStore.setState({
+      notes: [idea],
+      selectedNoteId: null,
+      vaults: [VAULT],
+      activeVaultId: "v1",
+      tagTree: {},
+      searchIndex: null,
+      searchQuery: "",
+      searchResults: [],
+      knownFolderPaths: [],
+    });
+    useProjectStore.setState({ projects: [kitchen] });
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useUIStore.setState({ selectedGrouping: { type: "all", id: null } });
+
+    render(<NoteListPanel />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: /Skylight/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move to…" }));
+
+    expect(screen.getByRole("menuitem", { name: "kitchen" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "kitchen/thinking" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "kitchen/features" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "kitchen" }));
+
+    await waitFor(() =>
+      expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+        "/vault/idea.md",
+        "/vault/kitchen/idea.md",
+      ),
+    );
+    const moved = useNoteStore.getState().notes[0];
+    expect(moved?.id).toBe("01IDEA");
+    expect(moved?.filePath).toBe("/vault/kitchen/idea.md");
+    expect(moved?.frontmatter.state).toBe("Doing");
+    expect(moved?.frontmatter.links).toEqual(["01OTHER"]);
+    expect(moved?.content).toBe("Keep this body");
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+  });
+});

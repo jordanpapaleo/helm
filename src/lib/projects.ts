@@ -187,6 +187,79 @@ export function emptyRepository(value: string | null | undefined): string | null
   return trimmed ? trimmed : null;
 }
 
+function openableHttpUrl(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (!url.hostname) return null;
+  url.username = "";
+  url.password = "";
+  return url.toString();
+}
+
+/**
+ * Browser URL for a repository value. https and http open as written.
+ * A git remote (scp, ssh, or git) opens as https. Anything else stays text.
+ */
+export function repositoryHref(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return openableHttpUrl(raw);
+  if (/^(?:ssh|git):\/\//i.test(raw)) {
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      return null;
+    }
+    if (!url.hostname) return null;
+    const path = url.pathname.replace(/\.git$/i, "") || "/";
+    // ssh: and git: are not special schemes, so assigning protocol does not
+    // switch them to https. Build a new URL instead.
+    return openableHttpUrl(`https://${url.hostname}${path.startsWith("/") ? path : `/${path}`}`);
+  }
+  const scp = /^[\w.+-]+@([^:\s/]+):([^\s]+)$/.exec(raw);
+  if (!scp) return null;
+  const host = scp[1];
+  const path = scp[2]?.replace(/\.git$/i, "").replace(/^\/+/, "");
+  if (!host || !path || path.split("/").some((part) => part === "." || part === "..")) return null;
+  return openableHttpUrl(`https://${host}/${path}`);
+}
+
+/**
+ * Move-to destinations. Existing folders stay as they are. Each project is
+ * added with its standard folders when those paths are not already listed.
+ */
+export function moveDestinations(
+  folders: Array<{ label: string; path: string }>,
+  projects: Project[],
+  vaultPath: string,
+): Array<{ label: string; path: string }> {
+  const vault = normalizePath(vaultPath);
+  const seen = new Set(folders.map((folder) => normalizePath(folder.path)));
+  const extra: Array<{ label: string; path: string }> = [];
+  const ordered = [...projects].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  for (const project of ordered) {
+    if (normalizePath(project.vaultPath) !== vault) continue;
+    const root = normalizePath(project.rootPath);
+    const paths = [root, ...PROJECT_CATEGORIES.map((item) => `${root}/${item.dir}`)];
+    for (const path of paths) {
+      if (seen.has(path)) continue;
+      if (!isSameOrInside(path, vault) || path === vault) continue;
+      seen.add(path);
+      extra.push({ label: path.slice(vault.length + 1), path });
+    }
+  }
+  return [...folders, ...extra];
+}
+
 export function parseProjectMeta(raw: string): ProjectMeta | null {
   let data: unknown;
   try {

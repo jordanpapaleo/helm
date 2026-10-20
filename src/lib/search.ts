@@ -40,3 +40,17 @@ export function searchNotes(index: NoteIndex, notes: Note[], query: string): Not
     .map((r) => notes.find((n) => n.id === r.id))
     .filter((n): n is Note => n !== undefined);
 }
+
+/** Title, tag, and body substring match used by the note list. */
+export function noteMatchesQuery(
+  note: { content: string; frontmatter: { title: string; tags: string[] } },
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    note.frontmatter.title.toLowerCase().includes(q) ||
+    note.frontmatter.tags.some((tag) => tag.toLowerCase().includes(q)) ||
+    note.content.toLowerCase().includes(q)
+  );
+}

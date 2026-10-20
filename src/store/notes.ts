@@ -4,9 +4,8 @@
  * full-text search index for note discovery.
  */
 import { create } from "zustand";
-import { visibleNotes } from "../lib/archive";
 import { serializeNote, slugify } from "../lib/note-parser";
-import { buildIndex, type NoteIndex, searchNotes } from "../lib/search";
+import { buildIndex, type NoteIndex, noteMatchesQuery, searchNotes } from "../lib/search";
 import {
   isValidTagName,
   normalizeTagName,
@@ -20,8 +19,8 @@ import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import type { Note, VaultConfig } from "../types/note";
 import { useProjectStore } from "./projects";
-import { useSettingsStore } from "./settings";
 import { reportError } from "./toast";
+import { useTrashStore } from "./trash";
 
 /**
  * A node in the hierarchical tag tree structure.
@@ -264,9 +263,13 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       set({ searchQuery: query, searchResults: [] });
       return;
     }
-    const showArchived = useSettingsStore.getState().settings.showArchivedNotes;
-    const results = visibleNotes(searchNotes(searchIndex, notes, query), showArchived);
-    set({ searchQuery: query, searchResults: results });
+    const indexed = searchNotes(searchIndex, notes, query);
+    const seen = new Set(indexed.map((note) => note.id));
+    const deleted = useTrashStore
+      .getState()
+      .items.map((item) => item.note)
+      .filter((note) => !seen.has(note.id) && noteMatchesQuery(note, query));
+    set({ searchQuery: query, searchResults: [...indexed, ...deleted].slice(0, 20) });
   },
   setKnownFolderPaths: (paths) => set({ knownFolderPaths: paths }),
 

@@ -248,8 +248,11 @@ An existing note joins a project from the note list **Move to…** menu. The pro
 
 - The archive action sits next to Delete: an archive icon with the label "Archive note" / "Unarchive note" in the property panel, and Archive / Unarchive in the note-list menu. Both are withheld while the note is locked.
 - **Show archived notes** (Settings → General) defaults to off and persists across restarts. It is a UI preference only. The MCP server does not read it; agent tools take their own `include_archived` option and exclude archived notes unless that option is true.
-- While the setting is off, archived notes are hidden from lists, search, tag and vault counts, boards, the graph, the dashboard, and the daily briefing. Opening a note you already have selected still works, and shows an Archived mark plus Unarchive.
+- While the setting is off, archived notes are hidden from lists, tag and vault counts, boards, the graph, the dashboard, and the daily briefing. Opening a note you already have selected still works, and shows an Archived mark plus Unarchive.
 - While the setting is on, archived notes appear in those views with an Archived mark.
+- **Archive** in the sidebar, next to Trash, lists archived notes whether or not the setting is on. Click a row to read it on the note screen.
+- The note list search finds archived notes and notes in Trash by title, tags, and body, the same way it finds any other note. Matches are marked Archived or Deleted. Click a deleted match to read it. A deleted note stays read-only until it is restored.
+- **Trash** lists deleted notes. Click a row to read it. Right-click the Trash icon for **Restore all** and **Delete all**. Delete all asks before permanently removing every note in Trash.
 - Existing links stay valid. A visible note can still open an archived note it links to.
 
 ### Zettelkasten / Wiki Links

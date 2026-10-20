@@ -1,10 +1,11 @@
 import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState } from "react";
-import { isArchived, visibleNotes } from "../../lib/archive";
+import { isArchived } from "../../lib/archive";
 import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { createNote, creationTargetFromUI } from "../../lib/create-note";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
+import { notesForList, trashForList } from "../../lib/note-list";
 import { serializeNote } from "../../lib/note-parser";
 import { moveNoteToCategory } from "../../lib/project-actions";
 import { moveDestinations, PROJECT_CATEGORIES, projectForPath } from "../../lib/projects";
@@ -41,8 +42,14 @@ export function NoteListPanel() {
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
   const enableProjects = useSettingsStore((s) => s.settings.enableProjects);
   const projects = useProjectStore((s) => s.projects);
-  const [search, setSearch] = useState("");
   const [menu, setMenu] = useState<MenuState>(null);
+  // A query belongs to the list you typed it in. Archive and Trash start unfiltered.
+  const groupingKey = `${selectedGrouping.type}:${selectedGrouping.id ?? ""}`;
+  const [searches, setSearches] = useState<Record<string, string>>({});
+  const search = searches[groupingKey] ?? "";
+  function setSearch(value: string) {
+    setSearches((current) => ({ ...current, [groupingKey]: value }));
+  }
   // null means no note is being renamed inline
   const [renamingNoteId, setRenamingNoteId] = useState<string | null>(null);
 
@@ -61,47 +68,34 @@ export function NoteListPanel() {
     );
   }, [enableProjects, knownFolderPaths, notes, projects, vault]);
 
-  const filteredNotes = useMemo(() => {
-    const visible = visibleNotes(notes, showArchivedNotes);
-    let result = activeVaultId ? visible.filter((n) => n.vaultId === activeVaultId) : visible;
-
-    if (selectedGrouping.type === "folder" && selectedGrouping.id) {
-      const prefix = `${selectedGrouping.id}/`;
-      result = result.filter((n) => n.filePath.startsWith(prefix));
-    } else if (selectedGrouping.type === "tag" && selectedGrouping.id) {
-      const tag = selectedGrouping.id;
-      const tagPrefix = `${tag}/`;
-      result = result.filter((n) =>
-        n.frontmatter.tags.some((t) => t === tag || t.startsWith(tagPrefix)),
-      );
-    }
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (n) =>
-          n.frontmatter.title.toLowerCase().includes(q) ||
-          n.frontmatter.tags.some((t) => t.toLowerCase().includes(q)) ||
-          n.content.toLowerCase().includes(q),
-      );
-    }
-
-    return [...result].sort((a, b) => {
-      if (a.frontmatter.pinned && !b.frontmatter.pinned) return -1;
-      if (!a.frontmatter.pinned && b.frontmatter.pinned) return 1;
-      return b.frontmatter.updated.localeCompare(a.frontmatter.updated);
-    });
-  }, [notes, selectedGrouping, activeVaultId, search, showArchivedNotes]);
+  const listed = useMemo(
+    () =>
+      notesForList({
+        notes,
+        trash: trashItems,
+        grouping: selectedGrouping,
+        activeVaultId,
+        showArchived: showArchivedNotes,
+        query: search,
+      }),
+    [notes, trashItems, selectedGrouping, activeVaultId, showArchivedNotes, search],
+  );
+  const visibleTrash = useMemo(() => trashForList(trashItems, search), [trashItems, search]);
 
   function handleNewNote(templateId: string | null) {
     void createNote({ ...creationTargetFromUI(), templateId });
   }
 
+  function openNote(noteId: string) {
+    navigate({ view: "notes", selectedNoteId: noteId, selectedGrouping });
+  }
+
   async function handleRestore(noteId: string) {
-    const item = removeFromTrash(noteId);
+    const item = trashItems.find((entry) => entry.note.id === noteId);
     if (!item) return;
     try {
       await tauriCommands.writeNote(item.note.filePath, serializeNote(item.note));
+      removeFromTrash(noteId);
       addNote(item.note);
     } catch (e) {
       reportError("Failed to restore note", e);
@@ -223,38 +217,56 @@ export function NoteListPanel() {
         className="flex flex-col border-r border-base-300"
         style={{ width: "100%", height: "100%", minWidth: 0 }}
       >
-        <div className="flex items-center border-b border-base-300 px-3 py-2.5">
+        <div className="flex items-center gap-2 border-b border-base-300 px-2 py-2">
           <span className="text-sm font-semibold">Trash</span>
-          <span className="ml-2 text-xs opacity-40">{trashItems.length}</span>
+          <span className="text-xs opacity-40">{visibleTrash.length}</span>
+          <NoteSearch value={search} onChange={setSearch} />
         </div>
         <div className="flex-1 overflow-y-auto">
           {trashItems.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm opacity-40">Trash is empty</p>
+          ) : visibleTrash.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm opacity-40">No notes</p>
           ) : (
             <ul className="py-1">
-              {trashItems.map(({ note, deletedAt }) => (
-                <li key={note.id} className="flex flex-col gap-1 px-3 py-2.5 hover:bg-base-200">
-                  <span className="truncate text-sm font-medium">
-                    {note.frontmatter.title || "Untitled"}
-                  </span>
-                  <span className="text-xs opacity-40">
-                    Deleted {new Date(deletedAt).toLocaleDateString()}
-                  </span>
-                  <div className="mt-1 flex gap-2">
+              {visibleTrash.map(({ note, deletedAt }) => (
+                <li key={note.id}>
+                  <div
+                    className={`flex flex-col gap-1 px-3 py-2.5 ${
+                      note.id === selectedNoteId ? "bg-base-300" : "hover:bg-base-200"
+                    }`}
+                  >
                     <button
                       type="button"
-                      onClick={() => handleRestore(note.id)}
-                      className="btn btn-ghost btn-xs"
+                      onClick={() => openNote(note.id)}
+                      className="flex w-full flex-col items-start gap-0.5 text-left"
                     >
-                      Restore
+                      <span className="w-full truncate text-sm font-medium">
+                        {note.frontmatter.title || "Untitled"}
+                      </span>
+                      <span className="text-xs opacity-40">
+                        Deleted {new Date(deletedAt).toLocaleDateString()}
+                      </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => permanentlyDelete(note.id)}
-                      className="btn btn-ghost btn-xs text-error hover:text-error"
-                    >
-                      Delete
-                    </button>
+                    <div className="mt-1 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRestore(note.id)}
+                        className="btn btn-ghost btn-xs"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          permanentlyDelete(note.id);
+                          if (note.id === selectedNoteId) selectNote(null);
+                        }}
+                        className="btn btn-ghost btn-xs text-error hover:text-error"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </li>
               ))}
@@ -272,12 +284,7 @@ export function NoteListPanel() {
     >
       {/* Toolbar */}
       <div className="flex items-center gap-1 border-b border-base-300 px-2 py-2">
-        <input
-          placeholder="Search..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input input-sm flex-1 border border-base-300 bg-base-200"
-        />
+        <NoteSearch value={search} onChange={setSearch} />
         <NewNoteMenu
           ariaLabel="New note"
           title="New note"
@@ -290,135 +297,180 @@ export function NoteListPanel() {
 
       {/* Note list — onContextMenu is on each button to avoid conflicts with the toolbar */}
       <div className="flex-1 overflow-y-auto">
-        {filteredNotes.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm opacity-40">No notes</p>
+        {listed.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm opacity-40">
+            {selectedGrouping.type === "archive" ? "No archived notes" : "No notes"}
+          </p>
         ) : (
           <ul className="py-1">
-            {filteredNotes.map((note) => (
-              <li key={note.id}>
-                {renamingNoteId === note.id ? (
-                  // Inline rename — takes over the row; clicking away commits
-                  <div className="px-3 py-2.5">
-                    <RenameInput
-                      initial={note.frontmatter.title}
-                      onCommit={(v) => handleRenameNote(note, v)}
-                      onCancel={() => setRenamingNoteId(null)}
-                      className="w-full rounded bg-base-100 px-1 text-sm font-medium text-base-content outline outline-1 outline-primary"
-                    />
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigate({ view: "notes", selectedNoteId: note.id, selectedGrouping });
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setMenu({
-                        x: e.clientX,
-                        y: e.clientY,
-                        items: [
-                          {
-                            kind: "action",
-                            label: note.frontmatter.pinned ? "Unpin" : "Pin",
-                            onClick: () => handlePinToggle(note),
-                          },
-                          {
-                            kind: "action",
-                            label: "Rename",
-                            onClick: () => setRenamingNoteId(note.id),
-                          },
-                          {
-                            kind: "action",
-                            label: note.frontmatter.locked ? "Unlock" : "Lock",
-                            onClick: () => handleFrontmatterToggle(note, "locked"),
-                          },
-                          {
-                            kind: "action",
-                            label: note.frontmatter.unmanaged ? "Mark Managed" : "Mark Unmanaged",
-                            onClick: () => handleFrontmatterToggle(note, "unmanaged"),
-                          },
-                          {
-                            kind: "submenu",
-                            label: "Move to…",
-                            items: allFolders.map((f) => ({
-                              label: f.label,
-                              onClick: () => handleMoveNote(note, f.path),
-                            })),
-                          },
-                          ...(enableProjects &&
-                          projectForPath(note.filePath, projects) &&
-                          projectForPath(note.filePath, projects)?.mainPageId !== note.id
-                            ? [
-                                {
-                                  kind: "submenu" as const,
-                                  label: "Move to category",
-                                  items: PROJECT_CATEGORIES.map((category) => ({
-                                    label: category.label,
-                                    onClick: () => {
-                                      void handleMoveToCategory(note, category.id);
-                                    },
-                                  })),
-                                },
-                              ]
-                            : []),
-                          ...(note.frontmatter.locked
-                            ? []
-                            : [
-                                { kind: "separator" as const },
-                                {
-                                  kind: "action" as const,
-                                  label: isArchived(note.frontmatter) ? "Unarchive" : "Archive",
-                                  onClick: () => handleArchiveToggle(note),
-                                },
-                                {
-                                  kind: "action" as const,
-                                  label: "Delete",
-                                  danger: true,
-                                  onClick: () => handleDeleteNote(note),
-                                },
-                              ]),
-                        ],
-                      });
-                    }}
-                    className={`flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors ${
+            {listed.map(({ note, deletedAt }) =>
+              deletedAt ? (
+                <li key={note.id}>
+                  <div
+                    className={`flex flex-col gap-1 px-3 py-2.5 ${
                       note.id === selectedNoteId ? "bg-base-300" : "hover:bg-base-200"
                     }`}
                   >
-                    <span className="w-full truncate text-sm font-medium">
-                      {note.frontmatter.title || "Untitled"}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs">
-                      {note.frontmatter.pinned && (
-                        <Icon
-                          icon="uil:map-pin"
-                          className="h-3.5 w-3.5 text-[var(--color-primary)]"
-                          aria-label="Pinned"
-                        />
-                      )}
-                      {isArchived(note.frontmatter) && (
-                        <span className="badge badge-ghost badge-xs">Archived</span>
-                      )}
-                      {/* Dense list — just the day. The full stored timestamp
-                          is in the tooltip and in the property panel. */}
-                      <span className="opacity-40" title={note.frontmatter.updated}>
-                        {timestampDate(note.frontmatter.updated)}
+                    <button
+                      type="button"
+                      onClick={() => openNote(note.id)}
+                      className="flex w-full flex-col items-start gap-0.5 text-left"
+                    >
+                      <span className="w-full truncate text-sm font-medium">
+                        {note.frontmatter.title || "Untitled"}
                       </span>
-                    </span>
-                    {note.frontmatter.tags.length > 0 && (
-                      <div className="mt-0.5 flex flex-wrap gap-1">
-                        {note.frontmatter.tags.slice(0, 3).map((tag) => (
-                          <span key={tag} className="badge badge-ghost badge-xs">
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </button>
-                )}
-              </li>
-            ))}
+                      <span className="flex items-center gap-1 text-xs">
+                        <span className="badge badge-ghost badge-xs">Deleted</span>
+                        <span className="opacity-40">
+                          Deleted {new Date(deletedAt).toLocaleDateString()}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="mt-1 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRestore(note.id)}
+                        className="btn btn-ghost btn-xs"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          permanentlyDelete(note.id);
+                          if (note.id === selectedNoteId) selectNote(null);
+                        }}
+                        className="btn btn-ghost btn-xs text-error hover:text-error"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ) : (
+                <li key={note.id}>
+                  {renamingNoteId === note.id ? (
+                    // Inline rename — takes over the row; clicking away commits
+                    <div className="px-3 py-2.5">
+                      <RenameInput
+                        initial={note.frontmatter.title}
+                        onCommit={(v) => handleRenameNote(note, v)}
+                        onCancel={() => setRenamingNoteId(null)}
+                        className="w-full rounded bg-base-100 px-1 text-sm font-medium text-base-content outline outline-1 outline-primary"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openNote(note.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          items: [
+                            {
+                              kind: "action",
+                              label: note.frontmatter.pinned ? "Unpin" : "Pin",
+                              onClick: () => handlePinToggle(note),
+                            },
+                            {
+                              kind: "action",
+                              label: "Rename",
+                              onClick: () => setRenamingNoteId(note.id),
+                            },
+                            {
+                              kind: "action",
+                              label: note.frontmatter.locked ? "Unlock" : "Lock",
+                              onClick: () => handleFrontmatterToggle(note, "locked"),
+                            },
+                            {
+                              kind: "action",
+                              label: note.frontmatter.unmanaged ? "Mark Managed" : "Mark Unmanaged",
+                              onClick: () => handleFrontmatterToggle(note, "unmanaged"),
+                            },
+                            {
+                              kind: "submenu",
+                              label: "Move to…",
+                              items: allFolders.map((f) => ({
+                                label: f.label,
+                                onClick: () => handleMoveNote(note, f.path),
+                              })),
+                            },
+                            ...(enableProjects &&
+                            projectForPath(note.filePath, projects) &&
+                            projectForPath(note.filePath, projects)?.mainPageId !== note.id
+                              ? [
+                                  {
+                                    kind: "submenu" as const,
+                                    label: "Move to category",
+                                    items: PROJECT_CATEGORIES.map((category) => ({
+                                      label: category.label,
+                                      onClick: () => {
+                                        void handleMoveToCategory(note, category.id);
+                                      },
+                                    })),
+                                  },
+                                ]
+                              : []),
+                            ...(note.frontmatter.locked
+                              ? []
+                              : [
+                                  { kind: "separator" as const },
+                                  {
+                                    kind: "action" as const,
+                                    label: isArchived(note.frontmatter) ? "Unarchive" : "Archive",
+                                    onClick: () => handleArchiveToggle(note),
+                                  },
+                                  {
+                                    kind: "action" as const,
+                                    label: "Delete",
+                                    danger: true,
+                                    onClick: () => handleDeleteNote(note),
+                                  },
+                                ]),
+                          ],
+                        });
+                      }}
+                      className={`flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors ${
+                        note.id === selectedNoteId ? "bg-base-300" : "hover:bg-base-200"
+                      }`}
+                    >
+                      <span className="w-full truncate text-sm font-medium">
+                        {note.frontmatter.title || "Untitled"}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs">
+                        {note.frontmatter.pinned && (
+                          <Icon
+                            icon="uil:map-pin"
+                            className="h-3.5 w-3.5 text-[var(--color-primary)]"
+                            aria-label="Pinned"
+                          />
+                        )}
+                        {isArchived(note.frontmatter) && (
+                          <span className="badge badge-ghost badge-xs">Archived</span>
+                        )}
+                        {/* Dense list — just the day. The full stored timestamp
+                          is in the tooltip and in the property panel. */}
+                        <span className="opacity-40" title={note.frontmatter.updated}>
+                          {timestampDate(note.frontmatter.updated)}
+                        </span>
+                      </span>
+                      {note.frontmatter.tags.length > 0 && (
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          {note.frontmatter.tags.slice(0, 3).map((tag) => (
+                            <span key={tag} className="badge badge-ghost badge-xs">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                  )}
+                </li>
+              ),
+            )}
           </ul>
         )}
       </div>
@@ -426,5 +478,17 @@ export function NoteListPanel() {
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
     </div>
+  );
+}
+
+function NoteSearch({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <input
+      placeholder="Search..."
+      aria-label="Search notes"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="input input-sm flex-1 border border-base-300 bg-base-200"
+    />
   );
 }

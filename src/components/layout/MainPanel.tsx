@@ -402,12 +402,26 @@ function extractAssetPaths(content: string): Set<string> {
 
 export function MainPanel() {
   const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
-  const { notes, vaults, selectedNoteId, updateNote, setNoteTitleLive, removeNote, selectNote } =
-    useNoteStore();
+  const {
+    notes,
+    vaults,
+    selectedNoteId,
+    updateNote,
+    setNoteTitleLive,
+    removeNote,
+    selectNote,
+    addNote,
+  } = useNoteStore();
+  const trashItems = useTrashStore((state) => state.items);
   const { settings } = useSettingsStore();
   const enableProjects = settings.enableProjects;
   const projects = useProjectStore((state) => state.projects);
-  const selectedNote = notes.find((n) => n.id === selectedNoteId);
+  const liveNote = notes.find((n) => n.id === selectedNoteId);
+  const deletedItem = liveNote
+    ? undefined
+    : trashItems.find((item) => item.note.id === selectedNoteId);
+  const selectedNote = liveNote ?? deletedItem?.note;
+  const viewingDeleted = deletedItem !== undefined;
   const editorRef = useRef<NoteEditorHandle>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findExpanded, setFindExpanded] = useState(false);
@@ -512,7 +526,7 @@ export function MainPanel() {
   const syncHoldReported = useRef<string | null>(null);
 
   async function handleSave(content: string) {
-    if (!selectedNote) return;
+    if (!selectedNote || viewingDeleted) return;
     if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) {
       if (syncHoldReported.current !== selectedNote.id) {
         syncHoldReported.current = selectedNote.id;
@@ -621,7 +635,7 @@ export function MainPanel() {
   }
 
   async function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
-    if (!selectedNote) return;
+    if (!selectedNote || viewingDeleted) return;
     // A locked note stays read-only except for the unlock toggle itself.
     if (selectedNote.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) {
       return;
@@ -644,14 +658,36 @@ export function MainPanel() {
   }
 
   async function handleArchiveToggle() {
-    if (!selectedNote || selectedNote.frontmatter.locked) return;
+    if (!selectedNote || viewingDeleted || selectedNote.frontmatter.locked) return;
     // Archive in place: only the flag changes. Id, path, content, tags, links,
     // history, and workflow fields stay as they are.
     await handleFrontmatterChange({ archived: !isArchived(selectedNote.frontmatter) });
   }
 
+  async function handleRestoreDeleted() {
+    if (!deletedItem) return;
+    try {
+      await tauriCommands.writeNote(deletedItem.note.filePath, serializeNote(deletedItem.note));
+      useTrashStore.getState().removeFromTrash(deletedItem.note.id);
+      addNote(deletedItem.note);
+    } catch (e) {
+      reportError("Failed to restore note", e);
+    }
+  }
+
+  async function handlePermanentDelete() {
+    if (!deletedItem) return;
+    const confirmed = await confirm(
+      `Permanently delete "${deletedItem.note.frontmatter.title || "Untitled"}"? This cannot be undone.`,
+      { title: "Delete", kind: "warning" },
+    );
+    if (!confirmed) return;
+    useTrashStore.getState().permanentlyDelete(deletedItem.note.id);
+    selectNote(null);
+  }
+
   async function handleDelete() {
-    if (!selectedNote || selectedNote.frontmatter.locked) return;
+    if (!selectedNote || viewingDeleted || selectedNote.frontmatter.locked) return;
     if (useGitSyncStore.getState().isBarrierActive(selectedVaultPath ?? "")) return;
     const confirmed = await confirm(
       `Move "${selectedNote.frontmatter.title || "Untitled"}" to Trash?`,
@@ -673,18 +709,51 @@ export function MainPanel() {
       {activeView === "notes" &&
         (selectedNote ? (
           <div className="relative flex flex-1 flex-col overflow-y-auto">
+            {viewingDeleted && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-base-300 px-12 py-2">
+                <span className="badge badge-ghost badge-sm">Deleted</span>
+                <span className="text-sm text-[var(--color-text-muted)]">
+                  This note is in Trash.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleRestoreDeleted();
+                  }}
+                  className="btn btn-ghost btn-xs"
+                >
+                  Restore
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handlePermanentDelete();
+                  }}
+                  className="btn btn-ghost btn-xs text-error hover:text-error"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
             <PropertyPanel
               frontmatter={selectedNote.frontmatter}
               filePath={selectedNote.filePath}
               onChange={handleFrontmatterChange}
-              onTitleInput={handleTitleInput}
+              onTitleInput={viewingDeleted ? undefined : handleTitleInput}
               onTitleTab={() => editorRef.current?.focus()}
-              onDelete={selectedNote.frontmatter.locked ? undefined : handleDelete}
-              onArchive={selectedNote.frontmatter.locked ? undefined : handleArchiveToggle}
+              onDelete={
+                viewingDeleted || selectedNote.frontmatter.locked ? undefined : handleDelete
+              }
+              onArchive={
+                viewingDeleted || selectedNote.frontmatter.locked ? undefined : handleArchiveToggle
+              }
+              readOnly={viewingDeleted}
               markdownMode={markdownMode}
               onToggleMarkdown={handleToggleMarkdown}
-              onShowHistory={selectedVaultPath ? () => setHistoryOpen(true) : undefined}
-              onExportPdf={() => startPdfExport(selectedNote.id)}
+              onShowHistory={
+                viewingDeleted || !selectedVaultPath ? undefined : () => setHistoryOpen(true)
+              }
+              onExportPdf={viewingDeleted ? undefined : () => startPdfExport(selectedNote.id)}
               exportingPdf={pdfJob !== null}
             />
             {openProject && (
@@ -692,7 +761,7 @@ export function MainPanel() {
                 project={openProject}
                 notes={notes}
                 frontmatter={selectedNote.frontmatter}
-                locked={selectedNote.frontmatter.locked}
+                locked={viewingDeleted || selectedNote.frontmatter.locked}
                 onChange={(patch) => {
                   void handleFrontmatterChange(patch);
                 }}
@@ -724,7 +793,7 @@ export function MainPanel() {
                 vaultPath={selectedVaultPath}
                 content={selectedNote.content}
                 onSave={handleSave}
-                locked={selectedNote.frontmatter.locked}
+                locked={viewingDeleted || selectedNote.frontmatter.locked}
                 initialCursorOffset={initialCursorOffset}
                 initialScrollFraction={initialScrollFraction}
               />
@@ -733,7 +802,7 @@ export function MainPanel() {
                 ref={editorRef}
                 note={selectedNote}
                 onSave={handleSave}
-                locked={selectedNote.frontmatter.locked}
+                locked={viewingDeleted || selectedNote.frontmatter.locked}
                 findOpen={findOpen}
                 initialCursorOffset={initialCursorOffset}
                 initialScrollFraction={initialScrollFraction}

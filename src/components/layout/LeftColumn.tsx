@@ -2,11 +2,12 @@ import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import React, { useMemo, useState } from "react";
 import { addVault, removeVault } from "../../hooks/useVault";
-import { visibleNotes } from "../../lib/archive";
+import { isArchived, visibleNotes } from "../../lib/archive";
 import { createNote } from "../../lib/create-note";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { syncPrefs } from "../../lib/git-sync";
 import { syncConnectedVaults } from "../../lib/git-sync-runtime";
+import { serializeNote } from "../../lib/note-parser";
 import { createProject, promoteFolder } from "../../lib/project-actions";
 import {
   folderDisplayName,
@@ -353,6 +354,7 @@ export function LeftColumn() {
   const [renamingFolderPath, setRenamingFolderPath] = useState<string | null>(null);
   const [renamingTag, setRenamingTag] = useState<string | null>(null);
   const [folderMenu, setFolderMenu] = useState<MenuState>(null);
+  const [trashMenu, setTrashMenu] = useState<{ x: number; y: number } | null>(null);
   const { activeView, setView, selectedGrouping, setSelectedGrouping, setSettingsOpen, navigate } =
     useUIStore();
   const { notes, vaults, activeVaultId, setActiveVaultId, knownFolderPaths, selectedNoteId } =
@@ -366,6 +368,10 @@ export function LeftColumn() {
   );
   const tagTree = useMemo(() => buildTagTree(discoveryNotes), [discoveryNotes]);
   const trashCount = useTrashStore((s) => s.items.length);
+  const archiveCount = useMemo(() => {
+    const scoped = activeVaultId ? notes.filter((note) => note.vaultId === activeVaultId) : notes;
+    return scoped.filter((note) => isArchived(note.frontmatter)).length;
+  }, [activeVaultId, notes]);
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
@@ -624,6 +630,52 @@ export function LeftColumn() {
         },
       ],
     });
+  }
+
+  async function handleRestoreAll() {
+    const items = [...useTrashStore.getState().items];
+    if (items.length === 0) return;
+    const { addNote } = useNoteStore.getState();
+    let failed = 0;
+    let lastError: unknown;
+    for (const item of items) {
+      try {
+        await tauriCommands.writeNote(item.note.filePath, serializeNote(item.note));
+        addNote(item.note);
+        useTrashStore.getState().removeFromTrash(item.note.id);
+      } catch (error) {
+        failed += 1;
+        lastError = error;
+      }
+    }
+    if (failed > 0) {
+      reportError(
+        `Failed to restore ${failed} of ${items.length} ${items.length === 1 ? "note" : "notes"}`,
+        lastError,
+      );
+    }
+  }
+
+  async function handleDeleteAll() {
+    const items = useTrashStore.getState().items;
+    if (items.length === 0) return;
+    const ok = await confirm(
+      `Permanently delete all ${items.length} ${
+        items.length === 1 ? "note" : "notes"
+      } in Trash? This cannot be undone.`,
+      { title: "Delete all", kind: "warning" },
+    );
+    if (!ok) return;
+    const removed = useTrashStore.getState().removeAll();
+    const selected = useNoteStore.getState().selectedNoteId;
+    if (selected && removed.some((item) => item.note.id === selected)) {
+      useNoteStore.getState().selectNote(null);
+    }
+  }
+
+  function openTrashMenu(x: number, y: number) {
+    setFolderMenu(null);
+    setTrashMenu({ x, y });
   }
 
   function handleFolderContextMenu(e: React.MouseEvent, folderPath: string) {
@@ -894,15 +946,51 @@ export function LeftColumn() {
               </>
             )}
 
-            {/* Trash */}
+            {/* Archive and Trash */}
             <div className="mt-4 border-t border-base-300 pt-2">
               <ul className="py-1">
                 <li>
                   <button
                     type="button"
+                    aria-label="Archive"
+                    onClick={() => {
+                      setSelectedGrouping({ type: "archive", id: null });
+                      setView("notes");
+                    }}
+                    className={`flex w-full items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                      selectedGrouping.type === "archive"
+                        ? "bg-base-300 text-base-content"
+                        : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                    }`}
+                  >
+                    <Icon
+                      icon="uil:archive"
+                      className="h-4 w-4 shrink-0 opacity-60"
+                      aria-hidden="true"
+                    />
+                    <span className="flex-1 text-left">Archive</span>
+                    {archiveCount > 0 && <span className="text-xs opacity-40">{archiveCount}</span>}
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    aria-label="Trash"
+                    aria-haspopup="menu"
                     onClick={() => {
                       setSelectedGrouping({ type: "trash", id: null });
                       setView("notes");
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openTrashMenu(e.clientX, e.clientY);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+                      e.preventDefault();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      openTrashMenu(rect.left, rect.bottom);
                     }}
                     className={`flex w-full items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
                       selectedGrouping.type === "trash"
@@ -954,6 +1042,30 @@ export function LeftColumn() {
             folderMenu.kind === "folder" ? folderMenuItems(folderMenu.folderPath) : folderMenu.items
           }
           onClose={() => setFolderMenu(null)}
+        />
+      )}
+      {trashMenu && (
+        <ContextMenu
+          x={trashMenu.x}
+          y={trashMenu.y}
+          items={[
+            {
+              kind: "action",
+              label: "Restore all",
+              onClick: () => {
+                void handleRestoreAll();
+              },
+            },
+            {
+              kind: "action",
+              label: "Delete all",
+              danger: true,
+              onClick: () => {
+                void handleDeleteAll();
+              },
+            },
+          ]}
+          onClose={() => setTrashMenu(null)}
         />
       )}
     </div>

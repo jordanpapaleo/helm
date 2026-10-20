@@ -8,6 +8,7 @@ import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
+import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
 import { MainPanel } from "./MainPanel";
@@ -864,6 +865,75 @@ describe("MainPanel archive", () => {
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Unarchive note" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Archive note" })).not.toBeInTheDocument();
+  });
+});
+
+describe("MainPanel deleted notes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useTrashStore.setState({ items: [] });
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  function openDeleted() {
+    const note = makeNote({ content: "deleted body" });
+    note.frontmatter = { ...note.frontmatter, title: "Gone" };
+    useNoteStore.setState({
+      notes: [],
+      selectedNoteId: note.id,
+      vaults: [VAULT],
+      activeVaultId: VAULT.id,
+    });
+    useTrashStore.setState({
+      items: [{ note, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    useUIStore.setState({ activeView: "notes", markdownMode: true });
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, defaultNoteView: "markdown" },
+    });
+    render(<MainPanel />);
+    return note;
+  }
+
+  it("shows a deleted note on the note screen and restores it", async () => {
+    const note = openDeleted();
+
+    expect(screen.getByDisplayValue("Gone")).toHaveProperty("readOnly", true);
+    expect(screen.getByDisplayValue("deleted body")).toHaveProperty("readOnly", true);
+    expect(screen.getByText("This note is in Trash.")).toBeInTheDocument();
+    expect(screen.getByLabelText("State")).toBeDisabled();
+
+    fireEvent.change(screen.getByDisplayValue("deleted body"), {
+      target: { value: "should not save" },
+    });
+    fireEvent.blur(screen.getByDisplayValue("deleted body"));
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    });
+
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      note.filePath,
+      expect.stringContaining("deleted body"),
+    );
+    expect(useTrashStore.getState().items).toEqual([]);
+    expect(useNoteStore.getState().notes.map((item) => item.id)).toEqual([note.id]);
+    expect(useNoteStore.getState().selectedNoteId).toBe(note.id);
+    expect(screen.queryByText("This note is in Trash.")).not.toBeInTheDocument();
+  });
+
+  it("removes a deleted note from the note screen when it is deleted permanently", async () => {
+    openDeleted();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    });
+
+    expect(useTrashStore.getState().items).toEqual([]);
+    expect(useNoteStore.getState().selectedNoteId).toBeNull();
+    expect(screen.getByText("Select a note to start editing")).toBeInTheDocument();
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
   });
 });
 

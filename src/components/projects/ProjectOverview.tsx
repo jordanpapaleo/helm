@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { isArchived } from "../../lib/archive";
 import {
   isProjectMember,
@@ -9,6 +9,7 @@ import {
   PROJECT_STATUSES,
   type Project,
   type ProjectStatus,
+  repositoryHref,
 } from "../../lib/projects";
 import type { Note, NoteFrontmatter } from "../../types/note";
 
@@ -27,6 +28,22 @@ function statusLabel(status: ProjectStatus): string {
   if (status === "paused") return "Paused";
   if (status === "done") return "Done";
   return "Active";
+}
+
+function openRepository(url: string) {
+  const tauri = (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  const openInBrowser = () => {
+    try {
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      // jsdom and a missing popup blocker both leave the href on the link.
+    }
+  };
+  if (!tauri) {
+    openInBrowser();
+    return;
+  }
+  void import("@tauri-apps/plugin-opener").then(({ openUrl }) => openUrl(url)).catch(openInBrowser);
 }
 
 function readFields(frontmatter: NoteFrontmatter): Record<OverviewKey, string> {
@@ -52,6 +69,10 @@ export function ProjectOverview({
   const statusId = useId();
   const [draft, setDraft] = useState(() => readFields(frontmatter));
   const [repository, setRepository] = useState(project.repository ?? "");
+  const [editingRepository, setEditingRepository] = useState(false);
+  const skipRepositoryCommit = useRef(false);
+  const editRepositoryRef = useRef<HTMLButtonElement>(null);
+  const repositoryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setDraft(readFields(frontmatter));
@@ -59,7 +80,12 @@ export function ProjectOverview({
 
   useEffect(() => {
     setRepository(project.repository ?? "");
+    setEditingRepository(false);
   }, [project.repository]);
+
+  useEffect(() => {
+    if (editingRepository) repositoryInputRef.current?.focus();
+  }, [editingRepository]);
 
   const members = notes.filter(
     (note) => !isArchived(note.frontmatter) && isProjectMember(note.filePath, project.rootPath),
@@ -75,6 +101,25 @@ export function ProjectOverview({
     if (draft[key] === overviewValue(frontmatter, key)) return;
     onChange({ [key]: draft[key] });
   }
+
+  function commitRepository() {
+    if (skipRepositoryCommit.current) {
+      skipRepositoryCommit.current = false;
+      return;
+    }
+    const next = repository.trim() ? repository.trim() : null;
+    if (next !== project.repository) onMetaChange({ repository: next });
+    setEditingRepository(false);
+  }
+
+  function cancelRepositoryEdit() {
+    skipRepositoryCommit.current = true;
+    setRepository(project.repository ?? "");
+    setEditingRepository(false);
+    requestAnimationFrame(() => editRepositoryRef.current?.focus());
+  }
+
+  const repositoryLink = repositoryHref(project.repository);
 
   return (
     <section
@@ -121,21 +166,75 @@ export function ProjectOverview({
         ))}
       </div>
 
-      <label htmlFor={repoId} className="mt-3 flex min-w-0 flex-col gap-1 text-xs">
-        <span className="font-medium opacity-70">Repository</span>
-        <input
-          id={repoId}
-          value={repository}
-          onChange={(event) => setRepository(event.target.value)}
-          onBlur={() => {
-            const next = repository.trim() ? repository.trim() : null;
-            if (next === project.repository) return;
-            onMetaChange({ repository: next });
-          }}
-          placeholder="Optional — this project works offline without one"
-          className="input input-bordered input-sm w-full"
-        />
-      </label>
+      <div className="mt-3 flex min-w-0 flex-col gap-1 text-xs">
+        <span className="font-medium opacity-70" id={`${repoId}-label`}>
+          Repository
+        </span>
+        {editingRepository ? (
+          <input
+            ref={repositoryInputRef}
+            id={repoId}
+            aria-labelledby={`${repoId}-label`}
+            value={repository}
+            onChange={(event) => setRepository(event.target.value)}
+            onBlur={commitRepository}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelRepositoryEdit();
+              } else if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }}
+            placeholder="Optional — this project works offline without one"
+            className="input input-bordered input-sm w-full"
+          />
+        ) : (
+          <div className="flex min-w-0 items-center gap-2">
+            {repositoryLink ? (
+              <a
+                href={repositoryLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 truncate text-sm text-[var(--color-accent)] underline"
+                onClick={(event) => {
+                  if (
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    event.button !== 0
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  openRepository(repositoryLink);
+                }}
+              >
+                {project.repository}
+              </a>
+            ) : (
+              <span className="min-w-0 truncate text-sm opacity-70">
+                {project.repository || "Optional — this project works offline without one"}
+              </span>
+            )}
+            <button
+              ref={editRepositoryRef}
+              type="button"
+              aria-label="Edit repository"
+              className="btn btn-ghost btn-xs shrink-0"
+              onClick={() => {
+                skipRepositoryCommit.current = false;
+                setRepository(project.repository ?? "");
+                setEditingRepository(true);
+              }}
+            >
+              Edit
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="badge badge-ghost badge-sm">Doing {doing}</span>

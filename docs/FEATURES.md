@@ -234,11 +234,13 @@ Projects are off until **Settings → General → Enable Projects**. Turning the
 
 A project is a folder with `helm-project.json` at its root. The file holds a stable project id and the id of the main page. The folder name is only a label. Clicking a project opens that main page. Expanding it shows the same four folders for every project: Thinking, Features, Bugs, and Context / Docs.
 
-The main page edits purpose, plan / milestone, next action, where work left off, and blockers or decisions, next to a count of that project's Doing and blocked notes. Dashboard, Kanban, and Eisenhower from the project include only that project's notes. All Notes and the unscoped boards stay global.
+The main page edits purpose, plan / milestone, next action, where work left off, and blockers or decisions, next to a count of that project's Doing and blocked notes. Dashboard, Kanban, and Eisenhower from the project include only that project's notes. **Leave project** in the sidebar clears that filter and returns to the vault-wide Dashboard. Eisenhower, Kanban, the link graph, and the note list are unscoped again after that.
 
 New notes in Thinking and Context / Docs start unmanaged, so they stay off the boards and the daily briefing until you mark them managed. Features and Bugs are a classification, not a commitment: a new note there is not marked Doing. Moving a note between those folders keeps its id, history, links, and workflow fields. Use **Move to category** in the note list.
 
-A repository URL is optional. Home projects and software projects use the same structure, and a project works with no repository at all. Promoting an existing folder adds the missing folders and a main page without moving or overwriting notes. A project cannot sit inside another project.
+A repository URL is optional. Home projects and software projects use the same structure, and a project works with no repository at all. On the project page the value is a link when it is an `http`, `https`, or git remote that can be opened in a browser. **Edit** changes the saved value without following the link. An empty value or plain text stays text, and Edit is still available. Promoting an existing folder adds the missing folders and a main page without moving or overwriting notes. A project cannot sit inside another project.
+
+An existing note joins a project from the note list **Move to…** menu. The project and its standard folders are listed there. Choosing one renames the file into that folder. The note id, history, links, and workflow fields stay as they are.
 
 ### Archived notes
 

@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
+import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
 import { LeftColumn } from "./LeftColumn";
 
@@ -356,5 +357,61 @@ describe("LeftColumn — projects", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Kitchen" }));
     expect(useNoteStore.getState().selectedNoteId).toBe(kitchen.mainPageId);
+    expect(useUIStore.getState().selectedGrouping).toEqual({
+      type: "folder",
+      id: kitchen.rootPath,
+    });
+    expect(screen.getByRole("button", { name: "Leave project" })).toBeInTheDocument();
+  });
+
+  it("scopes the main views to the project and leaves back to the unscoped vault", () => {
+    useProjectStore.setState({ projects: [kitchen] });
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: kitchen.mainPageId,
+          filePath: "/vault/kitchen/kitchen.md",
+          fileName: "kitchen.md",
+          frontmatter: {
+            id: kitchen.mainPageId,
+            title: "Kitchen",
+            created: "2026-01-01",
+            updated: "2026-01-01",
+            tags: [],
+            urgent: false,
+            important: false,
+            state: "",
+            blocked: false,
+            unmanaged: true,
+          },
+        }),
+      ],
+    });
+    useUIStore.setState({
+      activeView: "notes",
+      selectedGrouping: { type: "all", id: null },
+    });
+
+    render(<LeftColumn />);
+    expect(screen.queryByRole("button", { name: "Leave project" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kitchen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard" }));
+    expect(useUIStore.getState().activeView).toBe("dashboard");
+    expect(useUIStore.getState().selectedGrouping).toEqual({
+      type: "folder",
+      id: kitchen.rootPath,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Leave project" }));
+    expect(useUIStore.getState().activeView).toBe("dashboard");
+    expect(useUIStore.getState().selectedGrouping).toEqual({ type: "all", id: null });
+    expect(screen.queryByRole("button", { name: "Leave project" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Eisenhower" }));
+    fireEvent.click(screen.getByRole("button", { name: "Kanban" }));
+    expect(useUIStore.getState().selectedGrouping).toEqual({ type: "all", id: null });
+    expect(useUIStore.getState().activeView).toBe("kanban");
   });
 });

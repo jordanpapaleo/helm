@@ -80,6 +80,109 @@ describe("ProjectOverview", () => {
     expect(onOpenView).toHaveBeenCalledWith("kanban");
   });
 
+  it("links an http or git repository and edits it from a separate button", () => {
+    const onMetaChange = vi.fn();
+    const { rerender } = render(
+      <ProjectOverview
+        project={{ ...project, repository: "git@github.com:org/kitchen.git" }}
+        frontmatter={frontmatter()}
+        onChange={vi.fn()}
+        onMetaChange={onMetaChange}
+        onOpenView={vi.fn()}
+        notes={[]}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "git@github.com:org/kitchen.git" });
+    expect(link).toHaveAttribute("href", "https://github.com/org/kitchen");
+    expect(screen.queryByRole("textbox", { name: "Repository" })).not.toBeInTheDocument();
+
+    fireEvent.click(link);
+    expect(onMetaChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: "Repository" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit repository" }));
+    const input = screen.getByRole("textbox", { name: "Repository" });
+    expect(input).toHaveValue("git@github.com:org/kitchen.git");
+    fireEvent.change(input, { target: { value: "  https://github.com/org/kitchen  " } });
+    fireEvent.blur(input);
+    expect(onMetaChange).toHaveBeenCalledWith({ repository: "https://github.com/org/kitchen" });
+
+    rerender(
+      <ProjectOverview
+        project={{ ...project, repository: "https://github.com/org/kitchen" }}
+        frontmatter={frontmatter()}
+        onChange={vi.fn()}
+        onMetaChange={onMetaChange}
+        onOpenView={vi.fn()}
+        notes={[]}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "https://github.com/org/kitchen" })).toHaveAttribute(
+      "href",
+      "https://github.com/org/kitchen",
+    );
+  });
+
+  it("keeps edit available when the repository is empty or not a URL", () => {
+    const onMetaChange = vi.fn();
+    const { rerender } = render(
+      <ProjectOverview
+        project={project}
+        frontmatter={frontmatter()}
+        onChange={vi.fn()}
+        onMetaChange={onMetaChange}
+        onOpenView={vi.fn()}
+        notes={[]}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Optional — this project works offline without one"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit repository" }));
+    const emptyInput = screen.getByRole("textbox", { name: "Repository" });
+    fireEvent.change(emptyInput, { target: { value: "  https://example.com/kitchen  " } });
+    fireEvent.blur(emptyInput);
+    expect(onMetaChange).toHaveBeenCalledWith({ repository: "https://example.com/kitchen" });
+
+    rerender(
+      <ProjectOverview
+        project={{ ...project, repository: "kitchen notes" }}
+        frontmatter={frontmatter()}
+        onChange={vi.fn()}
+        onMetaChange={onMetaChange}
+        onOpenView={vi.fn()}
+        notes={[]}
+      />,
+    );
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText("kitchen notes")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit repository" }));
+    const input = screen.getByRole("textbox", { name: "Repository" });
+    fireEvent.change(input, { target: { value: "still notes" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onMetaChange).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("kitchen notes")).toBeInTheDocument();
+
+    rerender(
+      <ProjectOverview
+        project={{ ...project, repository: "https://example.com/kitchen" }}
+        frontmatter={frontmatter()}
+        onChange={vi.fn()}
+        onMetaChange={onMetaChange}
+        onOpenView={vi.fn()}
+        notes={[]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit repository" }));
+    const clearing = screen.getByRole("textbox", { name: "Repository" });
+    fireEvent.change(clearing, { target: { value: "  " } });
+    fireEvent.blur(clearing);
+    expect(onMetaChange).toHaveBeenCalledWith({ repository: null });
+  });
+
   it("does not edit overview fields when the main page is locked", () => {
     const onChange = vi.fn();
     render(

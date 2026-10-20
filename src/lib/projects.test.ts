@@ -6,12 +6,14 @@ import {
   categoryOf,
   collectFolderPaths,
   creationDefaultsForFolder,
+  moveDestinations,
   type Project,
   parseProjectMeta,
   planCategoryMove,
   planCreateProject,
   planPromoteFolder,
   projectForPath,
+  repositoryHref,
   retargetProject,
   serializeProjectMeta,
 } from "./projects";
@@ -314,6 +316,68 @@ describe("identity survives a folder rename", () => {
     expect(next.id).toBe("01PROJECT0000000000000001");
     expect(next.rootPath).toBe("/notes/kitchen");
     expect(next.name).toBe("Kitchen");
+  });
+});
+
+describe("repositoryHref", () => {
+  it("keeps http and https URLs that can be opened", () => {
+    expect(repositoryHref("https://github.com/org/repo")).toBe("https://github.com/org/repo");
+    expect(repositoryHref("  http://example.com/repo.git ")).toBe("http://example.com/repo.git");
+  });
+
+  it("turns a git remote into an https page and drops embedded credentials", () => {
+    expect(repositoryHref("git@github.com:org/repo.git")).toBe("https://github.com/org/repo");
+    expect(repositoryHref("ssh://git@github.com/org/repo.git")).toBe("https://github.com/org/repo");
+    expect(repositoryHref("git://github.com/org/repo.git")).toBe("https://github.com/org/repo");
+    expect(repositoryHref("https://user:token@github.com/org/repo")).toBe(
+      "https://github.com/org/repo",
+    );
+  });
+
+  it("does not link an empty value or a value that is not a URL", () => {
+    expect(repositoryHref(null)).toBeNull();
+    expect(repositoryHref("")).toBeNull();
+    expect(repositoryHref("  ")).toBeNull();
+    expect(repositoryHref("kitchen notes")).toBeNull();
+    expect(repositoryHref("javascript:alert(1)")).toBeNull();
+    expect(repositoryHref("file:///tmp/repo")).toBeNull();
+  });
+});
+
+describe("moveDestinations", () => {
+  it("adds a project and its standard folders without duplicating paths already listed", () => {
+    const folders = [
+      { label: "/ (root)", path: "/vault" },
+      { label: "kitchen", path: "/vault/kitchen" },
+    ];
+    const destinations = moveDestinations(folders, [project()], "/vault");
+    expect(destinations.filter((item) => item.path === "/vault/kitchen")).toEqual([
+      { label: "kitchen", path: "/vault/kitchen" },
+    ]);
+    expect(destinations.map((item) => item.path)).toEqual([
+      "/vault",
+      "/vault/kitchen",
+      "/vault/kitchen/thinking",
+      "/vault/kitchen/features",
+      "/vault/kitchen/bugs",
+      "/vault/kitchen/context",
+    ]);
+  });
+
+  it("lists a project that is not already a folder in the tree", () => {
+    const destinations = moveDestinations(
+      [{ label: "/ (root)", path: "/vault" }],
+      [
+        project({
+          name: "Garden",
+          rootPath: "/vault/garden",
+          metaPath: "/vault/garden/helm-project.json",
+        }),
+      ],
+      "/vault",
+    );
+    expect(destinations.map((item) => item.label)).toContain("garden");
+    expect(destinations.map((item) => item.label)).toContain("garden/features");
   });
 });
 

@@ -8,7 +8,13 @@ import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { syncPrefs } from "../../lib/git-sync";
 import { syncConnectedVaults } from "../../lib/git-sync-runtime";
 import { createProject, promoteFolder } from "../../lib/project-actions";
-import { folderDisplayName, normalizePath, type Project, pathsOverlap } from "../../lib/projects";
+import {
+  folderDisplayName,
+  normalizePath,
+  type Project,
+  pathsOverlap,
+  projectForPath,
+} from "../../lib/projects";
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { listTemplateChoices } from "../../lib/templates";
@@ -419,6 +425,18 @@ export function LeftColumn() {
     enableProjects && activeVault
       ? projects.filter((project) => project.vaultId === activeVault.id)
       : [];
+  const scopedProject =
+    selectedGrouping.type === "folder" && selectedGrouping.id
+      ? projectForPath(selectedGrouping.id, vaultProjects)
+      : null;
+
+  function leaveProject() {
+    navigate({
+      view: "dashboard",
+      selectedNoteId: null,
+      selectedGrouping: { type: "all", id: null },
+    });
+  }
 
   function openProject(project: Project) {
     const mainPage = notes.find((note) => note.id === project.mainPageId);
@@ -672,6 +690,18 @@ export function LeftColumn() {
       <div className="flex flex-1 flex-col overflow-hidden py-2">
         {/* View nav */}
         <ul className="mb-4">
+          {scopedProject && (
+            <li className="mb-2 border-b border-base-300 pb-2">
+              <button
+                type="button"
+                onClick={leaveProject}
+                className="flex w-full items-center gap-2 px-2 py-1.5 text-sm text-base-content transition-colors hover:bg-base-200"
+              >
+                <Icon icon="uil:arrow-left" className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>Leave project</span>
+              </button>
+            </li>
+          )}
           {VIEWS.map((v) => (
             <li key={v.id}>
               <button

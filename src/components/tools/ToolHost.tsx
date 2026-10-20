@@ -7,6 +7,7 @@ import { reportError, useToastStore } from "../../store/toast";
 import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import { EMPTY_WRITER_SESSION, useWriterStore } from "../../store/writer";
+import { PinToSideButton } from "../layout/PinToSideButton";
 
 const idleSubscribe = () => () => {};
 
@@ -22,7 +23,7 @@ function noteBody(note: { id: string; content: string }, heldDraft: string | und
   return readEditorDraft(note.id) ?? heldDraft ?? note.content;
 }
 
-export function ToolHost() {
+export function ToolHost({ showPinAction = true }: { showPinAction?: boolean }) {
   const { writerEnabled, provider, mode, apiModels, subscriptionModels, showToolsSettings } =
     useToolsStore();
   const { activeVaultId, selectedNoteId, notes } = useNoteStore();
@@ -91,6 +92,7 @@ export function ToolHost() {
           </>
         )}
         <span className="flex-1" />
+        {showPinAction && <PinToSideButton noteId={selectedNoteId} variant="toolbar" />}
         {writerEnabled && (
           <button
             type="button"

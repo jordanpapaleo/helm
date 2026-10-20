@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Note } from "../types/note";
 import { buildBriefing } from "./briefing";
+import { buildTree, type TreeNode } from "./file-tree";
 import { notesInProjectScope } from "./project-scope";
 import {
   categoryOf,
   collectFolderPaths,
   creationDefaultsForFolder,
   moveDestinations,
+  omitProjectFolders,
   type Project,
   parseProjectMeta,
   planCategoryMove,
@@ -135,7 +137,7 @@ describe("planCreateProject", () => {
     });
     expect(plan.ok).toBe(false);
     if (plan.ok) return;
-    expect(plan.error).toMatch(/Promote/);
+    expect(plan.error).toMatch(/Convert/);
   });
 
   it("refuses a project nested inside another project", () => {
@@ -148,6 +150,85 @@ describe("planCreateProject", () => {
     expect(plan.ok).toBe(false);
     if (plan.ok) return;
     expect(plan.error).toMatch(/Nested projects/);
+  });
+});
+
+describe("omitProjectFolders", () => {
+  function paths(nodes: TreeNode[]): string[] {
+    return nodes.flatMap((node) =>
+      node.kind === "folder" ? [node.path, ...paths(node.children)] : [node.note.filePath],
+    );
+  }
+
+  it("drops a project root and the folders inside it, and keeps other folders", () => {
+    const tree = buildTree(
+      [
+        note("ideas", "/vault/kitchen/ideas.md"),
+        note("specs", "/vault/kitchen/context/specs.md"),
+        note("loose", "/vault/archive/loose.md"),
+        note("root", "/vault/readme.md"),
+      ],
+      "/vault",
+    );
+    expect(paths(omitProjectFolders(tree, [project()]))).toEqual([
+      "/vault/archive",
+      "/vault/archive/loose.md",
+      "/vault/readme.md",
+    ]);
+  });
+
+  it("keeps a parent and a folder that only shares the project name as a prefix", () => {
+    const tree = buildTree(
+      [
+        note("ideas", "/vault/home/kitchen/ideas.md"),
+        note("recipes", "/vault/home/recipes.md"),
+        note("list", "/vault/kitchen-notes/list.md"),
+      ],
+      "/vault",
+    );
+    expect(
+      paths(
+        omitProjectFolders(tree, [
+          project({
+            rootPath: "/vault/home/kitchen",
+            metaPath: "/vault/home/kitchen/helm-project.json",
+          }),
+        ]),
+      ),
+    ).toEqual([
+      "/vault/home",
+      "/vault/home/recipes.md",
+      "/vault/kitchen-notes",
+      "/vault/kitchen-notes/list.md",
+    ]);
+  });
+
+  it("resolves .. before deciding a folder is the project root", () => {
+    const listed = omitProjectFolders(
+      [
+        {
+          kind: "folder",
+          name: "kitchen-notes",
+          path: "/vault/kitchen/../kitchen-notes",
+          children: [],
+        },
+        {
+          kind: "folder",
+          name: "kitchen",
+          path: "/vault/kitchen/../kitchen",
+          children: [
+            {
+              kind: "folder",
+              name: "thinking",
+              path: "/vault/kitchen/thinking",
+              children: [],
+            },
+          ],
+        },
+      ],
+      [project({ rootPath: "/vault/foo/../kitchen" })],
+    );
+    expect(paths(listed)).toEqual(["/vault/kitchen/../kitchen-notes"]);
   });
 });
 

@@ -11,6 +11,7 @@ import { createProject, promoteFolder } from "../../lib/project-actions";
 import {
   folderDisplayName,
   normalizePath,
+  omitProjectFolders,
   type Project,
   pathsOverlap,
   projectForPath,
@@ -381,10 +382,20 @@ export function LeftColumn() {
     [discoveryNotes, activeVaultId],
   );
 
-  const tree = useMemo(
-    () => (activeVault ? buildTree(vaultNotes, activeVault.path, vaultFolderPaths) : []),
-    [vaultNotes, activeVault, vaultFolderPaths],
+  const vaultProjects = useMemo(
+    () =>
+      enableProjects && activeVault
+        ? projects.filter((project) => project.vaultId === activeVault.id)
+        : [],
+    [enableProjects, activeVault, projects],
   );
+
+  const tree = useMemo(() => {
+    if (!activeVault) return [];
+    const built = buildTree(vaultNotes, activeVault.path, vaultFolderPaths);
+    if (!enableProjects) return built;
+    return omitProjectFolders(built, vaultProjects);
+  }, [vaultNotes, activeVault, vaultFolderPaths, enableProjects, vaultProjects]);
 
   function noteCount(folderPath: string) {
     const prefix = `${folderPath}/`;
@@ -421,10 +432,6 @@ export function LeftColumn() {
     void createNote({ folderPath, vaultId: activeVault?.id, templateId });
   }
 
-  const vaultProjects =
-    enableProjects && activeVault
-      ? projects.filter((project) => project.vaultId === activeVault.id)
-      : [];
   const scopedProject =
     selectedGrouping.type === "folder" && selectedGrouping.id
       ? projectForPath(selectedGrouping.id, vaultProjects)
@@ -439,7 +446,9 @@ export function LeftColumn() {
   }
 
   function openProject(project: Project) {
-    const mainPage = notes.find((note) => note.id === project.mainPageId);
+    // The notes captured by this render are stale after an awaited write, so a
+    // project created or converted in this click would look like it had no page.
+    const mainPage = useNoteStore.getState().notes.find((note) => note.id === project.mainPageId);
     if (!mainPage) {
       reportError(
         "Project main page is missing",
@@ -668,7 +677,7 @@ export function LeftColumn() {
         ? [
             {
               kind: "action" as const,
-              label: "Promote to Project",
+              label: "Convert to Project",
               onClick: () => {
                 void handlePromoteFolder(folderPath);
               },

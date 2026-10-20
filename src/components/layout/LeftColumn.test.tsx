@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
@@ -17,6 +17,8 @@ vi.mock("../../lib/tauri-commands", () => ({
     renameFolder: vi.fn().mockResolvedValue(undefined),
     renameNote: vi.fn().mockResolvedValue(undefined),
     writeNote: vi.fn().mockResolvedValue(undefined),
+    writeTextFile: vi.fn().mockResolvedValue(undefined),
+    listProjectFiles: vi.fn().mockResolvedValue([]),
     deleteFolder: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -413,5 +415,165 @@ describe("LeftColumn — projects", () => {
     fireEvent.click(screen.getByRole("button", { name: "Kanban" }));
     expect(useUIStore.getState().selectedGrouping).toEqual({ type: "all", id: null });
     expect(useUIStore.getState().activeView).toBe("kanban");
+  });
+
+  it("lists each project once under Projects and keeps other folders in Folders", () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useProjectStore.setState({ projects: [{ ...kitchen, name: "kitchen" }] });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "ideas",
+          filePath: "/vault/kitchen/ideas.md",
+          fileName: "ideas.md",
+          frontmatter: {
+            ...makeNote().frontmatter,
+            id: "ideas",
+            title: "Ideas",
+          },
+        }),
+        makeNote({
+          id: "loose",
+          filePath: "/vault/archive/loose.md",
+          fileName: "loose.md",
+          frontmatter: {
+            ...makeNote().frontmatter,
+            id: "loose",
+            title: "Loose",
+          },
+        }),
+      ],
+      knownFolderPaths: ["/vault/kitchen", "/vault/kitchen/context", "/vault/archive"],
+    });
+
+    render(<LeftColumn />);
+
+    const projectsNav = screen.getByTestId("projects-nav");
+    expect(within(projectsNav).getByText("kitchen")).toBeInTheDocument();
+    expect(within(projectsNav).queryByText("archive")).not.toBeInTheDocument();
+    expect(screen.getAllByText("kitchen")).toHaveLength(1);
+    expect(screen.getByText("archive")).toBeInTheDocument();
+    expect(screen.queryByText("context")).not.toBeInTheDocument();
+  });
+
+  it("keeps project folders in the folder list while Projects is off", () => {
+    useProjectStore.setState({ projects: [{ ...kitchen, name: "kitchen" }] });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "ideas",
+          filePath: "/vault/kitchen/ideas.md",
+          fileName: "ideas.md",
+          frontmatter: {
+            ...makeNote().frontmatter,
+            id: "ideas",
+            title: "Ideas",
+          },
+        }),
+      ],
+      knownFolderPaths: ["/vault/kitchen"],
+    });
+
+    render(<LeftColumn />);
+
+    expect(screen.queryByTestId("projects-nav")).not.toBeInTheDocument();
+    expect(screen.getByText("kitchen")).toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByText("kitchen"));
+    expect(screen.queryByRole("menuitem", { name: "Convert to Project" })).not.toBeInTheDocument();
+  });
+
+  it("converts a folder from the right-click menu and keeps the notes already in it", async () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    const existing = makeNote({
+      id: "ideas",
+      filePath: "/vault/renovation/ideas.md",
+      fileName: "ideas.md",
+      content: "Already organized.",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "ideas",
+        title: "Ideas",
+      },
+    });
+    useNoteStore.setState({
+      notes: [existing],
+      knownFolderPaths: ["/vault/renovation", "/vault/archive"],
+    });
+
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByText("renovation"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Convert to Project" }));
+
+    await waitFor(() => {
+      expect(useProjectStore.getState().projects.map((project) => project.rootPath)).toEqual([
+        "/vault/renovation",
+      ]);
+    });
+
+    const project = useProjectStore.getState().projects[0];
+    expect(project).toBeDefined();
+    expect(useNoteStore.getState().selectedNoteId).toBe(project?.mainPageId);
+    expect(useNoteStore.getState().notes.some((note) => note.id === project?.mainPageId)).toBe(
+      true,
+    );
+
+    const kept = useNoteStore.getState().notes.find((note) => note.id === existing.id);
+    expect(kept?.filePath).toBe("/vault/renovation/ideas.md");
+    expect(kept?.content).toBe("Already organized.");
+    const written = vi.mocked(tauriCommands.writeNote).mock.calls.map((call) => call[0]);
+    expect(written).not.toContain(existing.filePath);
+    expect(tauriCommands.createFolder).not.toHaveBeenCalledWith("/vault/renovation");
+
+    const projectsNav = screen.getByTestId("projects-nav");
+    expect(within(projectsNav).getByText("renovation")).toBeInTheDocument();
+    expect(screen.getAllByText("renovation")).toHaveLength(1);
+    expect(screen.getByText("archive")).toBeInTheDocument();
+  });
+
+  it("does not offer conversion for a folder that already contains a project", () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useProjectStore.setState({
+      projects: [
+        {
+          ...kitchen,
+          name: "kitchen",
+          rootPath: "/vault/home/kitchen",
+          metaPath: "/vault/home/kitchen/helm-project.json",
+        },
+      ],
+    });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "ideas",
+          filePath: "/vault/home/kitchen/ideas.md",
+          fileName: "ideas.md",
+          frontmatter: {
+            ...makeNote().frontmatter,
+            id: "ideas",
+            title: "Ideas",
+          },
+        }),
+        makeNote({
+          id: "loose",
+          filePath: "/vault/home/loose.md",
+          fileName: "loose.md",
+          frontmatter: {
+            ...makeNote().frontmatter,
+            id: "loose",
+            title: "Loose",
+          },
+        }),
+      ],
+      knownFolderPaths: ["/vault/home", "/vault/home/kitchen"],
+    });
+
+    render(<LeftColumn />);
+
+    expect(screen.getAllByText("kitchen")).toHaveLength(1);
+    fireEvent.contextMenu(screen.getByText("home"));
+    expect(screen.queryByRole("menuitem", { name: "Convert to Project" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
   });
 });

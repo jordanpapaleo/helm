@@ -6,6 +6,7 @@ import { SettingsModal } from "../settings/SettingsModal";
 import { GlobalNewNoteMenu } from "../sidebar/NewNoteMenu";
 import { ToolHost } from "../tools/ToolHost";
 import { AppToolbar } from "./AppToolbar";
+import { CollapsedSidebar } from "./CollapsedSidebar";
 import { LeftColumn } from "./LeftColumn";
 import { MainPanel } from "./MainPanel";
 import { NoteListPanel } from "./NoteListPanel";
@@ -80,6 +81,7 @@ export function AppShell() {
     <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-[var(--color-bg)]">
       <AppToolbar left={geometry.left} right={geometry.right} />
       <div ref={workspace} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {geometry.collapsedNav && <CollapsedSidebar />}
         <div
           id="workspace-left"
           hidden={!geometry.left}

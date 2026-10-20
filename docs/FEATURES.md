@@ -412,11 +412,11 @@ All data stays on your device; Helm is fully offline-capable.
 
 ## Workspace panels
 
-A persistent toolbar provides Back/Forward navigation and independent left/right panel toggles in every view. On macOS, it shares the native title bar with the window controls; its empty space can be dragged to move the window. The left panel toggle sits before Back/Forward, and the right panel toggle sits at the far right. Controls use quiet hover feedback without a selected background. The left area includes navigation and, in Notes (including Trash), the note list. The right panel is an empty extension region. Settings remains available through the native menu while navigation is hidden.
+A persistent toolbar provides Back/Forward navigation and independent left/right panel toggles in every view. On macOS, it shares the native title bar with the window controls; its empty space can be dragged to move the window. The left panel toggle sits before Back/Forward, and the right panel toggle sits at the far right. Controls use quiet hover feedback without a selected background. The left area includes navigation and, in Notes (including Trash), the note list. Closing the left panel collapses that area to the icon nav for Dashboard, Eisenhower, Kanban, and Link. Those icons still switch views, and opening the panel restores the full sidebar and note list. The right panel is an empty extension region. Settings stays on the collapsed nav and in the native menu.
 
 Drag the vertical separators to resize each column, or focus a separator and use Left/Right arrows for 10px steps. Panel visibility and completed width changes persist across restarts. Hiding panels preserves the center editor and its pending edits.
 
-At narrow widths Helm reduces panels to their minimum widths, then temporarily hides the right panel followed by the left area to reserve 320px for the center. Explicitly opening either side gives that side priority. Growing the window restores the requested layout and remembered widths.
+At narrow widths Helm reduces panels to their minimum widths, then temporarily hides the right panel followed by an open left area to reserve 320px for the center. A left panel the user closed stays the icon nav. Explicitly opening either side gives that side priority. Growing the window restores the requested layout and remembered widths.
 
 ## Writer tool (subscription prototype)
 

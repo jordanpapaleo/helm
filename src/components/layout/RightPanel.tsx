@@ -24,7 +24,11 @@ function NoteTab({ note, selected }: { note: Note; selected: boolean }) {
   const title = note.frontmatter.title || "Untitled";
   const select = usePinnedPanelStore((state) => state.select);
   return (
-    <div className={`flex shrink-0 items-center rounded ${selected ? "bg-base-200" : ""}`}>
+    <div
+      className={`flex shrink-0 items-center border-b-2 ${
+        selected ? "border-[var(--color-primary)] bg-base-200" : "border-transparent"
+      }`}
+    >
       <button
         type="button"
         role="tab"
@@ -98,10 +102,10 @@ export function RightPanel() {
               aria-selected={writerSelected}
               aria-controls="pinned-panel-writer"
               tabIndex={writerSelected ? 0 : -1}
-              className={`shrink-0 px-2 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)] ${
+              className={`shrink-0 border-b-2 px-2 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)] ${
                 writerSelected
-                  ? "rounded bg-base-200 font-medium text-[var(--color-text)]"
-                  : "rounded text-[var(--color-text)] opacity-70 hover:opacity-100"
+                  ? "border-[var(--color-primary)] bg-base-200 font-medium text-[var(--color-text)]"
+                  : "border-transparent text-[var(--color-text)] opacity-70 hover:opacity-100"
               }`}
               onClick={() => select(WRITER_TAB)}
             >

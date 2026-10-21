@@ -169,10 +169,10 @@ export function PropertyPanel({
 
   return (
     <div className="border-b border-base-300 px-12 py-4 space-y-3">
-      {/* Title row */}
-      <div className="flex items-center gap-3">
+      {/* Title row stays clear of the action icons. */}
+      <div className="flex min-w-0 items-center gap-3">
         <input
-          className="flex-1 bg-transparent text-3xl font-bold text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+          className="min-w-0 flex-1 bg-transparent text-3xl font-bold text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
           value={titleDraft}
           readOnly={readOnly}
           onChange={(e) => {
@@ -194,6 +194,10 @@ export function PropertyPanel({
           placeholder="Untitled"
         />
         {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
+      </div>
+
+      {/* Same actions as before, on their own line under the title. */}
+      <div className="flex flex-wrap items-center gap-1">
         {filePath && (
           <button
             type="button"

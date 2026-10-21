@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTE_STATES } from "../../lib/constants";
 import { DEFAULT_LAYOUT } from "../../lib/workspace-layout";
@@ -270,7 +271,12 @@ describe("PropertyPanel archive", () => {
         onArchive={onArchive}
       />,
     );
-    expect(screen.getByText("Archived")).toBeInTheDocument();
+    const badge = screen.getByText("Archived");
+    const titleRow = screen.getByDisplayValue("Untitled").parentElement;
+    expect(titleRow).toContainElement(badge);
+    expect(
+      screen.getByRole("button", { name: "Unarchive note" }).parentElement,
+    ).not.toContainElement(badge);
     expect(screen.getByText("Doing")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Unarchive note" }));
     expect(onArchive).toHaveBeenCalledTimes(1);
@@ -281,5 +287,88 @@ describe("PropertyPanel archive", () => {
     expect(screen.queryByRole("button", { name: "Unarchive note" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Archive note" })).not.toBeInTheDocument();
     expect(screen.getByText("Archived")).toBeInTheDocument();
+  });
+});
+
+function rowOf(element: HTMLElement): HTMLElement {
+  const row = element.parentElement;
+  if (!row) throw new Error("expected the header control to sit in a row");
+  return row;
+}
+
+const HEADER_ACTIONS = [
+  "Copy file path",
+  "Pin to side",
+  "Note history",
+  "Export to PDF",
+  "Switch to Markdown",
+  "Archive note",
+  "Delete note",
+] as const;
+
+describe("PropertyPanel header layout", () => {
+  function renderCrowdedHeader() {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({
+          title: "A long title that would crowd the action icons",
+        })}
+        filePath="/vault/rule.md"
+        onChange={vi.fn()}
+        onDelete={vi.fn()}
+        onArchive={vi.fn()}
+        onToggleMarkdown={vi.fn()}
+        onShowHistory={vi.fn()}
+        onExportPdf={vi.fn()}
+      />,
+    );
+  }
+
+  it("puts the action icons on their own line under the title", () => {
+    renderCrowdedHeader();
+
+    const titleRow = rowOf(
+      screen.getByDisplayValue("A long title that would crowd the action icons"),
+    );
+    const buttons = HEADER_ACTIONS.map((name) => screen.getByRole("button", { name }));
+    const actionRow = rowOf(buttons[0]);
+
+    expect(actionRow).not.toBe(titleRow);
+    expect(
+      titleRow.compareDocumentPosition(actionRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    for (const button of buttons) {
+      expect(actionRow).toContainElement(button);
+      expect(titleRow).not.toContainElement(button);
+    }
+
+    const labels = [...actionRow.querySelectorAll("button")].map(
+      (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
+    );
+    expect(labels).toEqual([...HEADER_ACTIONS]);
+
+    const locked = screen.getByLabelText("Locked");
+    expect(titleRow).not.toContainElement(locked);
+    expect(actionRow).not.toContainElement(locked);
+    expect(
+      actionRow.compareDocumentPosition(locked) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps every action keyboard accessible with its existing label", async () => {
+    const user = userEvent.setup();
+    renderCrowdedHeader();
+
+    // The title field captures Tab to enter the editor, so these actions stay
+    // in the tab order ahead of the metadata controls.
+    screen.getByLabelText("State").focus();
+
+    for (const name of [...HEADER_ACTIONS].reverse()) {
+      await user.tab({ shift: true });
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveFocus();
+      expect(button).toBeEnabled();
+    }
   });
 });

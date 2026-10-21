@@ -5,6 +5,7 @@
  * KEEP IN SYNC with mcp-server/projects.ts — membership, categories, workflow
  * defaults, overlap rules, and the metadata schema must match the MCP server.
  */
+import type { TreeNode } from "./file-tree";
 import { slugify } from "./note-parser";
 
 export const PROJECT_META_FILENAME = "helm-project.json";
@@ -155,6 +156,47 @@ export function folderDisplayName(
     return folderName;
   }
   return PROJECT_CATEGORIES.find((item) => item.dir === folderName)?.label ?? folderName;
+}
+
+/**
+ * Folders section listing. A project root is already shown under Projects, so
+ * the root and everything inside it leave the regular folder tree. Comparison
+ * uses normalized paths, so `..` cannot make another folder look like the root.
+ */
+export function omitProjectFolders(nodes: TreeNode[], projects: Project[]): TreeNode[] {
+  if (projects.length === 0) return nodes;
+  const roots = new Set(projects.map((project) => normalizePath(project.rootPath)));
+  const listed: TreeNode[] = [];
+  for (const node of nodes) {
+    if (node.kind !== "folder") {
+      listed.push(node);
+      continue;
+    }
+    if (roots.has(normalizePath(node.path))) continue;
+    listed.push({ ...node, children: omitProjectFolders(node.children, projects) });
+  }
+  return listed;
+}
+
+/**
+ * Direct children of a project that are not the four standard category folders.
+ * Those stay on the project row after the root leaves the Folders list.
+ * Paths are normalized first, so `..` cannot present another folder as a child.
+ */
+export function customChildFolders(rootPath: string, folderPaths: string[]): string[] {
+  const root = normalizePath(rootPath);
+  const standard = new Set(PROJECT_CATEGORIES.map((item) => `${root}/${item.dir}`));
+  const children = new Set<string>();
+  for (const folderPath of folderPaths) {
+    const path = normalizePath(folderPath);
+    if (path === root || !path.startsWith(`${root}/`)) continue;
+    const first = path.slice(root.length + 1).split("/")[0];
+    if (!first) continue;
+    const child = `${root}/${first}`;
+    if (standard.has(child)) continue;
+    children.add(child);
+  }
+  return [...children].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 }
 
 /**
@@ -411,7 +453,7 @@ export function planCreateProject(input: CreateProjectInput): PlanResult {
   if (folders.has(rootPath)) {
     return {
       ok: false,
-      error: `A folder named "${slug}" already exists. Promote that folder instead.`,
+      error: `A folder named "${slug}" already exists. Convert that folder instead.`,
     };
   }
   const conflict = conflictingProject(rootPath, input.projects);

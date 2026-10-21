@@ -1,3 +1,15 @@
+## v1.7.0 — 2026-10-21
+
+- Keep deleted notes read-only and colliding trash snapshots.
+- Disable pin outside the editor and prefer held drafts.
+- Keep folder actions on the project row.
+- Underline the active pinned-note tab.
+- Show archived and deleted notes, and search them.
+- Pin notes as tabs in the right panel.
+- Convert an existing folder into a project.
+- feat: keep the collapsed sidebar nav when the left panel closes
+- chore: update version to 1.6.1 in package-lock.json and Cargo.lock
+
 ## v1.6.1 — 2026-10-20
 
 - Leave a project, link its repository, and move notes in.

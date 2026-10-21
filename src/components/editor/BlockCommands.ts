@@ -25,9 +25,10 @@ function blockDepth($pos: ResolvedPos): number {
  * through to whatever else is listening.
  */
 function moveBlock(
-  { state, tr, dispatch }: Pick<CommandProps, "state" | "tr" | "dispatch">,
+  { editor, state, tr, dispatch }: Pick<CommandProps, "editor" | "state" | "tr" | "dispatch">,
   side: "up" | "down",
 ): boolean {
+  if (!editor.isEditable) return false;
   const { $from } = state.selection;
   const depth = blockDepth($from);
   const parent = $from.node(depth - 1);
@@ -87,7 +88,8 @@ export const BlockCommands = Extension.create({
     return {
       duplicateBlock:
         () =>
-        ({ state, tr, dispatch }) => {
+        ({ editor, state, tr, dispatch }) => {
+          if (!editor.isEditable) return false;
           const { $from } = state.selection;
           const depth = blockDepth($from);
           const block = $from.node(depth);
@@ -101,7 +103,8 @@ export const BlockCommands = Extension.create({
 
       deleteBlock:
         () =>
-        ({ state, tr, dispatch }) => {
+        ({ editor, state, tr, dispatch }) => {
+          if (!editor.isEditable) return false;
           const { $from } = state.selection;
           const depth = blockDepth($from);
           const start = $from.before(depth);

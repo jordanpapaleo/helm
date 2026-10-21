@@ -1,6 +1,10 @@
 import { Schema } from "@tiptap/pm/model";
 import { describe, expect, it } from "vitest";
-import { findMatchesInDocument } from "../components/editor/findReplaceExtension";
+import {
+  FindReplaceExtension,
+  findMatchesInDocument,
+} from "../components/editor/findReplaceExtension";
+import { makeEditor } from "./editor-harness";
 
 const schema = new Schema({
   nodes: {
@@ -65,5 +69,23 @@ describe("findMatchesInDocument", () => {
   it("returns empty array when no matches", () => {
     const doc = makeDoc("foo bar");
     expect(findMatchesInDocument(doc, "xyz", false, false)).toHaveLength(0);
+  });
+});
+
+describe("replace commands on a read-only editor", () => {
+  it("does not replace while the editor is not editable", () => {
+    const editor = makeEditor("hello world", [FindReplaceExtension]);
+    editor.setEditable(false);
+    editor.commands.openFind();
+    editor.commands.setFindQuery("world", false, false);
+
+    expect(editor.commands.replaceCurrent("there")).toBe(false);
+    expect(editor.commands.replaceAllMatches("there")).toBe(false);
+    expect(editor.getText()).toContain("hello world");
+
+    editor.setEditable(true);
+    expect(editor.commands.replaceCurrent("there")).toBe(true);
+    expect(editor.getText()).toContain("hello there");
+    editor.destroy();
   });
 });

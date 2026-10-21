@@ -13,6 +13,8 @@ interface FindReplaceBarProps {
   editor: Editor | null;
   textareaHandle: MarkdownTextareaHandle | null;
   expanded: boolean;
+  /** When false, Replace stays hidden and replacement commands are not run. */
+  allowReplace: boolean;
   onExpand: () => void;
   onClose: () => void;
 }
@@ -48,6 +50,7 @@ export function FindReplaceBar({
   editor,
   textareaHandle,
   expanded,
+  allowReplace,
   onExpand,
   onClose,
 }: FindReplaceBarProps) {
@@ -151,6 +154,7 @@ export function FindReplaceBar({
   };
 
   const handleReplaceCurrent = () => {
+    if (!allowReplace) return;
     if (mode === "editor") {
       editor?.commands.replaceCurrent(replaceTerm);
     } else {
@@ -166,6 +170,7 @@ export function FindReplaceBar({
   };
 
   const handleReplaceAll = () => {
+    if (!allowReplace) return;
     if (mode === "editor") {
       editor?.commands.replaceAllMatches(replaceTerm);
     } else {
@@ -210,9 +215,25 @@ export function FindReplaceBar({
       <div className="flex items-center gap-1 px-1.5 py-1">
         <button
           type="button"
-          onClick={onExpand}
+          onClick={() => {
+            if (allowReplace) onExpand();
+          }}
+          disabled={!allowReplace}
           className={iconBtnClass}
-          title={expanded ? "Collapse" : "Expand to replace"}
+          aria-label={
+            allowReplace
+              ? expanded
+                ? "Collapse replace"
+                : "Expand replace"
+              : "Replace unavailable"
+          }
+          title={
+            allowReplace
+              ? expanded
+                ? "Collapse"
+                : "Expand to replace"
+              : "Replace is unavailable while this note is read-only"
+          }
         >
           <Icon
             icon="uil:angle-right"
@@ -277,7 +298,7 @@ export function FindReplaceBar({
       </div>
 
       {/* Replace row */}
-      {expanded && (
+      {expanded && allowReplace && (
         <div className="flex items-center gap-1 border-t border-[var(--color-border)] px-1.5 py-1">
           <div className="h-5 w-5 shrink-0" />
           <input

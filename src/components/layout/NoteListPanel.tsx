@@ -9,6 +9,7 @@ import { notesForList, trashForList } from "../../lib/note-list";
 import { serializeNote } from "../../lib/note-parser";
 import { moveNoteToCategory } from "../../lib/project-actions";
 import { moveDestinations, PROJECT_CATEGORIES, projectForPath } from "../../lib/projects";
+import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp, timestampDate } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
@@ -93,6 +94,12 @@ export function NoteListPanel() {
   async function handleRestore(noteId: string) {
     const item = trashItems.find((entry) => entry.note.id === noteId);
     if (!item) return;
+    const occupied = notes.map((note) => note.filePath);
+    const { held } = planTrashRestore([item], occupied);
+    if (held.length > 0) {
+      reportPathCollisions(held);
+      return;
+    }
     try {
       await tauriCommands.writeNote(item.note.filePath, serializeNote(item.note));
       removeFromTrash(noteId);

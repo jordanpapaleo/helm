@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
 import type { Project } from "../../lib/projects";
@@ -11,7 +12,7 @@ import { useSettingsStore } from "../../store/settings";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
-import { MainPanel } from "./MainPanel";
+import { MainPanel, MarkdownTextarea, type MarkdownTextareaHandle } from "./MainPanel";
 
 vi.mock("../../lib/tauri-commands", () => ({
   tauriCommands: {
@@ -38,6 +39,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   confirm: vi.fn().mockResolvedValue(true),
 }));
 
+import { listen } from "@tauri-apps/api/event";
 import { tauriCommands } from "../../lib/tauri-commands";
 
 const VAULT: VaultConfig = { id: "v1", name: "Vault", path: "/vault" };
@@ -934,6 +936,134 @@ describe("MainPanel deleted notes", () => {
     expect(useNoteStore.getState().selectedNoteId).toBeNull();
     expect(screen.getByText("Select a note to start editing")).toBeInTheDocument();
     expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+  });
+
+  it("does not let find, replace, or formatting commands change a deleted note", async () => {
+    const note = openDeleted();
+
+    fireEvent.keyDown(document, { key: "f", metaKey: true });
+    expect(screen.getByPlaceholderText("Find")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "f", metaKey: true });
+    expect(screen.queryByPlaceholderText("Replace")).not.toBeInTheDocument();
+
+    const expand = screen.getByRole("button", { name: "Replace unavailable" });
+    expect(expand).toBeDisabled();
+    fireEvent.click(expand);
+    expect(screen.queryByPlaceholderText("Replace")).not.toBeInTheDocument();
+
+    const body = screen.getByDisplayValue("deleted body");
+    if (!(body instanceof HTMLTextAreaElement)) throw new Error("expected a textarea");
+    body.focus();
+    body.setSelectionRange(0, "deleted".length);
+    fireEvent.keyDown(body, { key: "b", metaKey: true });
+    expect(body).toHaveValue("deleted body");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    });
+    fireEvent.blur(screen.getByDisplayValue("deleted body"));
+
+    const written = vi.mocked(tauriCommands.writeNote).mock.calls.map((call) => String(call[1]));
+    expect(written.length).toBeGreaterThan(0);
+    expect(written.every((markdown) => markdown.includes("deleted body"))).toBe(true);
+    expect(written.some((markdown) => markdown.includes("**deleted"))).toBe(false);
+    expect(useNoteStore.getState().notes.find((item) => item.id === note.id)?.content).toBe(
+      "deleted body",
+    );
+  });
+
+  it("ignores heading and paragraph commands while a deleted note is open in the editor", async () => {
+    const handlers = new Map<string, (event: { payload?: unknown }) => void>();
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      handlers.set(String(event), handler as (event: { payload?: unknown }) => void);
+      return () => {};
+    });
+
+    const note = makeNote({ content: "deleted body" });
+    note.frontmatter = { ...note.frontmatter, title: "Gone" };
+    useNoteStore.setState({
+      notes: [],
+      selectedNoteId: note.id,
+      vaults: [VAULT],
+      activeVaultId: VAULT.id,
+    });
+    useTrashStore.setState({
+      items: [{ note, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, defaultNoteView: "editor" },
+    });
+    useUIStore.setState({ activeView: "notes", markdownMode: false });
+    render(<MainPanel />);
+
+    await waitFor(() => expect(handlers.has("format-heading")).toBe(true));
+    handlers.get("format-heading")?.({ payload: 1 });
+    handlers.get("format-paragraph")?.({});
+
+    expect(document.querySelector("h1, h2, h3")).toBeNull();
+    expect(document.querySelector(".ProseMirror")?.textContent).toContain("deleted body");
+    vi.mocked(listen).mockResolvedValue(() => {});
+  });
+
+  it("leaves a deleted note in Trash when its path is already used", async () => {
+    const deleted = openDeleted();
+    const live = makeNote({
+      id: "01LIVE0000000000000000001",
+      filePath: deleted.filePath,
+      fileName: deleted.fileName,
+      content: "live body",
+    });
+    live.frontmatter = { ...live.frontmatter, id: live.id, title: "Live" };
+    act(() => {
+      useNoteStore.setState({
+        notes: [live],
+        selectedNoteId: deleted.id,
+        vaults: [VAULT],
+        activeVaultId: VAULT.id,
+      });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useTrashStore.getState().items.map((item) => item.note.id)).toEqual([deleted.id]);
+    expect(useNoteStore.getState().notes.map((item) => item.content)).toEqual(["live body"]);
+  });
+});
+
+describe("MarkdownTextarea replace", () => {
+  it("ignores replaceContent while locked and applies it again after unlock", () => {
+    vi.useFakeTimers();
+    try {
+      const ref = createRef<MarkdownTextareaHandle>();
+      const onSave = vi.fn();
+      const props = {
+        ref,
+        noteId: "n1",
+        vaultPath: "/vault",
+        content: "deleted body",
+        onSave,
+      };
+      const view = render(<MarkdownTextarea {...props} locked />);
+      act(() => {
+        ref.current?.replaceContent("replaced body");
+        vi.advanceTimersByTime(2000);
+      });
+      expect(screen.getByDisplayValue("deleted body")).toBeInTheDocument();
+      expect(onSave).not.toHaveBeenCalled();
+
+      view.rerender(<MarkdownTextarea {...props} locked={false} />);
+      act(() => {
+        ref.current?.replaceContent("replaced body");
+        vi.advanceTimersByTime(2000);
+      });
+      expect(screen.getByDisplayValue("replaced body")).toBeInTheDocument();
+      expect(onSave).toHaveBeenCalledWith("replaced body");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

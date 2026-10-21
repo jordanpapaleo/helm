@@ -16,6 +16,7 @@ import {
   pathsOverlap,
   projectForPath,
 } from "../../lib/projects";
+import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { listTemplateChoices } from "../../lib/templates";
@@ -635,10 +636,14 @@ export function LeftColumn() {
   async function handleRestoreAll() {
     const items = [...useTrashStore.getState().items];
     if (items.length === 0) return;
+    const occupied = useNoteStore.getState().notes.map((note) => note.filePath);
+    // One snapshot per path. The rest stay in Trash with their original content
+    // so a later write cannot replace an earlier one and then drop both entries.
+    const { restore, held } = planTrashRestore(items, occupied);
     const { addNote } = useNoteStore.getState();
     let failed = 0;
     let lastError: unknown;
-    for (const item of items) {
+    for (const item of restore) {
       try {
         await tauriCommands.writeNote(item.note.filePath, serializeNote(item.note));
         addNote(item.note);
@@ -654,6 +659,7 @@ export function LeftColumn() {
         lastError,
       );
     }
+    reportPathCollisions(held);
   }
 
   async function handleDeleteAll() {

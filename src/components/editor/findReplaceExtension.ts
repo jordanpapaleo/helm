@@ -222,7 +222,10 @@ export const FindReplaceExtension = Extension.create({
 
       replaceCurrent:
         (replacement) =>
-        ({ tr, state, dispatch }) => {
+        ({ editor, tr, state, dispatch }) => {
+          // A read-only editor (a deleted or locked note) must not accept a
+          // replacement. setEditable(false) blocks typing, not commands.
+          if (!editor.isEditable) return false;
           const s = findReplacePluginKey.getState(state);
           if (!s || s.activeMatchIndex < 0) return false;
           const match = s.matches[s.activeMatchIndex];
@@ -242,7 +245,8 @@ export const FindReplaceExtension = Extension.create({
 
       replaceAllMatches:
         (replacement) =>
-        ({ tr, state, dispatch }) => {
+        ({ editor, tr, state, dispatch }) => {
+          if (!editor.isEditable) return false;
           const s = findReplacePluginKey.getState(state);
           if (!s || s.matches.length === 0) return false;
           if (dispatch) {

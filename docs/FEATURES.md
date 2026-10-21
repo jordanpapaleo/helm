@@ -252,7 +252,7 @@ An existing note joins a project from the note list **Move to…** menu. The pro
 - While the setting is on, archived notes appear in those views with an Archived mark.
 - **Archive** in the sidebar, next to Trash, lists archived notes whether or not the setting is on. Click a row to read it on the note screen.
 - The note list search finds archived notes and notes in Trash by title, tags, and body, the same way it finds any other note. Matches are marked Archived or Deleted. Click a deleted match to read it. A deleted note stays read-only until it is restored.
-- **Trash** lists deleted notes. Click a row to read it. Right-click the Trash icon for **Restore all** and **Delete all**. Delete all asks before permanently removing every note in Trash.
+- **Trash** lists deleted notes. Click a row to read it. Right-click the Trash icon for **Restore all** and **Delete all**. Restore all writes at most one snapshot per path and leaves the others in Trash when that path is already used, so a second snapshot is not discarded. Delete all asks before permanently removing every note in Trash. A deleted note open on the note screen can be searched, but Find does not offer Replace and other editing commands are ignored until it is restored.
 - Existing links stay valid. A visible note can still open an archived note it links to.
 
 ### Zettelkasten / Wiki Links

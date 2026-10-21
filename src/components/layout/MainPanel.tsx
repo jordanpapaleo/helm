@@ -23,6 +23,7 @@ import {
 } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
+import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -47,7 +48,7 @@ import { NotePrintView } from "../editor/NotePrintView";
 import { PropertyPanel } from "../editor/PropertyPanel";
 import { ProjectOverview } from "../projects/ProjectOverview";
 
-interface MarkdownTextareaHandle {
+export interface MarkdownTextareaHandle {
   textarea: HTMLTextAreaElement | null;
   replaceContent: (newContent: string) => void;
   /**
@@ -61,7 +62,7 @@ interface MarkdownTextareaHandle {
   getScrollFraction: () => number | null;
 }
 
-const MarkdownTextarea = forwardRef<
+export const MarkdownTextarea = forwardRef<
   MarkdownTextareaHandle,
   {
     noteId: string;
@@ -111,6 +112,11 @@ const MarkdownTextarea = forwardRef<
   const vaultPathRef = useRef(vaultPath);
   vaultPathRef.current = vaultPath;
   const dirtyRef = useRef(false);
+  // The imperative handle is created once. Read locked through a ref so a
+  // deleted note cannot be replaced, and so restore re-enables replacement
+  // without remounting the textarea.
+  const lockedRef = useRef(locked === true);
+  lockedRef.current = locked === true;
 
   // Tracks the last content we handed to onSave so we can tell our own saves
   // apart from external file changes (Claude Code, the MCP server, the file
@@ -172,7 +178,7 @@ const MarkdownTextarea = forwardRef<
       else if (e.key === "H") wrap = ["==", "=="];
     }
 
-    if (!wrap) return;
+    if (!wrap || locked) return;
     e.preventDefault();
 
     const [prefix, suffix] = wrap;
@@ -313,6 +319,7 @@ const MarkdownTextarea = forwardRef<
         return textareaRef.current;
       },
       replaceContent(newContent: string) {
+        if (lockedRef.current) return;
         setValue(newContent);
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
@@ -400,6 +407,14 @@ function extractAssetPaths(content: string): Set<string> {
   return paths;
 }
 
+/** True when the open note is a trash snapshot rather than a live file. */
+function viewingDeletedNote(): boolean {
+  const id = useNoteStore.getState().selectedNoteId;
+  if (!id) return false;
+  if (useNoteStore.getState().notes.some((note) => note.id === id)) return false;
+  return useTrashStore.getState().items.some((item) => item.note.id === id);
+}
+
 export function MainPanel() {
   const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
   const {
@@ -422,6 +437,9 @@ export function MainPanel() {
     : trashItems.find((item) => item.note.id === selectedNoteId);
   const selectedNote = liveNote ?? deletedItem?.note;
   const viewingDeleted = deletedItem !== undefined;
+  // Deleted and locked notes stay read-only. Find may open; Replace may not.
+  const canReplace =
+    selectedNote !== undefined && !viewingDeleted && !selectedNote.frontmatter.locked;
   const editorRef = useRef<NoteEditorHandle>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findExpanded, setFindExpanded] = useState(false);
@@ -488,26 +506,34 @@ export function MainPanel() {
             setFindExpanded(false);
             return true;
           }
-          setFindExpanded(true);
+          // A second Cmd/Ctrl+F reveals Replace. Skip that while the note
+          // cannot be edited, so the bar stays find-only.
+          if (canReplace) setFindExpanded(true);
           return true;
         });
       }
     }
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [selectedNote]);
+  }, [selectedNote, canReplace]);
+
+  useEffect(() => {
+    if (!canReplace) setFindExpanded(false);
+  }, [canReplace]);
 
   useEffect(() => {
     const unlisteners: Array<() => void> = [];
     (async () => {
       unlisteners.push(
         await listen<number>("format-heading", (event) => {
+          if (viewingDeletedNote()) return;
           const level = event.payload as 1 | 2 | 3 | 4 | 5 | 6;
           editorRef.current?.getEditor()?.chain().focus().setHeading({ level }).run();
         }),
       );
       unlisteners.push(
         await listen("format-paragraph", () => {
+          if (viewingDeletedNote()) return;
           editorRef.current?.getEditor()?.chain().focus().setParagraph().run();
         }),
       );
@@ -666,6 +692,12 @@ export function MainPanel() {
 
   async function handleRestoreDeleted() {
     if (!deletedItem) return;
+    const occupied = useNoteStore.getState().notes.map((note) => note.filePath);
+    const { held } = planTrashRestore([deletedItem], occupied);
+    if (held.length > 0) {
+      reportPathCollisions(held);
+      return;
+    }
     try {
       await tauriCommands.writeNote(deletedItem.note.filePath, serializeNote(deletedItem.note));
       useTrashStore.getState().removeFromTrash(deletedItem.note.id);
@@ -814,7 +846,10 @@ export function MainPanel() {
                 editor={markdownMode ? null : (editorRef.current?.getEditor() ?? null)}
                 textareaHandle={markdownMode ? markdownTextareaRef.current : null}
                 expanded={findExpanded}
-                onExpand={() => setFindExpanded(true)}
+                allowReplace={canReplace}
+                onExpand={() => {
+                  if (canReplace) setFindExpanded(true);
+                }}
                 onClose={() => {
                   setFindOpen(false);
                   setFindExpanded(false);

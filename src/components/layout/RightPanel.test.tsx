@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { registerEditorDraft } from "../../lib/editor-draft";
+import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
 import { useToolsStore } from "../../store/tools";
@@ -47,6 +48,7 @@ beforeEach(() => {
   usePinnedPanelStore.setState({ noteIds: [], activeId: WRITER_TAB });
   useNoteStore.setState({ notes: [todo, reference, draft], selectedNoteId: "draft" });
   useToolsStore.setState({ writerEnabled: false });
+  useGitSyncStore.setState({ heldDrafts: {} });
   useUIStore.setState({ activeView: "notes", selectedGrouping: { type: "all", id: null } });
 });
 
@@ -131,6 +133,59 @@ it("moves between tabs from the keyboard and unpins back to the tool host", asyn
   fireEvent.click(screen.getByRole("button", { name: "Unpin Todo" }));
   expect(screen.getByText("No tools enabled")).toBeInTheDocument();
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+});
+
+it("does not pin a leftover selection outside the notes editor", () => {
+  useUIStore.setState({ activeView: "dashboard" });
+  const { unmount } = render(<RightPanel />);
+  const pin = screen.getByRole("button", { name: "Pin to side" });
+  expect(pin).toBeDisabled();
+  fireEvent.click(pin);
+  expect(usePinnedPanelStore.getState().noteIds).toEqual([]);
+  unmount();
+
+  useUIStore.setState({ activeView: "notes", selectedGrouping: { type: "trash", id: null } });
+  render(<RightPanel />);
+  expect(screen.getByRole("button", { name: "Pin to side" })).toBeDisabled();
+});
+
+it("disables the tab-strip pin when Kanban leaves the editor", () => {
+  usePinnedPanelStore.setState({ noteIds: ["todo"], activeId: "todo" });
+  useUIStore.setState({ activeView: "kanban" });
+  render(<RightPanel />);
+  const pin = screen.getByRole("button", { name: "Pin to side" });
+  expect(pin).toBeDisabled();
+  fireEvent.click(pin);
+  expect(usePinnedPanelStore.getState().noteIds).toEqual(["todo"]);
+});
+
+it("shows a preserved sync draft instead of the externally loaded note", async () => {
+  usePinnedPanelStore.setState({ noteIds: ["reference"], activeId: "reference" });
+  useNoteStore.setState({
+    notes: [todo, { ...reference, content: "External rewrite" }, draft],
+    selectedNoteId: "draft",
+  });
+  const unregister = registerEditorDraft("reference", () => "Live keystrokes");
+  render(<RightPanel />);
+  expect(await screen.findByRole("article", { name: "Pinned note Reference" })).toHaveTextContent(
+    "Live keystrokes",
+  );
+  act(() => {
+    useGitSyncStore.getState().preserveHeldDraft("reference", "Local edits that must stay");
+  });
+  unregister();
+  await waitFor(() =>
+    expect(screen.getByRole("article", { name: "Pinned note Reference" })).toHaveTextContent(
+      "Local edits that must stay",
+    ),
+  );
+  expect(screen.queryByText("External rewrite")).not.toBeInTheDocument();
+  act(() => useGitSyncStore.getState().clearHeldDraft("reference"));
+  await waitFor(() =>
+    expect(screen.getByRole("article", { name: "Pinned note Reference" })).toHaveTextContent(
+      "External rewrite",
+    ),
+  );
 });
 
 it("keeps pinned notes available beside Writer", async () => {

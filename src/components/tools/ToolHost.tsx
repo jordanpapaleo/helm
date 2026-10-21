@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { openEditorNote } from "../../lib/open-editor-note";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { reportError, useToastStore } from "../../store/toast";
@@ -32,10 +33,7 @@ export function ToolHost({ showPinAction = true }: { showPinAction?: boolean }) 
   // The open note owns the chat. Clicking a vault in the sidebar only changes
   // activeVaultId, so keying the session on that id would store this note's
   // snapshot in another vault's conversation.
-  const openNote =
-    activeView === "notes" && selectedGrouping.type !== "trash"
-      ? notes.find((note) => note.id === selectedNoteId)
-      : undefined;
+  const openNote = openEditorNote(notes, selectedNoteId, activeView, selectedGrouping);
   const scope = `${openNote?.vaultId ?? activeVaultId ?? "all"}:${provider}:${mode}`;
   const session = sessions[scope] ?? EMPTY_WRITER_SESSION;
   const [preview, setPreview] = useState(false);
@@ -92,7 +90,7 @@ export function ToolHost({ showPinAction = true }: { showPinAction?: boolean }) 
           </>
         )}
         <span className="flex-1" />
-        {showPinAction && <PinToSideButton noteId={selectedNoteId} variant="toolbar" />}
+        {showPinAction && <PinToSideButton noteId={openNote?.id ?? null} variant="toolbar" />}
         {writerEnabled && (
           <button
             type="button"

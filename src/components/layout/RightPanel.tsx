@@ -1,8 +1,10 @@
 import { Icon } from "@iconify/react";
 import type { KeyboardEvent } from "react";
+import { openEditorNote } from "../../lib/open-editor-note";
 import { useNoteStore } from "../../store/notes";
 import { unpinNoteFromSide, usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
 import { useToolsStore } from "../../store/tools";
+import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
 import { ToolHost } from "../tools/ToolHost";
 import { PinnedNoteView } from "./PinnedNoteView";
@@ -69,6 +71,10 @@ export function RightPanel() {
   const select = usePinnedPanelStore((state) => state.select);
   const notes = useNoteStore((state) => state.notes);
   const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
+  const activeView = useUIStore((state) => state.activeView);
+  const selectedGrouping = useUIStore((state) => state.selectedGrouping);
+  const openNoteId =
+    openEditorNote(notes, selectedNoteId, activeView, selectedGrouping)?.id ?? null;
   const writerEnabled = useToolsStore((state) => state.writerEnabled);
   const pinned = noteIds
     .map((id) => notes.find((note) => note.id === id))
@@ -113,7 +119,7 @@ export function RightPanel() {
             </button>
           )}
         </div>
-        <PinToSideButton noteId={selectedNoteId} variant="toolbar" />
+        <PinToSideButton noteId={openNoteId} variant="toolbar" />
       </div>
       {writerSelected ? (
         <div

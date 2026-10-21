@@ -1,6 +1,7 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import type { Note } from "../../types/note";
 import { richCodeBlock } from "../editor/CodeBlockView";
@@ -8,11 +9,15 @@ import { markdownExtensions } from "../editor/extensions";
 import { InlineTagExtension } from "../editor/InlineTag";
 
 function usePinnedBody(noteId: string, saved: string): string {
-  return useSyncExternalStore(
+  // Leaving the note unregisters the live reader. A sync that overlapped those
+  // edits keeps the text in heldDrafts; that copy wins over the file that landed.
+  const live = useSyncExternalStore(
     subscribeEditorDrafts,
-    () => readEditorDraft(noteId) ?? saved,
-    () => readEditorDraft(noteId) ?? saved,
+    () => readEditorDraft(noteId),
+    () => readEditorDraft(noteId),
   );
+  const held = useGitSyncStore((state) => state.heldDrafts[noteId]);
+  return live ?? held ?? saved;
 }
 
 function PinnedNoteBody({ note, body }: { note: Note; body: string }) {

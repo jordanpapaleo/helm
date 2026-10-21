@@ -290,6 +290,12 @@ describe("PropertyPanel archive", () => {
   });
 });
 
+function rowOf(element: HTMLElement): HTMLElement {
+  const row = element.parentElement;
+  if (!row) throw new Error("expected the header control to sit in a row");
+  return row;
+}
+
 const HEADER_ACTIONS = [
   "Copy file path",
   "Pin to side",
@@ -321,16 +327,15 @@ describe("PropertyPanel header layout", () => {
   it("puts the action icons on their own line under the title", () => {
     renderCrowdedHeader();
 
-    const title = screen.getByDisplayValue("A long title that would crowd the action icons");
-    const titleRow = title.parentElement;
+    const titleRow = rowOf(
+      screen.getByDisplayValue("A long title that would crowd the action icons"),
+    );
     const buttons = HEADER_ACTIONS.map((name) => screen.getByRole("button", { name }));
-    const actionRow = buttons[0].parentElement;
+    const actionRow = rowOf(buttons[0]);
 
-    expect(titleRow).not.toBeNull();
-    expect(actionRow).not.toBeNull();
     expect(actionRow).not.toBe(titleRow);
     expect(
-      titleRow?.compareDocumentPosition(actionRow as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+      titleRow.compareDocumentPosition(actionRow) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
     for (const button of buttons) {
@@ -338,7 +343,7 @@ describe("PropertyPanel header layout", () => {
       expect(titleRow).not.toContainElement(button);
     }
 
-    const labels = [...(actionRow?.querySelectorAll("button") ?? [])].map(
+    const labels = [...actionRow.querySelectorAll("button")].map(
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
     );
     expect(labels).toEqual([...HEADER_ACTIONS]);
@@ -347,7 +352,7 @@ describe("PropertyPanel header layout", () => {
     expect(titleRow).not.toContainElement(locked);
     expect(actionRow).not.toContainElement(locked);
     expect(
-      actionRow?.compareDocumentPosition(locked) & Node.DOCUMENT_POSITION_FOLLOWING,
+      actionRow.compareDocumentPosition(locked) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 

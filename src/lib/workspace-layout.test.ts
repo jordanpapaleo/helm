@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LAYOUT, validateLayout, workspaceGeometry } from "./workspace-layout";
+import {
+  COLLAPSED_NAV_WIDTH,
+  DEFAULT_LAYOUT,
+  validateLayout,
+  workspaceGeometry,
+} from "./workspace-layout";
 
 describe("workspace layout", () => {
   it("validates partial and malformed persisted values", () => {
@@ -42,5 +47,24 @@ describe("workspace layout", () => {
       right: true,
     });
     expect(workspaceGeometry(250, true, prefs).center).toBe(250);
+  });
+  it("reserves the collapsed sidebar when the left panel is closed", () => {
+    const open = workspaceGeometry(1600, true, DEFAULT_LAYOUT);
+    const closed = workspaceGeometry(1600, true, { ...DEFAULT_LAYOUT, leftOpen: false });
+    expect(open).toMatchObject({ left: true, collapsedNav: false });
+    expect(closed).toMatchObject({ left: false, right: false, collapsedNav: true });
+    expect(closed.center).toBe(1600 - COLLAPSED_NAV_WIDTH);
+    expect(open.center).toBe(
+      1600 - DEFAULT_LAYOUT.widths.navigation - DEFAULT_LAYOUT.widths.notes - 8,
+    );
+  });
+  it("does not add the collapsed sidebar when a narrow window hides an open left panel", () => {
+    const result = workspaceGeometry(250, true, { ...DEFAULT_LAYOUT, rightOpen: true });
+    expect(result).toMatchObject({
+      left: false,
+      right: false,
+      collapsedNav: false,
+      center: 250,
+    });
   });
 });

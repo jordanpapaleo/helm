@@ -38,6 +38,8 @@ export function validateLayout(value: unknown): LayoutPreferences {
   };
 }
 export const SEPARATOR_WIDTH = 4;
+/** Icon rail left behind when the left panel is toggled closed. */
+export const COLLAPSED_NAV_WIDTH = 40;
 export function workspaceGeometry(
   width: number,
   notes: boolean,
@@ -46,7 +48,9 @@ export function workspaceGeometry(
 ) {
   let left = prefs.leftOpen;
   let right = prefs.rightOpen;
-  const minimum = () => 320 + (left ? 184 + (notes ? 204 : 0) : 0) + (right ? 244 : 0);
+  const collapsedNav = !prefs.leftOpen;
+  const collapsedWidth = collapsedNav ? COLLAPSED_NAV_WIDTH : 0;
+  const minimum = () => 320 + (left ? 184 + (notes ? 204 : 0) : collapsedWidth) + (right ? 244 : 0);
   for (const side of priority === "right" ? ["left", "right"] : ["right", "left"]) {
     if (minimum() <= width) break;
     if (side === "left") left = false;
@@ -59,7 +63,10 @@ export function workspaceGeometry(
   const widths = { ...prefs.widths };
   let excess = Math.max(
     0,
-    320 + panels.reduce((sum, panel) => sum + widths[panel] + SEPARATOR_WIDTH, 0) - width,
+    320 +
+      collapsedWidth +
+      panels.reduce((sum, panel) => sum + widths[panel] + SEPARATOR_WIDTH, 0) -
+      width,
   );
   for (const panel of panels) {
     const reduction = Math.min(excess, widths[panel] - PANEL_BOUNDS[panel].min);
@@ -68,7 +75,9 @@ export function workspaceGeometry(
   }
   const center = Math.max(
     0,
-    width - panels.reduce((sum, panel) => sum + widths[panel] + SEPARATOR_WIDTH, 0),
+    width -
+      collapsedWidth -
+      panels.reduce((sum, panel) => sum + widths[panel] + SEPARATOR_WIDTH, 0),
   );
-  return { left, right, widths, center };
+  return { left, right, widths, center, collapsedNav };
 }

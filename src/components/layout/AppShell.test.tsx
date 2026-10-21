@@ -58,4 +58,29 @@ it("hosts settings independently of hidden navigation", () => {
   act(() => useUIStore.getState().setSettingsOpen(true));
   expect(screen.getByText("Settings dialog")).toBeInTheDocument();
   expect(screen.queryByText("Navigation")).not.toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "Sidebar" })).toBeInTheDocument();
+});
+it("keeps the collapsed sidebar nav usable when the left panel is closed", () => {
+  render(<AppShell />);
+  expect(screen.getByText("Navigation")).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Sidebar" })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Toggle left panel" }));
+  expect(screen.queryByText("Navigation")).not.toBeInTheDocument();
+  expect(screen.queryByText("Note list")).not.toBeInTheDocument();
+  expect(useLayoutStore.getState().preferences.leftOpen).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Eisenhower" }));
+  expect(useUIStore.getState().activeView).toBe("eisenhower");
+  expect(useLayoutStore.getState().preferences.leftOpen).toBe(false);
+  expect(screen.getByRole("button", { name: "Eisenhower" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Toggle left panel" }));
+  expect(screen.getByText("Navigation")).toBeInTheDocument();
+  expect(screen.queryByText("Note list")).not.toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Sidebar" })).not.toBeInTheDocument();
+  expect(useUIStore.getState().activeView).toBe("eisenhower");
 });

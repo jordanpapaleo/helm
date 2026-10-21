@@ -7,6 +7,7 @@ import type { Note, VaultConfig } from "../types/note";
 import { useNoteStore } from "./notes";
 import { useSettingsStore } from "./settings";
 import { useToastStore } from "./toast";
+import { useTrashStore } from "./trash";
 
 vi.mock("../lib/tauri-commands", () => ({
   tauriCommands: {
@@ -389,7 +390,7 @@ describe("search", () => {
     expect(result.current.searchResults[0].id).toBe("n1");
   });
 
-  it("hides archived notes from search unless show archived is on", () => {
+  it("finds archived notes and deleted notes whether or not show archived is on", () => {
     const { result } = renderHook(() => useNoteStore());
     const active = makeNote({
       id: "active",
@@ -426,18 +427,47 @@ describe("search", () => {
         archived: true,
       },
     });
+    const deleted = makeNote({
+      id: "deleted",
+      filePath: "/notes/deleted.md",
+      content: "lighthouse",
+      frontmatter: {
+        id: "deleted",
+        title: "Deleted lighthouse",
+        created: "2026-03-13",
+        updated: "2026-03-13",
+        tags: [],
+        urgent: false,
+        important: false,
+        state: "Doing",
+        blocked: false,
+        links: [],
+      },
+    });
     act(() => {
+      useTrashStore.setState({
+        items: [{ note: deleted, deletedAt: "2026-04-01T00:00:00.000Z" }],
+      });
       useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, showArchivedNotes: false } });
       result.current.setNotes([active, archived]);
       result.current.search("lighthouse");
     });
-    expect(result.current.searchResults.map((n) => n.id)).toEqual(["active"]);
+    expect(result.current.searchResults.map((n) => n.id).sort()).toEqual([
+      "active",
+      "archived",
+      "deleted",
+    ]);
 
     act(() => {
       useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, showArchivedNotes: true } });
       result.current.search("lighthouse");
     });
-    expect(result.current.searchResults.map((n) => n.id).sort()).toEqual(["active", "archived"]);
+    expect(result.current.searchResults.map((n) => n.id).sort()).toEqual([
+      "active",
+      "archived",
+      "deleted",
+    ]);
+    useTrashStore.setState({ items: [] });
     useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
   });
 

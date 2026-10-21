@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
+import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
 import { LeftColumn } from "./LeftColumn";
@@ -32,6 +33,7 @@ vi.mock("../../hooks/useVault", () => ({
   removeVault: vi.fn(),
 }));
 
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { tauriCommands } from "../../lib/tauri-commands";
 
 const VAULT: VaultConfig = { id: "v1", name: "My Vault", path: "/vault" };
@@ -659,5 +661,163 @@ describe("LeftColumn — projects", () => {
     expect(screen.getByText("archive")).toBeInTheDocument();
     expect(useUIStore.getState().selectedGrouping).toEqual({ type: "all", id: null });
     expect(useNoteStore.getState().notes).toEqual([]);
+  });
+});
+
+describe("LeftColumn — archive and trash", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    useUIStore.setState({
+      activeView: "dashboard",
+      selectedGrouping: { type: "all", id: null },
+    });
+    useTrashStore.setState({ items: [] });
+    vi.mocked(confirm).mockResolvedValue(true);
+  });
+
+  function listed(id: string, title: string, archived = false): Note {
+    const base = makeNote();
+    return {
+      ...base,
+      id,
+      filePath: `/vault/${id}.md`,
+      fileName: `${id}.md`,
+      content: `${title} body`,
+      frontmatter: { ...base.frontmatter, id, title, archived },
+    };
+  }
+
+  it("opens archived notes from an archive icon and shows how many there are", () => {
+    useNoteStore.setState({
+      notes: [listed("live", "Live"), listed("old", "Old", true)],
+    });
+    render(<LeftColumn />);
+
+    const archive = screen.getByRole("button", { name: "Archive" });
+    expect(archive).toHaveTextContent("1");
+    fireEvent.click(archive);
+    expect(useUIStore.getState().activeView).toBe("notes");
+    expect(useUIStore.getState().selectedGrouping).toEqual({ type: "archive", id: null });
+  });
+
+  it("restores every trashed note from the trash icon menu", async () => {
+    const alpha = listed("a", "Alpha");
+    const beta = listed("b", "Beta");
+    useTrashStore.setState({
+      items: [
+        { note: alpha, deletedAt: "2026-04-01T00:00:00.000Z" },
+        { note: beta, deletedAt: "2026-04-02T00:00:00.000Z" },
+      ],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Trash" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Restore all" }));
+
+    await waitFor(() => expect(useTrashStore.getState().items).toEqual([]));
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/a.md",
+      expect.stringContaining("Alpha"),
+    );
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/b.md",
+      expect.stringContaining("Beta"),
+    );
+    expect(
+      useNoteStore
+        .getState()
+        .notes.map((note) => note.id)
+        .sort(),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("keeps a second snapshot in Trash when Restore all would overwrite its path", async () => {
+    const newest = listed("new", "Newest");
+    const older = listed("old", "Older");
+    newest.content = "newest body";
+    older.filePath = newest.filePath;
+    older.fileName = newest.fileName;
+    older.content = "older body that must survive";
+    useTrashStore.setState({
+      items: [
+        { note: newest, deletedAt: "2026-04-02T00:00:00.000Z" },
+        { note: older, deletedAt: "2026-04-01T00:00:00.000Z" },
+      ],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Trash" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Restore all" }));
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      newest.filePath,
+      expect.stringContaining("newest body"),
+    );
+    const written = vi.mocked(tauriCommands.writeNote).mock.calls.map((call) => String(call[1]));
+    expect(written.some((markdown) => markdown.includes("older body that must survive"))).toBe(
+      false,
+    );
+    expect(useNoteStore.getState().notes.map((note) => note.id)).toEqual(["new"]);
+    expect(useTrashStore.getState().items.map((item) => item.note.content)).toEqual([
+      "older body that must survive",
+    ]);
+  });
+
+  it("does not overwrite a live note when Restore all hits its path", async () => {
+    const live = listed("live", "Live");
+    live.content = "live body";
+    const trashed = listed("gone", "Gone");
+    trashed.filePath = live.filePath;
+    trashed.fileName = live.fileName;
+    trashed.content = "trashed body";
+    useNoteStore.setState({ notes: [live] });
+    useTrashStore.setState({
+      items: [{ note: trashed, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Trash" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Restore all" }));
+
+    await waitFor(() =>
+      expect(useTrashStore.getState().items.map((item) => item.note.id)).toEqual(["gone"]),
+    );
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes.map((note) => note.content)).toEqual(["live body"]);
+    expect(useTrashStore.getState().items[0]?.note.content).toBe("trashed body");
+  });
+
+  it("permanently deletes every trashed note after confirmation", async () => {
+    const alpha = listed("a", "Alpha");
+    useNoteStore.setState({ selectedNoteId: "a" });
+    useTrashStore.setState({
+      items: [{ note: alpha, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Trash" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete all" }));
+
+    await waitFor(() => expect(useTrashStore.getState().items).toEqual([]));
+    expect(confirm).toHaveBeenCalled();
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().selectedNoteId).toBeNull();
+  });
+
+  it("leaves trash in place when delete all is cancelled", async () => {
+    vi.mocked(confirm).mockResolvedValueOnce(false);
+    const alpha = listed("a", "Alpha");
+    useTrashStore.setState({
+      items: [{ note: alpha, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Trash" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete all" }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(useTrashStore.getState().items).toHaveLength(1);
   });
 });

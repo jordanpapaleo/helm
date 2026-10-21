@@ -180,6 +180,21 @@ describe("deleteBlock", () => {
   });
 });
 
+describe("read-only editor", () => {
+  it("does not change the document when the editor is not editable", () => {
+    const editor = makeEditor("one\n\ntwo", [BlockCommands]);
+    editor.setEditable(false);
+    caretIn(editor, "one");
+
+    expect(editor.commands.duplicateBlock()).toBe(false);
+    expect(editor.commands.deleteBlock()).toBe(false);
+    expect(editor.commands.moveBlockDown()).toBe(false);
+    expect(paragraphs(editor)).toEqual(["one", "two"]);
+
+    editor.destroy();
+  });
+});
+
 describe("keyboard shortcuts", () => {
   it("duplicates the block on Mod-Shift-D", () => {
     const editor = makeEditor("one\n\ntwo", [BlockCommands]);

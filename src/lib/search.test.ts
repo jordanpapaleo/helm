@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Note } from "../types/note";
-import { buildIndex, searchNotes } from "./search";
+import { buildIndex, noteMatchesQuery, searchNotes } from "./search";
 
 function makeNote(id: string, title: string, content: string, tags: string[] = []): Note {
   return {
@@ -63,6 +63,21 @@ describe("buildIndex + searchNotes", () => {
     const index = buildIndex(notes);
     const results = searchNotes(index, notes, "");
     expect(results).toHaveLength(0);
+  });
+});
+
+describe("noteMatchesQuery", () => {
+  const note = makeNote("01", "Rule Builder", "Build composite membership rules", ["Code"]);
+
+  it("matches title, tag, and body the same way, and ignores surrounding space", () => {
+    expect(noteMatchesQuery(note, "rule")).toBe(true);
+    expect(noteMatchesQuery(note, "CODE")).toBe(true);
+    expect(noteMatchesQuery(note, " membership ")).toBe(true);
+    expect(noteMatchesQuery(note, "missing")).toBe(false);
+  });
+
+  it("matches every note when the query is empty", () => {
+    expect(noteMatchesQuery(note, "   ")).toBe(true);
   });
 });
 

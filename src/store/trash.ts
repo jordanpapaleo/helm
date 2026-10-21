@@ -13,6 +13,8 @@ interface TrashStore {
   addToTrash: (note: Note) => void;
   removeFromTrash: (noteId: string) => TrashItem | undefined;
   permanentlyDelete: (noteId: string) => void;
+  /** Drop every trashed note and return what was removed. */
+  removeAll: () => TrashItem[];
 }
 
 function load(): TrashItem[] {
@@ -50,5 +52,12 @@ export const useTrashStore = create<TrashStore>((set, get) => ({
     const items = get().items.filter((i) => i.note.id !== noteId);
     persist(items);
     set({ items });
+  },
+
+  removeAll: () => {
+    const items = get().items;
+    persist([]);
+    set({ items: [] });
+    return items;
   },
 }));

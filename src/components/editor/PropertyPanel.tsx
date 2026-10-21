@@ -23,6 +23,8 @@ interface PropertyPanelProps {
   onExportPdf?: () => void;
   /** True while an export is running; the button is disabled meanwhile. */
   exportingPdf?: boolean;
+  /** Deleted notes stay visible but their fields cannot be edited. */
+  readOnly?: boolean;
 }
 
 // Fields handled explicitly — excluded from the "extra fields" section
@@ -138,6 +140,7 @@ export function PropertyPanel({
   onShowHistory,
   onExportPdf,
   exportingPdf = false,
+  readOnly = false,
 }: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -171,12 +174,17 @@ export function PropertyPanel({
         <input
           className="flex-1 bg-transparent text-3xl font-bold text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
           value={titleDraft}
+          readOnly={readOnly}
           onChange={(e) => {
+            if (readOnly) return;
             setTitleDraft(e.target.value);
             onTitleInput?.(e.target.value);
           }}
-          onBlur={() => onChange({ title: titleDraft })}
+          onBlur={() => {
+            if (!readOnly) onChange({ title: titleDraft });
+          }}
           onKeyDown={(e) => {
+            if (readOnly) return;
             if (e.key === "Tab") {
               e.preventDefault();
               onChange({ title: titleDraft });
@@ -328,107 +336,113 @@ export function PropertyPanel({
         )}
       </div>
 
-      {/* Compact metadata row */}
+      {/* Compact metadata row. The Properties button stays outside the disabled
+          fieldset so a deleted note can still be inspected. */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-        {/* Workflow fields are meaningless for unmanaged notes — hidden and cleared */}
-        {!unmanaged && (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="text-[var(--color-text-muted)]">State</span>
-              <select
-                aria-label="State"
-                className="select select-ghost select-sm h-auto min-h-0 py-0.5"
-                value={frontmatter.state}
-                onChange={(e) => onChange({ state: e.target.value as NoteState })}
-              >
-                {/* Blank entry so a cleared state renders as empty, not as "Prepare" */}
-                <option value="" />
-                {NOTE_STATES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <fieldset
+          disabled={readOnly}
+          className="m-0 flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 border-0 p-0"
+        >
+          {/* Workflow fields are meaningless for unmanaged notes — hidden and cleared */}
+          {!unmanaged && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-[var(--color-text-muted)]">State</span>
+                <select
+                  aria-label="State"
+                  className="select select-ghost select-sm h-auto min-h-0 py-0.5"
+                  value={frontmatter.state}
+                  onChange={(e) => onChange({ state: e.target.value as NoteState })}
+                >
+                  {/* Blank entry so a cleared state renders as empty, not as "Prepare" */}
+                  <option value="" />
+                  {NOTE_STATES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-              <input
-                type="checkbox"
-                checked={frontmatter.urgent}
-                onChange={(e) => onChange({ urgent: e.target.checked })}
-                className="rounded accent-[var(--color-accent)]"
-              />
-              Urgent
-            </label>
+              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+                <input
+                  type="checkbox"
+                  checked={frontmatter.urgent}
+                  onChange={(e) => onChange({ urgent: e.target.checked })}
+                  className="rounded accent-[var(--color-accent)]"
+                />
+                Urgent
+              </label>
 
-            <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-              <input
-                type="checkbox"
-                checked={frontmatter.important}
-                onChange={(e) => onChange({ important: e.target.checked })}
-                className="rounded accent-[var(--color-accent)]"
-              />
-              Important
-            </label>
+              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+                <input
+                  type="checkbox"
+                  checked={frontmatter.important}
+                  onChange={(e) => onChange({ important: e.target.checked })}
+                  className="rounded accent-[var(--color-accent)]"
+                />
+                Important
+              </label>
 
-            <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-              <input
-                type="checkbox"
-                checked={frontmatter.blocked}
-                onChange={(e) => onChange({ blocked: e.target.checked })}
-                className="rounded accent-[var(--color-accent)]"
-              />
-              Blocked
-            </label>
-          </>
-        )}
+              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+                <input
+                  type="checkbox"
+                  checked={frontmatter.blocked}
+                  onChange={(e) => onChange({ blocked: e.target.checked })}
+                  className="rounded accent-[var(--color-accent)]"
+                />
+                Blocked
+              </label>
+            </>
+          )}
 
-        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-          <input
-            type="checkbox"
-            checked={frontmatter.pinned ?? false}
-            onChange={(e) => onChange({ pinned: e.target.checked })}
-            className="rounded accent-[var(--color-accent)]"
-          />
-          Pinned
-        </label>
+          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+            <input
+              type="checkbox"
+              checked={frontmatter.pinned ?? false}
+              onChange={(e) => onChange({ pinned: e.target.checked })}
+              className="rounded accent-[var(--color-accent)]"
+            />
+            Pinned
+          </label>
 
-        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-          <input
-            type="checkbox"
-            checked={frontmatter.locked ?? false}
-            onChange={(e) => onChange({ locked: e.target.checked })}
-            className="rounded accent-[var(--color-accent)]"
-          />
-          Locked
-        </label>
+          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+            <input
+              type="checkbox"
+              checked={frontmatter.locked ?? false}
+              onChange={(e) => onChange({ locked: e.target.checked })}
+              className="rounded accent-[var(--color-accent)]"
+            />
+            Locked
+          </label>
 
-        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-          <input
-            type="checkbox"
-            checked={unmanaged}
-            onChange={(e) =>
-              // Clearing rides along in the same update so it is one write, not five.
-              onChange(
-                e.target.checked
-                  ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS }
-                  : { unmanaged: false },
-              )
-            }
-            className="rounded accent-[var(--color-accent)]"
-          />
-          Unmanaged
-        </label>
+          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+            <input
+              type="checkbox"
+              checked={unmanaged}
+              onChange={(e) =>
+                // Clearing rides along in the same update so it is one write, not five.
+                onChange(
+                  e.target.checked
+                    ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS }
+                    : { unmanaged: false },
+                )
+              }
+              className="rounded accent-[var(--color-accent)]"
+            />
+            Unmanaged
+          </label>
 
-        <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-          <input
-            type="checkbox"
-            checked={frontmatter.template ?? false}
-            onChange={(e) => onChange({ template: e.target.checked })}
-            className="rounded accent-[var(--color-accent)]"
-          />
-          Template
-        </label>
+          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
+            <input
+              type="checkbox"
+              checked={frontmatter.template ?? false}
+              onChange={(e) => onChange({ template: e.target.checked })}
+              className="rounded accent-[var(--color-accent)]"
+            />
+            Template
+          </label>
+        </fieldset>
 
         {/* Expand toggle */}
         <button
@@ -453,7 +467,10 @@ export function PropertyPanel({
 
       {/* Expanded frontmatter panel */}
       {expanded && (
-        <div className="rounded-lg border border-base-300 bg-base-200/50 px-4 py-2 text-sm">
+        <fieldset
+          disabled={readOnly}
+          className="m-0 min-w-0 rounded-lg border border-base-300 bg-base-200/50 px-4 py-2 text-sm"
+        >
           <Row label="ID">
             <span className="font-mono text-xs text-[var(--color-text-muted)]">
               {frontmatter.id}
@@ -516,7 +533,7 @@ export function PropertyPanel({
               />
             </Row>
           ))}
-        </div>
+        </fieldset>
       )}
 
       {/* Tags display */}

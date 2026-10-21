@@ -7,6 +7,7 @@ import { tauriCommands } from "../../lib/tauri-commands";
 import { useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
+import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
 import { NoteListPanel } from "./NoteListPanel";
@@ -62,6 +63,7 @@ function resetStores(note: Note) {
     knownFolderPaths: [],
   });
   useUIStore.setState({ selectedGrouping: { type: "all", id: null } });
+  useTrashStore.setState({ items: [] });
 }
 
 describe("NoteListPanel — Mark Unmanaged", () => {
@@ -224,15 +226,61 @@ describe("NoteListPanel — archive", () => {
     return { active, archived };
   }
 
-  it("hides archived notes from the list and from search by default", () => {
+  it("hides archived notes from the list until search finds them", () => {
     twoNotes(false);
     render(<NoteListPanel />);
     expect(screen.getByText("Current")).toBeInTheDocument();
     expect(screen.queryByText("Old")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "Old" } });
-    expect(screen.queryByText("Old")).not.toBeInTheDocument();
+    expect(screen.getByText("Old")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.queryByText("Current")).not.toBeInTheDocument();
+  });
+
+  it("opens an archived note from the archive list and finds it by body text", () => {
+    twoNotes(false);
+    useUIStore.setState({ selectedGrouping: { type: "archive", id: null }, activeView: "notes" });
+    render(<NoteListPanel />);
+    expect(screen.queryByText("Current")).not.toBeInTheDocument();
+    expect(screen.getByText("Old")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "preserved" } });
+    fireEvent.click(screen.getByText("Old"));
+    expect(useNoteStore.getState().selectedNoteId).toBe("old");
+  });
+
+  it("finds a deleted note from ordinary search and from Trash, then opens it", () => {
+    const current = makeNote({ title: "Current" });
+    const deleted = makeNote({ title: "Gone" });
+    deleted.id = "gone";
+    deleted.filePath = "/vault/gone.md";
+    deleted.fileName = "gone.md";
+    deleted.content = "discarded draft";
+    deleted.frontmatter = { ...deleted.frontmatter, id: "gone", title: "Gone" };
+    resetStores(current);
+    useTrashStore.setState({
+      items: [{ note: deleted, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    const view = render(<NoteListPanel />);
+    expect(screen.queryByText("Gone")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "discarded" } });
+    expect(screen.getByText("Gone")).toBeInTheDocument();
+    expect(screen.getByText("Deleted")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Gone"));
+    expect(useNoteStore.getState().selectedNoteId).toBe("gone");
+
+    view.unmount();
+    useUIStore.setState({ selectedGrouping: { type: "trash", id: null }, activeView: "notes" });
+    render(<NoteListPanel />);
+    fireEvent.click(screen.getByText("Gone"));
+    expect(useNoteStore.getState().selectedNoteId).toBe("gone");
+
+    fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "missing" } });
+    expect(screen.queryByText("Gone")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "draft" } });
+    expect(screen.getByText("Gone")).toBeInTheDocument();
   });
 
   it("shows archived notes with a mark when the setting is on", () => {

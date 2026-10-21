@@ -23,6 +23,7 @@ import {
 } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
+import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -47,7 +48,7 @@ import { NotePrintView } from "../editor/NotePrintView";
 import { PropertyPanel } from "../editor/PropertyPanel";
 import { ProjectOverview } from "../projects/ProjectOverview";
 
-interface MarkdownTextareaHandle {
+export interface MarkdownTextareaHandle {
   textarea: HTMLTextAreaElement | null;
   replaceContent: (newContent: string) => void;
   /**
@@ -61,7 +62,7 @@ interface MarkdownTextareaHandle {
   getScrollFraction: () => number | null;
 }
 
-const MarkdownTextarea = forwardRef<
+export const MarkdownTextarea = forwardRef<
   MarkdownTextareaHandle,
   {
     noteId: string;
@@ -111,6 +112,11 @@ const MarkdownTextarea = forwardRef<
   const vaultPathRef = useRef(vaultPath);
   vaultPathRef.current = vaultPath;
   const dirtyRef = useRef(false);
+  // The imperative handle is created once. Read locked through a ref so a
+  // deleted note cannot be replaced, and so restore re-enables replacement
+  // without remounting the textarea.
+  const lockedRef = useRef(locked === true);
+  lockedRef.current = locked === true;
 
   // Tracks the last content we handed to onSave so we can tell our own saves
   // apart from external file changes (Claude Code, the MCP server, the file
@@ -172,7 +178,7 @@ const MarkdownTextarea = forwardRef<
       else if (e.key === "H") wrap = ["==", "=="];
     }
 
-    if (!wrap) return;
+    if (!wrap || locked) return;
     e.preventDefault();
 
     const [prefix, suffix] = wrap;
@@ -313,6 +319,7 @@ const MarkdownTextarea = forwardRef<
         return textareaRef.current;
       },
       replaceContent(newContent: string) {
+        if (lockedRef.current) return;
         setValue(newContent);
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
@@ -400,14 +407,39 @@ function extractAssetPaths(content: string): Set<string> {
   return paths;
 }
 
+/** True when the open note is a trash snapshot rather than a live file. */
+function viewingDeletedNote(): boolean {
+  const id = useNoteStore.getState().selectedNoteId;
+  if (!id) return false;
+  if (useNoteStore.getState().notes.some((note) => note.id === id)) return false;
+  return useTrashStore.getState().items.some((item) => item.note.id === id);
+}
+
 export function MainPanel() {
   const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
-  const { notes, vaults, selectedNoteId, updateNote, setNoteTitleLive, removeNote, selectNote } =
-    useNoteStore();
+  const {
+    notes,
+    vaults,
+    selectedNoteId,
+    updateNote,
+    setNoteTitleLive,
+    removeNote,
+    selectNote,
+    addNote,
+  } = useNoteStore();
+  const trashItems = useTrashStore((state) => state.items);
   const { settings } = useSettingsStore();
   const enableProjects = settings.enableProjects;
   const projects = useProjectStore((state) => state.projects);
-  const selectedNote = notes.find((n) => n.id === selectedNoteId);
+  const liveNote = notes.find((n) => n.id === selectedNoteId);
+  const deletedItem = liveNote
+    ? undefined
+    : trashItems.find((item) => item.note.id === selectedNoteId);
+  const selectedNote = liveNote ?? deletedItem?.note;
+  const viewingDeleted = deletedItem !== undefined;
+  // Deleted and locked notes stay read-only. Find may open; Replace may not.
+  const canReplace =
+    selectedNote !== undefined && !viewingDeleted && !selectedNote.frontmatter.locked;
   const editorRef = useRef<NoteEditorHandle>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findExpanded, setFindExpanded] = useState(false);
@@ -474,26 +506,34 @@ export function MainPanel() {
             setFindExpanded(false);
             return true;
           }
-          setFindExpanded(true);
+          // A second Cmd/Ctrl+F reveals Replace. Skip that while the note
+          // cannot be edited, so the bar stays find-only.
+          if (canReplace) setFindExpanded(true);
           return true;
         });
       }
     }
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [selectedNote]);
+  }, [selectedNote, canReplace]);
+
+  useEffect(() => {
+    if (!canReplace) setFindExpanded(false);
+  }, [canReplace]);
 
   useEffect(() => {
     const unlisteners: Array<() => void> = [];
     (async () => {
       unlisteners.push(
         await listen<number>("format-heading", (event) => {
+          if (viewingDeletedNote()) return;
           const level = event.payload as 1 | 2 | 3 | 4 | 5 | 6;
           editorRef.current?.getEditor()?.chain().focus().setHeading({ level }).run();
         }),
       );
       unlisteners.push(
         await listen("format-paragraph", () => {
+          if (viewingDeletedNote()) return;
           editorRef.current?.getEditor()?.chain().focus().setParagraph().run();
         }),
       );
@@ -512,7 +552,7 @@ export function MainPanel() {
   const syncHoldReported = useRef<string | null>(null);
 
   async function handleSave(content: string) {
-    if (!selectedNote) return;
+    if (!selectedNote || viewingDeleted) return;
     if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) {
       if (syncHoldReported.current !== selectedNote.id) {
         syncHoldReported.current = selectedNote.id;
@@ -621,7 +661,7 @@ export function MainPanel() {
   }
 
   async function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
-    if (!selectedNote) return;
+    if (!selectedNote || viewingDeleted) return;
     // A locked note stays read-only except for the unlock toggle itself.
     if (selectedNote.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) {
       return;
@@ -644,14 +684,42 @@ export function MainPanel() {
   }
 
   async function handleArchiveToggle() {
-    if (!selectedNote || selectedNote.frontmatter.locked) return;
+    if (!selectedNote || viewingDeleted || selectedNote.frontmatter.locked) return;
     // Archive in place: only the flag changes. Id, path, content, tags, links,
     // history, and workflow fields stay as they are.
     await handleFrontmatterChange({ archived: !isArchived(selectedNote.frontmatter) });
   }
 
+  async function handleRestoreDeleted() {
+    if (!deletedItem) return;
+    const occupied = useNoteStore.getState().notes.map((note) => note.filePath);
+    const { held } = planTrashRestore([deletedItem], occupied);
+    if (held.length > 0) {
+      reportPathCollisions(held);
+      return;
+    }
+    try {
+      await tauriCommands.writeNote(deletedItem.note.filePath, serializeNote(deletedItem.note));
+      useTrashStore.getState().removeFromTrash(deletedItem.note.id);
+      addNote(deletedItem.note);
+    } catch (e) {
+      reportError("Failed to restore note", e);
+    }
+  }
+
+  async function handlePermanentDelete() {
+    if (!deletedItem) return;
+    const confirmed = await confirm(
+      `Permanently delete "${deletedItem.note.frontmatter.title || "Untitled"}"? This cannot be undone.`,
+      { title: "Delete", kind: "warning" },
+    );
+    if (!confirmed) return;
+    useTrashStore.getState().permanentlyDelete(deletedItem.note.id);
+    selectNote(null);
+  }
+
   async function handleDelete() {
-    if (!selectedNote || selectedNote.frontmatter.locked) return;
+    if (!selectedNote || viewingDeleted || selectedNote.frontmatter.locked) return;
     if (useGitSyncStore.getState().isBarrierActive(selectedVaultPath ?? "")) return;
     const confirmed = await confirm(
       `Move "${selectedNote.frontmatter.title || "Untitled"}" to Trash?`,
@@ -673,18 +741,51 @@ export function MainPanel() {
       {activeView === "notes" &&
         (selectedNote ? (
           <div className="relative flex flex-1 flex-col overflow-y-auto">
+            {viewingDeleted && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-base-300 px-12 py-2">
+                <span className="badge badge-ghost badge-sm">Deleted</span>
+                <span className="text-sm text-[var(--color-text-muted)]">
+                  This note is in Trash.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleRestoreDeleted();
+                  }}
+                  className="btn btn-ghost btn-xs"
+                >
+                  Restore
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handlePermanentDelete();
+                  }}
+                  className="btn btn-ghost btn-xs text-error hover:text-error"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
             <PropertyPanel
               frontmatter={selectedNote.frontmatter}
               filePath={selectedNote.filePath}
               onChange={handleFrontmatterChange}
-              onTitleInput={handleTitleInput}
+              onTitleInput={viewingDeleted ? undefined : handleTitleInput}
               onTitleTab={() => editorRef.current?.focus()}
-              onDelete={selectedNote.frontmatter.locked ? undefined : handleDelete}
-              onArchive={selectedNote.frontmatter.locked ? undefined : handleArchiveToggle}
+              onDelete={
+                viewingDeleted || selectedNote.frontmatter.locked ? undefined : handleDelete
+              }
+              onArchive={
+                viewingDeleted || selectedNote.frontmatter.locked ? undefined : handleArchiveToggle
+              }
+              readOnly={viewingDeleted}
               markdownMode={markdownMode}
               onToggleMarkdown={handleToggleMarkdown}
-              onShowHistory={selectedVaultPath ? () => setHistoryOpen(true) : undefined}
-              onExportPdf={() => startPdfExport(selectedNote.id)}
+              onShowHistory={
+                viewingDeleted || !selectedVaultPath ? undefined : () => setHistoryOpen(true)
+              }
+              onExportPdf={viewingDeleted ? undefined : () => startPdfExport(selectedNote.id)}
               exportingPdf={pdfJob !== null}
             />
             {openProject && (
@@ -692,7 +793,7 @@ export function MainPanel() {
                 project={openProject}
                 notes={notes}
                 frontmatter={selectedNote.frontmatter}
-                locked={selectedNote.frontmatter.locked}
+                locked={viewingDeleted || selectedNote.frontmatter.locked}
                 onChange={(patch) => {
                   void handleFrontmatterChange(patch);
                 }}
@@ -724,7 +825,7 @@ export function MainPanel() {
                 vaultPath={selectedVaultPath}
                 content={selectedNote.content}
                 onSave={handleSave}
-                locked={selectedNote.frontmatter.locked}
+                locked={viewingDeleted || selectedNote.frontmatter.locked}
                 initialCursorOffset={initialCursorOffset}
                 initialScrollFraction={initialScrollFraction}
               />
@@ -733,7 +834,7 @@ export function MainPanel() {
                 ref={editorRef}
                 note={selectedNote}
                 onSave={handleSave}
-                locked={selectedNote.frontmatter.locked}
+                locked={viewingDeleted || selectedNote.frontmatter.locked}
                 findOpen={findOpen}
                 initialCursorOffset={initialCursorOffset}
                 initialScrollFraction={initialScrollFraction}
@@ -745,7 +846,10 @@ export function MainPanel() {
                 editor={markdownMode ? null : (editorRef.current?.getEditor() ?? null)}
                 textareaHandle={markdownMode ? markdownTextareaRef.current : null}
                 expanded={findExpanded}
-                onExpand={() => setFindExpanded(true)}
+                allowReplace={canReplace}
+                onExpand={() => {
+                  if (canReplace) setFindExpanded(true);
+                }}
                 onClose={() => {
                   setFindOpen(false);
                   setFindExpanded(false);

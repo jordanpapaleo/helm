@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTE_STATES } from "../../lib/constants";
+import { DEFAULT_LAYOUT } from "../../lib/workspace-layout";
+import { useLayoutStore } from "../../store/layout";
+import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
 import type { NoteFrontmatter } from "../../types/note";
 import { PropertyPanel } from "./PropertyPanel";
 
@@ -216,6 +219,32 @@ describe("PropertyPanel export to PDF", () => {
   it("hides the button when export is unavailable", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Export to PDF" })).not.toBeInTheDocument();
+  });
+});
+
+describe("PropertyPanel pin to side", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    usePinnedPanelStore.setState({ noteIds: [], activeId: WRITER_TAB });
+    useLayoutStore.setState({ preferences: DEFAULT_LAYOUT, priority: "left" });
+  });
+
+  it("pins this note in the right panel without changing the list-pin flag", () => {
+    const onChange = vi.fn();
+    render(<PropertyPanel frontmatter={makeFrontmatter({ pinned: true })} onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin to side" }));
+
+    expect(usePinnedPanelStore.getState().noteIds).toEqual(["01JPMXYZ123"]);
+    expect(useLayoutStore.getState().preferences.rightOpen).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Pinned")).toBeChecked();
+    const unpin = screen.getByRole("button", { name: "Unpin from side" });
+    expect(unpin).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(unpin);
+    expect(usePinnedPanelStore.getState().noteIds).toEqual([]);
+    expect(screen.getByLabelText("Pinned")).toBeChecked();
   });
 });
 

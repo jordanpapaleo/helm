@@ -4,6 +4,7 @@ import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
+import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
 import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import { useWriterStore } from "../../store/writer";
@@ -31,6 +32,7 @@ beforeEach(() => {
   useWriterStore.setState({ sessions: {}, running: null });
   useNoteStore.setState({ notes: [note], selectedNoteId: "n", activeVaultId: "v" });
   useGitSyncStore.setState({ heldDrafts: {} });
+  usePinnedPanelStore.setState({ noteIds: [], activeId: WRITER_TAB });
   useUIStore.setState({
     settingsOpen: false,
     activeView: "notes",
@@ -164,6 +166,22 @@ it("files the open note's chat under that note's vault, not the active vault", a
     useWriterStore.getState().sessions["vault-b:codex:subscription"]?.messages[0].content,
   ).toBe("Discuss B");
   expect(useWriterStore.getState().sessions["v:codex:subscription"]).toBeUndefined();
+});
+it("does not pin a selection that is not the open note", () => {
+  useUIStore.setState({ activeView: "graph" });
+  const { unmount } = render(<ToolHost />);
+  const pin = screen.getByRole("button", { name: "Pin to side" });
+  expect(pin).toBeDisabled();
+  fireEvent.click(pin);
+  expect(usePinnedPanelStore.getState().noteIds).toEqual([]);
+  unmount();
+
+  useUIStore.setState({
+    activeView: "notes",
+    selectedGrouping: { type: "trash", id: null },
+  });
+  render(<ToolHost />);
+  expect(screen.getByRole("button", { name: "Pin to side" })).toBeDisabled();
 });
 it("keeps a conversation with no open note on the active vault", () => {
   useToolsStore.setState({ writerEnabled: true });

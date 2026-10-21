@@ -5,6 +5,7 @@ import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { formatTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
 import type { NoteFrontmatter, NoteState } from "../../types/note";
+import { PinToSideButton } from "../layout/PinToSideButton";
 
 interface PropertyPanelProps {
   frontmatter: NoteFrontmatter;
@@ -220,6 +221,7 @@ export function PropertyPanel({
             )}
           </button>
         )}
+        <PinToSideButton noteId={frontmatter.id} variant="editor" />
         {onShowHistory && (
           <button
             type="button"

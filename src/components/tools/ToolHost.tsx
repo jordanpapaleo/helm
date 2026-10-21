@@ -1,12 +1,14 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { openEditorNote } from "../../lib/open-editor-note";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { reportError, useToastStore } from "../../store/toast";
 import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import { EMPTY_WRITER_SESSION, useWriterStore } from "../../store/writer";
+import { PinToSideButton } from "../layout/PinToSideButton";
 
 const idleSubscribe = () => () => {};
 
@@ -22,7 +24,7 @@ function noteBody(note: { id: string; content: string }, heldDraft: string | und
   return readEditorDraft(note.id) ?? heldDraft ?? note.content;
 }
 
-export function ToolHost() {
+export function ToolHost({ showPinAction = true }: { showPinAction?: boolean }) {
   const { writerEnabled, provider, mode, apiModels, subscriptionModels, showToolsSettings } =
     useToolsStore();
   const { activeVaultId, selectedNoteId, notes } = useNoteStore();
@@ -31,10 +33,7 @@ export function ToolHost() {
   // The open note owns the chat. Clicking a vault in the sidebar only changes
   // activeVaultId, so keying the session on that id would store this note's
   // snapshot in another vault's conversation.
-  const openNote =
-    activeView === "notes" && selectedGrouping.type !== "trash"
-      ? notes.find((note) => note.id === selectedNoteId)
-      : undefined;
+  const openNote = openEditorNote(notes, selectedNoteId, activeView, selectedGrouping);
   const scope = `${openNote?.vaultId ?? activeVaultId ?? "all"}:${provider}:${mode}`;
   const session = sessions[scope] ?? EMPTY_WRITER_SESSION;
   const [preview, setPreview] = useState(false);
@@ -91,6 +90,7 @@ export function ToolHost() {
           </>
         )}
         <span className="flex-1" />
+        {showPinAction && <PinToSideButton noteId={openNote?.id ?? null} variant="toolbar" />}
         {writerEnabled && (
           <button
             type="button"

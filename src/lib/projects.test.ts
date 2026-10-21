@@ -7,6 +7,7 @@ import {
   categoryOf,
   collectFolderPaths,
   creationDefaultsForFolder,
+  customChildFolders,
   moveDestinations,
   omitProjectFolders,
   type Project,
@@ -229,6 +230,26 @@ describe("omitProjectFolders", () => {
       [project({ rootPath: "/vault/foo/../kitchen" })],
     );
     expect(paths(listed)).toEqual(["/vault/kitchen/../kitchen-notes"]);
+  });
+});
+
+describe("customChildFolders", () => {
+  it("lists only direct folders that are not the standard project categories", () => {
+    expect(
+      customChildFolders("/vault/kitchen", [
+        "/vault/kitchen",
+        "/vault/kitchen/thinking",
+        "/vault/kitchen/thinking/later",
+        "/vault/kitchen/features",
+        "/vault/kitchen/bugs",
+        "/vault/kitchen/context",
+        "/vault/kitchen/samples",
+        "/vault/kitchen/samples/tile",
+        "/vault/kitchen-notes",
+        "/vault/archive",
+        "/vault/kitchen/../archive",
+      ]),
+    ).toEqual(["/vault/kitchen/samples"]);
   });
 });
 

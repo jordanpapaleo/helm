@@ -179,6 +179,27 @@ export function omitProjectFolders(nodes: TreeNode[], projects: Project[]): Tree
 }
 
 /**
+ * Direct children of a project that are not the four standard category folders.
+ * Those stay on the project row after the root leaves the Folders list.
+ * Paths are normalized first, so `..` cannot present another folder as a child.
+ */
+export function customChildFolders(rootPath: string, folderPaths: string[]): string[] {
+  const root = normalizePath(rootPath);
+  const standard = new Set(PROJECT_CATEGORIES.map((item) => `${root}/${item.dir}`));
+  const children = new Set<string>();
+  for (const folderPath of folderPaths) {
+    const path = normalizePath(folderPath);
+    if (path === root || !path.startsWith(`${root}/`)) continue;
+    const first = path.slice(root.length + 1).split("/")[0];
+    if (!first) continue;
+    const child = `${root}/${first}`;
+    if (standard.has(child)) continue;
+    children.add(child);
+  }
+  return [...children].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+/**
  * Workflow applied when a note is created in a folder. Thinking and Context
  * start unmanaged so they stay off boards and the briefing. Features and Bugs
  * stay on the normal new-note default (Prepare, managed) — never Doing.

@@ -10,6 +10,7 @@ import { syncConnectedVaults } from "../../lib/git-sync-runtime";
 import { createProject, promoteFolder } from "../../lib/project-actions";
 import {
   folderDisplayName,
+  isSameOrInside,
   normalizePath,
   omitProjectFolders,
   type Project,
@@ -28,6 +29,7 @@ import { type Grouping, useUIStore, type View } from "../../store/ui";
 import { CreateProjectDialog } from "../projects/CreateProjectDialog";
 import { ProjectsSidebar } from "../projects/ProjectsSidebar";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
+import { NewFolderRow } from "../sidebar/NewFolderRow";
 import { RenameInput } from "../sidebar/RenameInput";
 import { VaultSyncButton } from "./VaultSyncButton";
 
@@ -311,38 +313,6 @@ function TagGroupings({
   );
 }
 
-function NewFolderRow({ onCommit }: { onCommit: (name: string) => void }) {
-  const committed = React.useRef(false);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-  return (
-    <div className="flex items-center gap-1.5 py-1" style={{ paddingLeft: 28 }}>
-      <Icon icon="uil:folder" className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
-      <input
-        ref={inputRef}
-        placeholder="folder name"
-        className="flex-1 rounded bg-base-100 px-1 text-sm outline outline-1 outline-accent"
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            committed.current = true;
-            onCommit((e.target as HTMLInputElement).value.trim());
-          }
-          if (e.key === "Escape") {
-            committed.current = true;
-            onCommit("");
-          }
-          e.stopPropagation();
-        }}
-        onBlur={(e) => {
-          if (!committed.current) onCommit(e.target.value.trim());
-        }}
-      />
-    </div>
-  );
-}
-
 type MenuState =
   | { x: number; y: number; kind: "folder"; folderPath: string }
   | { x: number; y: number; kind: "tag"; items: ContextMenuItem[] }
@@ -381,6 +351,15 @@ export function LeftColumn() {
       activeVaultId ? discoveryNotes.filter((n) => n.vaultId === activeVaultId) : discoveryNotes,
     [discoveryNotes, activeVaultId],
   );
+
+  const projectFolderPaths = useMemo(() => {
+    const paths = new Set(vaultFolderPaths);
+    for (const note of vaultNotes) {
+      const parent = note.filePath.split("/").slice(0, -1).join("/");
+      if (parent) paths.add(parent);
+    }
+    return [...paths];
+  }, [vaultFolderPaths, vaultNotes]);
 
   const vaultProjects = useMemo(
     () =>
@@ -526,12 +505,28 @@ export function LeftColumn() {
   }
 
   async function handleRenameFolder(oldPath: string, newName: string) {
+    const trimmed = newName.trim();
+    const parent = oldPath.split("/").slice(0, -1).join("/");
+    const newPath = parent ? `${parent}/${trimmed}` : trimmed;
     try {
       await useNoteStore.getState().renameFolder(oldPath, newName);
     } catch (e) {
       reportError("Failed to rename folder", e);
+      setRenamingFolderPath(null);
+      return;
     }
     setRenamingFolderPath(null);
+    if (!trimmed || normalizePath(newPath) === normalizePath(oldPath)) return;
+    const current = useUIStore.getState().selectedGrouping;
+    if (current.type === "folder" && current.id && isSameOrInside(current.id, oldPath)) {
+      const id = normalizePath(current.id);
+      const old = normalizePath(oldPath);
+      const next = normalizePath(newPath);
+      setSelectedGrouping({
+        type: "folder",
+        id: id === old ? next : `${next}${id.slice(old.length)}`,
+      });
+    }
   }
 
   async function handleDeleteFolder(folderPath: string) {
@@ -557,6 +552,20 @@ export function LeftColumn() {
       await tauriCommands.deleteFolder(folderPath);
     } catch (e) {
       reportError("Failed to delete folder", e);
+      return;
+    }
+    const { knownFolderPaths: known, setKnownFolderPaths } = useNoteStore.getState();
+    setKnownFolderPaths(known.filter((path) => !isSameOrInside(path, folderPath)));
+    useProjectStore
+      .getState()
+      .setProjects(
+        useProjectStore
+          .getState()
+          .projects.filter((project) => !isSameOrInside(project.rootPath, folderPath)),
+      );
+    const current = useUIStore.getState().selectedGrouping;
+    if (current.type === "folder" && current.id && isSameOrInside(current.id, folderPath)) {
+      setSelectedGrouping({ type: "all", id: null });
     }
   }
 
@@ -821,6 +830,7 @@ export function LeftColumn() {
               <ProjectsSidebar
                 projects={vaultProjects}
                 selectedFolder={selectedGrouping.type === "folder" ? selectedGrouping.id : null}
+                folderPaths={projectFolderPaths}
                 onOpenProject={openProject}
                 onOpenFolder={openFolder}
                 onCreate={() => setCreateProjectOpen(true)}
@@ -830,6 +840,12 @@ export function LeftColumn() {
                     vaultId: activeVault?.id,
                   });
                 }}
+                onContextMenu={handleFolderContextMenu}
+                renamingFolderPath={renamingFolderPath}
+                onRenameCommit={handleRenameFolder}
+                onRenameCancel={() => setRenamingFolderPath(null)}
+                newFolderParent={newFolderParent}
+                onCreateFolder={handleCreateFolder}
               />
             )}
 

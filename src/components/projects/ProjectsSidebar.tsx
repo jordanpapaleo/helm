@@ -1,6 +1,15 @@
 import { Icon } from "@iconify/react";
-import { useState } from "react";
-import { PROJECT_CATEGORIES, type Project, type ProjectCategoryId } from "../../lib/projects";
+import type React from "react";
+import { useEffect, useState } from "react";
+import {
+  customChildFolders,
+  normalizePath,
+  PROJECT_CATEGORIES,
+  type Project,
+  type ProjectCategoryId,
+} from "../../lib/projects";
+import { NewFolderRow } from "../sidebar/NewFolderRow";
+import { RenameInput } from "../sidebar/RenameInput";
 
 const CATEGORY_ICONS: Record<ProjectCategoryId, string> = {
   thinking: "uil:comment-dots",
@@ -12,21 +21,60 @@ const CATEGORY_ICONS: Record<ProjectCategoryId, string> = {
 interface ProjectsSidebarProps {
   projects: Project[];
   selectedFolder: string | null;
+  folderPaths: string[];
   onOpenProject: (project: Project) => void;
   onOpenFolder: (folderPath: string) => void;
   onCreate: () => void;
   onCaptureThinking: (project: Project) => void;
+  onContextMenu: (event: React.MouseEvent, folderPath: string) => void;
+  renamingFolderPath: string | null;
+  onRenameCommit: (oldPath: string, newName: string) => void;
+  onRenameCancel: () => void;
+  newFolderParent: string | null;
+  onCreateFolder: (parentPath: string, name: string) => void;
+}
+
+function leafName(folderPath: string): string {
+  return normalizePath(folderPath).split("/").pop() ?? folderPath;
 }
 
 export function ProjectsSidebar({
   projects,
   selectedFolder,
+  folderPaths,
   onOpenProject,
   onOpenFolder,
   onCreate,
   onCaptureThinking,
+  onContextMenu,
+  renamingFolderPath,
+  onRenameCommit,
+  onRenameCancel,
+  newFolderParent,
+  onCreateFolder,
 }: ProjectsSidebarProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // A new subfolder or a rename of a child has to stay visible after the input
+  // closes. Expanding here keeps that row on the project instead of the Folders list.
+  useEffect(() => {
+    const target = newFolderParent ? normalizePath(newFolderParent) : null;
+    const renaming = renamingFolderPath ? normalizePath(renamingFolderPath) : null;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const project of projects) {
+        const root = normalizePath(project.rootPath);
+        const hit =
+          target === root || target?.startsWith(`${root}/`) || renaming?.startsWith(`${root}/`);
+        if (hit && !next.has(project.id)) {
+          next.add(project.id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [newFolderParent, renamingFolderPath, projects]);
 
   return (
     <div className="mb-3" data-testid="projects-nav">
@@ -49,16 +97,28 @@ export function ProjectsSidebar({
       ) : (
         <ul>
           {projects.map((project) => {
-            const open = expanded.has(project.id);
-            const projectActive = selectedFolder === project.rootPath;
+            const root = normalizePath(project.rootPath);
+            const addingHere = newFolderParent != null && normalizePath(newFolderParent) === root;
+            const addingInside =
+              newFolderParent != null && normalizePath(newFolderParent).startsWith(`${root}/`);
+            const renamingHere =
+              renamingFolderPath != null && normalizePath(renamingFolderPath) === root;
+            const renamingInside =
+              renamingFolderPath != null &&
+              normalizePath(renamingFolderPath).startsWith(`${root}/`);
+            const open = expanded.has(project.id) || addingHere || addingInside || renamingInside;
+            const projectActive = selectedFolder != null && normalizePath(selectedFolder) === root;
+            const extras = customChildFolders(root, folderPaths);
             return (
               <li key={project.id}>
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a supplementary affordance; open, expand, and capture stay on buttons */}
                 <div
                   className={`flex items-center gap-1 py-1 text-sm ${
                     projectActive
                       ? "bg-base-300 text-base-content"
                       : "text-base-content/70 hover:bg-base-200"
                   }`}
+                  onContextMenu={(event) => onContextMenu(event, project.rootPath)}
                 >
                   <button
                     type="button"
@@ -80,24 +140,46 @@ export function ProjectsSidebar({
                       aria-hidden="true"
                     />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenProject(project)}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 pr-2 text-left"
-                  >
-                    <Icon
-                      icon="uil:briefcase"
-                      className="h-3.5 w-3.5 shrink-0"
-                      aria-hidden="true"
-                    />
-                    <span className="truncate">{project.name}</span>
-                  </button>
+                  {renamingHere ? (
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-2">
+                      <Icon
+                        icon="uil:briefcase"
+                        className="h-3.5 w-3.5 shrink-0"
+                        aria-hidden="true"
+                      />
+                      <RenameInput
+                        initial={leafName(project.rootPath)}
+                        onCommit={(value) => onRenameCommit(project.rootPath, value)}
+                        onCancel={onRenameCancel}
+                        className="flex-1 rounded bg-base-100 px-1 text-sm text-base-content outline outline-1 outline-primary"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onOpenProject(project)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 pr-2 text-left"
+                    >
+                      <Icon
+                        icon="uil:briefcase"
+                        className="h-3.5 w-3.5 shrink-0"
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">{project.name}</span>
+                    </button>
+                  )}
                 </div>
                 {open && (
                   <ul>
+                    {addingHere && (
+                      <li>
+                        <NewFolderRow onCommit={(name) => onCreateFolder(project.rootPath, name)} />
+                      </li>
+                    )}
                     {PROJECT_CATEGORIES.map((category) => {
-                      const folderPath = `${project.rootPath}/${category.dir}`;
-                      const active = selectedFolder === folderPath;
+                      const folderPath = `${root}/${category.dir}`;
+                      const active =
+                        selectedFolder != null && normalizePath(selectedFolder) === folderPath;
                       return (
                         <li key={category.id} className="flex items-center pr-1">
                           <button
@@ -127,6 +209,61 @@ export function ProjectsSidebar({
                             >
                               <Icon icon="uil:plus" className="h-3 w-3" aria-hidden="true" />
                             </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                    {extras.map((folderPath) => {
+                      const child = normalizePath(folderPath);
+                      const active =
+                        selectedFolder != null && normalizePath(selectedFolder) === child;
+                      const renaming =
+                        renamingFolderPath != null && normalizePath(renamingFolderPath) === child;
+                      const adding =
+                        newFolderParent != null && normalizePath(newFolderParent) === child;
+                      return (
+                        <li key={folderPath}>
+                          {/* biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a supplementary affordance; opening the folder stays on the button */}
+                          <div
+                            className={`flex items-center py-1 text-sm ${
+                              active
+                                ? "bg-base-300 text-base-content"
+                                : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                            }`}
+                            style={{ paddingLeft: 28 }}
+                            onContextMenu={(event) => onContextMenu(event, folderPath)}
+                          >
+                            {renaming ? (
+                              <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-2">
+                                <Icon
+                                  icon="uil:folder"
+                                  className="h-3.5 w-3.5 shrink-0 opacity-70"
+                                  aria-hidden="true"
+                                />
+                                <RenameInput
+                                  initial={leafName(folderPath)}
+                                  onCommit={(value) => onRenameCommit(folderPath, value)}
+                                  onCancel={onRenameCancel}
+                                  className="flex-1 rounded bg-base-100 px-1 text-sm text-base-content outline outline-1 outline-primary"
+                                />
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onOpenFolder(folderPath)}
+                                className="flex min-w-0 flex-1 items-center gap-1.5 pr-2 text-left"
+                              >
+                                <Icon
+                                  icon="uil:folder"
+                                  className="h-3.5 w-3.5 shrink-0 opacity-70"
+                                  aria-hidden="true"
+                                />
+                                <span className="truncate">{leafName(folderPath)}</span>
+                              </button>
+                            )}
+                          </div>
+                          {adding && (
+                            <NewFolderRow onCommit={(name) => onCreateFolder(folderPath, name)} />
                           )}
                         </li>
                       );

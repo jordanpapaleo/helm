@@ -576,4 +576,88 @@ describe("LeftColumn — projects", () => {
     expect(screen.queryByRole("menuitem", { name: "Convert to Project" })).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
   });
+
+  function showKitchenProject() {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useProjectStore.setState({ projects: [{ ...kitchen, name: "kitchen" }] });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "ideas",
+          filePath: "/vault/kitchen/ideas.md",
+          fileName: "ideas.md",
+          content: "Tile samples.",
+          frontmatter: {
+            ...makeNote().frontmatter,
+            id: "ideas",
+            title: "Ideas",
+          },
+        }),
+      ],
+      knownFolderPaths: ["/vault/kitchen", "/vault/archive"],
+    });
+  }
+
+  it("renames a project from the Projects menu and keeps it out of Folders", async () => {
+    showKitchenProject();
+    render(<LeftColumn />);
+
+    const projectsNav = screen.getByTestId("projects-nav");
+    fireEvent.contextMenu(within(projectsNav).getByText("kitchen"));
+    expect(screen.getByRole("menuitem", { name: "New Subfolder" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Convert to Project" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = await screen.findByDisplayValue("kitchen");
+    fireEvent.change(input, { target: { value: "pantry" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(tauriCommands.renameFolder).toHaveBeenCalledWith("/vault/kitchen", "/vault/pantry"),
+    );
+    expect(useProjectStore.getState().projects[0]?.rootPath).toBe("/vault/pantry");
+    expect(useNoteStore.getState().notes[0]?.filePath).toBe("/vault/pantry/ideas.md");
+    expect(within(screen.getByTestId("projects-nav")).getByText("pantry")).toBeInTheDocument();
+    expect(screen.getAllByText("pantry")).toHaveLength(1);
+    expect(screen.queryByText("kitchen")).not.toBeInTheDocument();
+    expect(screen.getByText("archive")).toBeInTheDocument();
+  });
+
+  it("adds a subfolder on the project and does not list that folder twice", async () => {
+    showKitchenProject();
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(within(screen.getByTestId("projects-nav")).getByText("kitchen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New Subfolder" }));
+    const input = await screen.findByPlaceholderText("folder name");
+    fireEvent.change(input, { target: { value: "samples" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(tauriCommands.createFolder).toHaveBeenCalledWith("/vault/kitchen/samples"),
+    );
+    const projectsNav = screen.getByTestId("projects-nav");
+    expect(within(projectsNav).getByText("samples")).toBeInTheDocument();
+    expect(screen.getAllByText("samples")).toHaveLength(1);
+    expect(within(projectsNav).queryByText("archive")).not.toBeInTheDocument();
+    expect(screen.getByText("archive")).toBeInTheDocument();
+  });
+
+  it("deletes a project from the Projects menu", async () => {
+    showKitchenProject();
+    useUIStore.setState({ selectedGrouping: { type: "folder", id: "/vault/kitchen" } });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(within(screen.getByTestId("projects-nav")).getByText("kitchen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    await waitFor(() => expect(tauriCommands.deleteFolder).toHaveBeenCalledWith("/vault/kitchen"));
+    expect(useProjectStore.getState().projects).toEqual([]);
+    expect(screen.queryByText("kitchen")).not.toBeInTheDocument();
+    expect(screen.getByText("archive")).toBeInTheDocument();
+    expect(useUIStore.getState().selectedGrouping).toEqual({ type: "all", id: null });
+    expect(useNoteStore.getState().notes).toEqual([]);
+  });
 });

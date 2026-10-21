@@ -1,3 +1,9 @@
+## v1.8.0 — 2026-10-21
+
+- Narrow the header layout test so the type check passes
+- Move note header actions onto their own line
+- chore: update version to 1.7.0 in package-lock.json and Cargo.lock
+
 ## v1.7.0 — 2026-10-21
 
 - Keep deleted notes read-only and colliding trash snapshots.

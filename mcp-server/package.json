@@ -22,7 +22,7 @@
   },
   "scripts": {
     "start": "node --import tsx/esm index.ts",
-    "build": "tsc",
+    "build": "esbuild index.ts --bundle --platform=node --format=esm --target=node18 --packages=external --outfile=dist/index.js",
     "prepublishOnly": "npm run build",
     "test:types": "tsc --noEmit"
   },
@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
+    "esbuild": "^0.25.12",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   }

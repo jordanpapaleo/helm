@@ -6,7 +6,10 @@
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "paths": {
+      "gray-matter": ["./node_modules/gray-matter"]
+    }
   },
   "include": ["*.ts"],
   "exclude": ["*.test.ts", "dist"]

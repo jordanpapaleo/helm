@@ -22,7 +22,7 @@
   },
   "scripts": {
     "start": "node --import tsx/esm index.ts",
-    "build": "esbuild index.ts --bundle --platform=node --format=esm --target=node18 --packages=external --outfile=dist/index.js",
+    "build": "tsc --noEmit && esbuild index.ts --bundle --platform=node --format=esm --target=node18 --packages=external --external:gray-matter --outfile=dist/index.js",
     "prepublishOnly": "npm run build",
     "test:types": "tsc --noEmit"
   },

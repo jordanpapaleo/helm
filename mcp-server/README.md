@@ -1,17 +1,48 @@
 # Helm MCP Server
 
+[![npm](https://img.shields.io/npm/v/helm-mcp)](https://www.npmjs.com/package/helm-mcp)
+
 Exposes your Helm vault(s) to Claude and any other MCP-compatible AI tool. Supports full CRUD, zettelkasten graph navigation, note history with restore, a one-call daily briefing, multi-vault, and built-in prompts for common workflows.
 
-## Setup
+## Add to Claude Code
 
 ```bash
-cd mcp-server
-npm install
+claude mcp add helm -- npx -y helm-mcp
+```
+
+`HELM_VAULT` is optional — it defaults to `~/notes`, created on first write if it
+doesn't exist yet. To point at a specific vault:
+
+```bash
+claude mcp add helm --env HELM_VAULT=/absolute/path/to/your/notes -- npx -y helm-mcp
 ```
 
 ## Add to Claude Desktop
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "helm": {
+      "command": "npx",
+      "args": ["-y", "helm-mcp"],
+      "env": {
+        "HELM_VAULT": "/absolute/path/to/your/notes"
+      }
+    }
+  }
+}
+```
+
+`env` is optional — omit it to use the default `~/notes` vault.
+
+### Running from source
+
+```bash
+cd mcp-server
+npm install
+```
 
 ```json
 {

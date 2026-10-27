@@ -79,10 +79,10 @@ beforeEach(() => {
 });
 
 describe("GraphView link canvas edges", () => {
-  it("paints resting edges with the high-contrast mix and a readable width", () => {
+  it("paints resting edges at 75% opacity and a readable width", () => {
     render(<GraphView />);
     expect(captured?.linkColor?.(savedLink)).toBe(stroke("rest"));
-    expect(captured?.linkColor?.(savedLink)).not.toContain("10%");
+    expect(captured?.linkColor?.(savedLink)).toContain("75%");
     expect(captured?.linkWidth?.(savedLink)).toBe(GRAPH_LINK_WIDTH.rest);
     expect(captured?.linkWidth?.(contentLink)).toBe(GRAPH_LINK_WIDTH.rest);
   });

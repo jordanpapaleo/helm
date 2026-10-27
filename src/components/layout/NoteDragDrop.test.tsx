@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NOTE_DRAG_MIME } from "../../lib/note-drag";
+import tauriConfig from "../../../src-tauri/tauri.conf.json";
+import { clearNoteDrag, NOTE_DRAG_MIME } from "../../lib/note-drag";
 import * as noteDrop from "../../lib/note-drop";
 import { parseNote } from "../../lib/note-parser";
 import type { Project } from "../../lib/projects";
@@ -69,7 +70,7 @@ function makeNote(
   };
 }
 
-function createDragData() {
+function createDragData(options: { hideCustomType?: boolean } = {}) {
   const store = new Map<string, string>();
   return {
     dropEffect: "none",
@@ -78,6 +79,8 @@ function createDragData() {
       return [...store.keys()];
     },
     setData(format: string, data: string) {
+      // WKWebView omits a custom MIME type and an empty text payload.
+      if (options.hideCustomType && (format === NOTE_DRAG_MIME || data === "")) return;
       store.set(format, String(data));
     },
     getData(format: string) {
@@ -96,9 +99,9 @@ function dropTarget(id: string): HTMLElement {
   return found;
 }
 
-function dragNote(name: RegExp) {
+function dragNote(name: RegExp, options: { hideCustomType?: boolean } = {}) {
   const handle = screen.getByRole("button", { name });
-  const dataTransfer = createDragData();
+  const dataTransfer = createDragData(options);
   fireEvent.dragStart(handle, { dataTransfer });
   return dataTransfer;
 }
@@ -113,6 +116,7 @@ function dropOn(id: string, dataTransfer: ReturnType<typeof createDragData>) {
 
 describe("dragging a note onto a folder or tag", () => {
   beforeEach(() => {
+    clearNoteDrag();
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => {});
     useNoteStore.setState({
@@ -147,6 +151,63 @@ describe("dragging a note onto a folder or tag", () => {
       </>,
     );
   }
+
+  it("lets the webview receive the drag instead of the native file-drop handler", () => {
+    expect(tauriConfig.app.windows[0]?.dragDropEnabled).toBe(false);
+  });
+
+  it("highlights a folder and moves when the webview hides the custom drag type", async () => {
+    renderPanes();
+    const dataTransfer = dragNote(/Alpha/, { hideCustomType: true });
+    expect(dataTransfer.types).not.toContain(NOTE_DRAG_MIME);
+    expect(dataTransfer.getData("text/plain")).toBe("");
+
+    const target = dropTarget("folder:/vault/inbox");
+    const rowButton = target.querySelector("button");
+    if (!(rowButton instanceof HTMLElement)) throw new Error("folder row has no button");
+    expect(fireEvent.dragOver(rowButton, { dataTransfer })).toBe(false);
+    expect(target).toHaveAttribute("data-drop-active", "true");
+
+    fireEvent.drop(rowButton, { dataTransfer });
+    await waitFor(() =>
+      expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+        "/vault/note.md",
+        "/vault/inbox/note.md",
+      ),
+    );
+    const moved = useNoteStore.getState().notes.find((note) => note.id === "alpha");
+    expect(moved?.filePath).toBe("/vault/inbox/note.md");
+    expect(moved?.content).toBe("Keep this body");
+  });
+
+  it("highlights a tag and adds it when the webview hides the custom drag type", async () => {
+    renderPanes();
+    const dataTransfer = dragNote(/Alpha/, { hideCustomType: true });
+    const target = dropTarget("tag:work");
+    const rowButton = target.querySelector("button");
+    if (!(rowButton instanceof HTMLElement)) throw new Error("tag row has no button");
+    expect(fireEvent.dragOver(rowButton, { dataTransfer })).toBe(false);
+    expect(target).toHaveAttribute("data-drop-active", "true");
+
+    fireEvent.drop(rowButton, { dataTransfer });
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalled());
+    const stored = useNoteStore.getState().notes.find((note) => note.id === "alpha");
+    expect(stored?.frontmatter.tags).toEqual(["work"]);
+    expect(stored?.content).toBe("Keep this body");
+    expect(stored?.filePath).toBe("/vault/note.md");
+    expect(tauriCommands.renameNote).not.toHaveBeenCalled();
+  });
+
+  it("does not highlight a row for a drag that is not a note", () => {
+    renderPanes();
+    const dataTransfer = createDragData();
+    dataTransfer.setData("text/plain", "some text");
+    const target = dropTarget("folder:/vault/inbox");
+    expect(fireEvent.dragOver(target, { dataTransfer })).toBe(true);
+    expect(target).toHaveAttribute("data-drop-active", "false");
+    fireEvent.drop(target, { dataTransfer });
+    expect(tauriCommands.renameNote).not.toHaveBeenCalled();
+  });
 
   it("moves the note into the folder and keeps the body", async () => {
     renderPanes();

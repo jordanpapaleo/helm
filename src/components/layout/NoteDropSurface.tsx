@@ -1,5 +1,12 @@
-import { type CSSProperties, type MouseEvent, type ReactNode, useEffect, useState } from "react";
-import { noteDropHandlers } from "../../lib/note-drag";
+import {
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { bindNoteDropTarget } from "../../lib/note-drag";
 
 interface NoteDropSurfaceProps {
   dropId: string;
@@ -21,13 +28,29 @@ export function NoteDropSurface({
   onDropNote,
   children,
 }: NoteDropSurfaceProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const onDropNoteRef = useRef(onDropNote);
+  onDropNoteRef.current = onDropNote;
   const [over, setOver] = useState(false);
+
   useEffect(() => {
     if (!over) return;
     const clear = () => setOver(false);
     window.addEventListener("dragend", clear);
     return () => window.removeEventListener("dragend", clear);
   }, [over]);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!enabled || !element) return;
+    return bindNoteDropTarget(
+      element,
+      (noteId) => onDropNoteRef.current(noteId),
+      (next) => {
+        setOver((current) => (current === next ? current : next));
+      },
+    );
+  }, [enabled]);
 
   if (!enabled) {
     return (
@@ -38,13 +61,10 @@ export function NoteDropSurface({
     );
   }
 
-  function setOverIfChanged(next: boolean) {
-    setOver((current) => (current === next ? current : next));
-  }
-
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: drop target; the buttons inside keep keyboard actions
     <div
+      ref={ref}
       data-drop-target={dropId}
       data-drop-active={over ? "true" : "false"}
       className={[className, over ? "outline outline-1 outline-primary" : ""]
@@ -52,7 +72,6 @@ export function NoteDropSurface({
         .join(" ")}
       style={style}
       onContextMenu={onContextMenu}
-      {...noteDropHandlers(onDropNote, setOverIfChanged)}
     >
       {children}
     </div>

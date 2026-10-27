@@ -323,11 +323,18 @@ ul[data-type="taskList"] {
   list-style: none;
   margin: 0 !important;
   /* Drop the marker indent. Keep the same trailing block rhythm as other lists
-     so the last checklist row is not flush with the following paragraph. */
+     so the last checklist row is not flush with the following paragraph.
+     This rule is more specific than `.prose :where(li ul, li ol)`, so a nested
+     checklist has to be zeroed again below. */
   padding-top: 0 !important;
   padding-right: 0 !important;
   padding-bottom: var(--spacing-block) !important;
   padding-left: 0 !important;
+}
+/* A checklist inside any list item — bullet, number, or another checklist —
+   must not add block padding on top of the parent row. */
+li ul[data-type="taskList"] {
+  padding-bottom: 0 !important;
 }
 ul[data-type="taskList"] li {
   display: flex;

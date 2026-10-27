@@ -142,6 +142,26 @@ describe("list item bottom padding", () => {
     editor.destroy();
   });
 
+  it("does not stack a checklist nested in an ordinary list item", () => {
+    const { editor, dom } = mount(
+      ["- parent", "  - [ ] nested a", "  - [ ] nested b", "- next"].join("\n"),
+    );
+
+    const top = [...dom.querySelectorAll(":scope > ul:not([data-type]) > li")];
+    expect(top.length).toBe(2);
+    const nested = top[0].querySelector("ul[data-type='taskList']") as HTMLElement;
+    const nestedItems = [...nested.querySelectorAll(":scope > li")];
+    expect(nestedItems.length).toBe(2);
+
+    expect(paddingBottom(nestedItems[0])).toBe("var(--spacing-list-item)");
+    // The nested checklist must not add --spacing-block on top of the parent row.
+    expect(paddingBottom(nested)).toBe("0px");
+    expect(paddingBottom(nestedItems[1])).toBe("0px");
+    expect(paddingBottom(top[0])).toBe("var(--spacing-list-item)");
+
+    editor.destroy();
+  });
+
   it("does not stack a nested checklist on the parent row", () => {
     const { editor, dom } = mount(
       ["- [ ] parent", "  - [ ] nested a", "  - [ ] nested b", "- [ ] next"].join("\n"),

@@ -54,6 +54,7 @@ function renderSidebar(
       onOpenFolder={vi.fn()}
       onCreate={vi.fn()}
       onCreateSectionNote={onCreateSectionNote}
+      onDropNote={vi.fn()}
       onContextMenu={vi.fn()}
       renamingFolderPath={null}
       onRenameCommit={vi.fn()}

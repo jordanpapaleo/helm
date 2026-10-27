@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import type React from "react";
 import { useEffect, useState } from "react";
+import { folderDropId } from "../../lib/note-drag";
 import {
   customChildFolders,
   normalizePath,
@@ -8,6 +9,7 @@ import {
   type Project,
   type ProjectCategoryId,
 } from "../../lib/projects";
+import { NoteDropSurface } from "../layout/NoteDropSurface";
 import { NewFolderRow } from "../sidebar/NewFolderRow";
 import { NewNoteMenu } from "../sidebar/NewNoteMenu";
 import { RenameInput } from "../sidebar/RenameInput";
@@ -29,6 +31,7 @@ interface ProjectsSidebarProps {
   /** Blank or a template, written into that section folder. */
   onCreateSectionNote: (folderPath: string, templateId: string | null) => void;
   onContextMenu: (event: React.MouseEvent, folderPath: string) => void;
+  onDropNote: (noteId: string, folderPath: string) => void;
   renamingFolderPath: string | null;
   onRenameCommit: (oldPath: string, newName: string) => void;
   onRenameCancel: () => void;
@@ -49,6 +52,7 @@ export function ProjectsSidebar({
   onCreate,
   onCreateSectionNote,
   onContextMenu,
+  onDropNote,
   renamingFolderPath,
   onRenameCommit,
   onRenameCancel,
@@ -113,14 +117,15 @@ export function ProjectsSidebar({
             const extras = customChildFolders(root, folderPaths);
             return (
               <li key={project.id}>
-                {/* biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a supplementary affordance; open, expand, and capture stay on buttons */}
-                <div
+                <NoteDropSurface
+                  dropId={folderDropId(project.rootPath)}
                   className={`flex items-center gap-1 py-1 text-sm ${
                     projectActive
                       ? "bg-base-300 text-base-content"
                       : "text-base-content/70 hover:bg-base-200"
                   }`}
                   onContextMenu={(event) => onContextMenu(event, project.rootPath)}
+                  onDropNote={(noteId) => onDropNote(noteId, project.rootPath)}
                 >
                   <button
                     type="button"
@@ -170,7 +175,7 @@ export function ProjectsSidebar({
                       <span className="truncate">{project.name}</span>
                     </button>
                   )}
-                </div>
+                </NoteDropSurface>
                 {open && (
                   <ul>
                     {addingHere && (
@@ -184,23 +189,29 @@ export function ProjectsSidebar({
                         selectedFolder != null && normalizePath(selectedFolder) === folderPath;
                       return (
                         <li key={category.id} className="flex items-center pr-1">
-                          <button
-                            type="button"
-                            onClick={() => onOpenFolder(folderPath)}
-                            className={`flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-sm ${
-                              active
-                                ? "bg-base-300 text-base-content"
-                                : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                            }`}
-                            style={{ paddingLeft: 28 }}
+                          <NoteDropSurface
+                            dropId={folderDropId(folderPath)}
+                            className="min-w-0 flex-1"
+                            onDropNote={(noteId) => onDropNote(noteId, folderPath)}
                           >
-                            <Icon
-                              icon={CATEGORY_ICONS[category.id]}
-                              className="h-3.5 w-3.5 shrink-0 opacity-70"
-                              aria-hidden="true"
-                            />
-                            <span className="truncate">{category.label}</span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => onOpenFolder(folderPath)}
+                              className={`flex w-full min-w-0 items-center gap-1.5 py-1 text-left text-sm ${
+                                active
+                                  ? "bg-base-300 text-base-content"
+                                  : "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                              }`}
+                              style={{ paddingLeft: 28 }}
+                            >
+                              <Icon
+                                icon={CATEGORY_ICONS[category.id]}
+                                className="h-3.5 w-3.5 shrink-0 opacity-70"
+                                aria-hidden="true"
+                              />
+                              <span className="truncate">{category.label}</span>
+                            </button>
+                          </NoteDropSurface>
                           <NewNoteMenu
                             ariaLabel={`New note in ${project.name} ${category.label}`}
                             title={`New note in ${category.label}`}
@@ -222,8 +233,8 @@ export function ProjectsSidebar({
                         newFolderParent != null && normalizePath(newFolderParent) === child;
                       return (
                         <li key={folderPath}>
-                          {/* biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a supplementary affordance; opening the folder stays on the button */}
-                          <div
+                          <NoteDropSurface
+                            dropId={folderDropId(folderPath)}
                             className={`flex items-center py-1 text-sm ${
                               active
                                 ? "bg-base-300 text-base-content"
@@ -231,6 +242,7 @@ export function ProjectsSidebar({
                             }`}
                             style={{ paddingLeft: 28 }}
                             onContextMenu={(event) => onContextMenu(event, folderPath)}
+                            onDropNote={(noteId) => onDropNote(noteId, folderPath)}
                           >
                             {renaming ? (
                               <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-2">
@@ -260,7 +272,7 @@ export function ProjectsSidebar({
                                 <span className="truncate">{leafName(folderPath)}</span>
                               </button>
                             )}
-                          </div>
+                          </NoteDropSurface>
                           {adding && (
                             <NewFolderRow onCommit={(name) => onCreateFolder(folderPath, name)} />
                           )}

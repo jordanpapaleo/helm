@@ -1,7 +1,7 @@
 /**
  * Stroke style for Link canvas edges.
  *
- * Connecting lines are the theme text color at 80% opacity. A solid mix of
+ * Connecting lines are the theme text color at 75% opacity. A solid mix of
  * that color into the surface was too strong. Hovered edges keep the solid
  * primary and error colors.
  */
@@ -17,7 +17,7 @@ export const GRAPH_LINK_WIDTH: Record<GraphLinkEmphasis, number> = {
 };
 
 /** Opacity of a connecting line that is not using a hover color. */
-export const GRAPH_LINK_OPACITY_PERCENT = 80;
+export const GRAPH_LINK_OPACITY_PERCENT = 75;
 
 export function graphLinkEmphasis(input: {
   deleteHover: boolean;

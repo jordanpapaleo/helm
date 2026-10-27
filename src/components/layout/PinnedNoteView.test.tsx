@@ -273,6 +273,48 @@ it("saves on blur when auto-save is off", async () => {
   expect(vi.mocked(tauriCommands.writeNote).mock.calls[0][1]).toContain("later");
 });
 
+it("drops a recovered held draft once a later edit saves", async () => {
+  const other = makeNote("other", "Other", "Second note");
+  useNoteStore.setState({
+    notes: [reference, other],
+    selectedNoteId: reference.id,
+    vaults: [{ id: "vault", name: "Vault", path: "/vault" }],
+    activeVaultId: "vault",
+  });
+  usePinnedPanelStore.setState({ noteIds: ["reference", "other"], activeId: "reference" });
+  useGitSyncStore.getState().beginBarrier("/vault");
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  render(<RightPanel />);
+
+  insertAtEnd(pinnedEditor(), " draft-a");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1100);
+  });
+  expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+  expect(useGitSyncStore.getState().heldDraft("reference")).toContain("draft-a");
+  expect(useGitSyncStore.getState().heldDraft("reference")).not.toContain("draft-b");
+
+  useGitSyncStore.getState().endBarrier("/vault");
+  insertAtEnd(pinnedEditor(), " draft-b");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1100);
+  });
+
+  expect(useGitSyncStore.getState().heldDraft("reference")).toBeUndefined();
+  expect(vi.mocked(tauriCommands.writeNote).mock.calls[0][1]).toContain("draft-b");
+
+  fireEvent.click(screen.getByRole("tab", { name: "Other" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Reference" }));
+  const restored = pinnedEditor();
+  expect(restored.getText()).toContain("draft-a");
+  expect(restored.getText()).toContain("draft-b");
+
+  const writes = vi.mocked(tauriCommands.writeNote).mock.calls.length;
+  fireEvent.blur(restored.view.dom);
+  expect(tauriCommands.writeNote).toHaveBeenCalledTimes(writes);
+  expect(vi.mocked(tauriCommands.writeNote).mock.calls[0][1]).toContain("draft-b");
+});
+
 it("moves the block with the block-command shortcut", () => {
   const blocks = makeNote("blocks", "Blocks", "Alpha\n\nBeta");
   useNoteStore.setState({ notes: [blocks], selectedNoteId: blocks.id });

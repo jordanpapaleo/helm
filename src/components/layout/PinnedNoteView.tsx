@@ -131,6 +131,13 @@ function PinnedNoteBody({
       // Set before the store update so the echo of our own save is not treated
       // as an external rewrite that should replace the caret.
       lastSavedRef.current = markdown;
+      // A blocked autosave keeps the text as a held draft. Once a later edit
+      // actually writes, that draft is stale: remounting prefers it over the
+      // file and a blur would save it back, dropping the newer text.
+      const store = useGitSyncStore.getState();
+      store.clearHeldDraft(id);
+      store.releaseNote(id);
+      heldByUs.current = false;
     }
     return saveNoteContent(current, markdown);
   }, []);

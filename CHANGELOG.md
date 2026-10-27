@@ -1,3 +1,23 @@
+## v1.9.0 — 2026-10-27
+
+- Let the desktop webview accept a note drop
+- Drag a note onto a folder or a tag
+- Clear a pinned note's held draft after it saves
+- Zero block padding on checklists nested in any list item
+- fix: draw Link canvas edges at 50% opacity
+- fix: draw resting Link canvas edges at 1px
+- fix: draw Link canvas edges at 75% opacity
+- fix: paint the Link canvas with the selected sidebar color
+- fix: draw Link canvas edges at 80% opacity
+- fix: draw Link canvas edges at 75% opacity
+- Edit pinned notes from the right panel
+- Keep italic markdown in the surrounding text color
+- Add space under each list row in a note
+- Offer blank or template when adding a project section note
+- fix: make Link canvas edges readable against the surface
+- Run type checks and tests on pull requests
+- chore: update version to 1.8.0 in package-lock.json and Cargo.lock
+
 ## v1.8.0 — 2026-10-21
 
 - Narrow the header layout test so the type check passes

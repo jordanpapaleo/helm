@@ -20,6 +20,14 @@ import { useSettingsStore } from "../store/settings";
 import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
 import type { Note, NoteState } from "../types/note";
+import {
+  GRAPH_LINK_WIDTH,
+  type GraphLinkEmphasis,
+  graphLinkEmphasis,
+  graphLinkStroke,
+  readGraphCanvasBackground,
+  readGraphLinkColors,
+} from "./graph-link-style";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -75,6 +83,20 @@ function resolveId(ref: string | GraphNode): string {
 /** Stable key for a directed link — used to track hover state. */
 function linkKey(link: GraphLink): string {
   return `${resolveId(link.source)}->${resolveId(link.target)}`;
+}
+
+function emphasisFor(
+  link: GraphLink,
+  hoveredId: string | null,
+  hoveredLinkKey: string | null,
+): GraphLinkEmphasis {
+  const source = resolveId(link.source);
+  const target = resolveId(link.target);
+  return graphLinkEmphasis({
+    deleteHover: hoveredLinkKey === linkKey(link),
+    nodeHovered: hoveredId !== null,
+    touchesHoveredNode: hoveredId !== null && (source === hoveredId || target === hoveredId),
+  });
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -413,37 +435,21 @@ export function GraphView() {
 
   const linkColor = useCallback(
     (rawLink: object) => {
-      const link = rawLink as GraphLink;
-      const key = linkKey(link);
-      // Hovered deletable link → red
-      if (hoveredLinkKey === key) return cssVar("--color-error", "#ff453a");
-      // Node-hover highlighting
-      if (hoveredId !== null) {
-        const s = resolveId(link.source);
-        const t = resolveId(link.target);
-        return s === hoveredId || t === hoveredId
-          ? cssVar("--color-primary", "#0a84ff")
-          : cssVar("--color-border", "#3a3a3c");
-      }
-      return cssVar("--color-border", "#3a3a3c");
+      const emphasis = emphasisFor(rawLink as GraphLink, hoveredId, hoveredLinkKey);
+      return graphLinkStroke(emphasis, readGraphLinkColors());
     },
     [hoveredId, hoveredLinkKey],
   );
 
   const linkWidth = useCallback(
     (rawLink: object) => {
-      const link = rawLink as GraphLink;
-      const key = linkKey(link);
-      if (hoveredLinkKey === key) return 2.5;
-      if (hoveredId === null) return 1;
-      const s = resolveId(link.source);
-      const t = resolveId(link.target);
-      return s === hoveredId || t === hoveredId ? 2 : 0.5;
+      const emphasis = emphasisFor(rawLink as GraphLink, hoveredId, hoveredLinkKey);
+      return GRAPH_LINK_WIDTH[emphasis];
     },
     [hoveredId, hoveredLinkKey],
   );
 
-  const bgColor = cssVar("--color-surface", "#1c1c1e");
+  const bgColor = readGraphCanvasBackground();
 
   // Tooltip text: show "Release to link →" during drag targeting, otherwise full note title
   const tooltipText = dragLinkTarget
@@ -455,7 +461,7 @@ export function GraphView() {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: canvas container tracks mouse position for tooltip only — no keyboard interaction needed */}
       <div
         ref={containerRef}
-        className="relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+        className="relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-base-300"
         style={{ cursor: isNodeHovered || hoveredLinkKey ? "pointer" : "default" }}
         onMouseMove={(e) => {
           const rect = containerRef.current?.getBoundingClientRect();

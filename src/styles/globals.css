@@ -12,6 +12,9 @@
 
   /* Single spacing unit used for all block-level bottom spacing */
   --spacing-block: 0.75em;
+  /* Gap under each list row (bullets, numbers, checklists). Smaller than a
+     paragraph so a list still reads as a list, large enough to scan. */
+  --spacing-list-item: 0.5em;
 
   /* ── Font families ───────────────────────────────────────────── */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
@@ -294,6 +297,12 @@ body {
 .prose :where(li) {
   margin: 0 !important;
   padding-top: 0 !important;
+  padding-bottom: var(--spacing-list-item) !important;
+}
+/* The row padding is the gap before the next sibling. The last row must not
+   stack on the list's own block padding, and a nested list's last row must
+   not stack on its parent row (that double gap is the indent → outdent bug). */
+.prose :where(li:last-child) {
   padding-bottom: 0 !important;
 }
 .prose :where(li > div > p),
@@ -312,15 +321,22 @@ body {
 /* ── Task list checkboxes ───────────────────────────────────── */
 ul[data-type="taskList"] {
   list-style: none;
-  padding: 0 !important;
   margin: 0 !important;
+  /* Drop the marker indent. Keep the same trailing block rhythm as other lists
+     so the last checklist row is not flush with the following paragraph. */
+  padding-top: 0 !important;
+  padding-right: 0 !important;
+  padding-bottom: var(--spacing-block) !important;
+  padding-left: 0 !important;
 }
 ul[data-type="taskList"] li {
   display: flex;
   align-items: flex-start;
   gap: 0.6rem;
-  padding: 0.1rem 0 !important;
   margin: 0 !important;
+  /* Vertical padding comes from the shared list-row rhythm above. */
+  padding-right: 0 !important;
+  padding-left: 0 !important;
 }
 /* reset browser default p margins inside task items */
 ul[data-type="taskList"] li > div > p {
@@ -375,9 +391,10 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
   text-decoration: line-through;
   text-decoration-color: var(--color-text-muted);
 }
-/* nested task lists */
+/* nested task lists — no extra block padding; the parent row supplies the gap */
 ul[data-type="taskList"] ul[data-type="taskList"] {
   padding-top: 0.25rem;
+  padding-bottom: 0 !important;
   padding-left: 1.25rem;
 }
 

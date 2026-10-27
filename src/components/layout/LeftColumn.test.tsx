@@ -647,6 +647,74 @@ describe("LeftColumn — projects", () => {
     expect(screen.getByText("archive")).toBeInTheDocument();
   });
 
+  it("creates a blank or template note in the chosen project section", async () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, enableProjects: true } });
+    useProjectStore.setState({ projects: [kitchen] });
+    useNoteStore.setState({
+      notes: [
+        makeNote({
+          id: "tmpl",
+          filePath: "/vault/bug.md",
+          fileName: "bug.md",
+          content: "Steps to reproduce.",
+          frontmatter: {
+            ...makeNote().frontmatter,
+            id: "tmpl",
+            title: "Bug report",
+            important: true,
+            template: true,
+          },
+        }),
+      ],
+    });
+
+    render(<LeftColumn />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand Kitchen" }));
+    const projectsNav = screen.getByTestId("projects-nav");
+
+    fireEvent.click(
+      within(projectsNav).getByRole("button", { name: "New note in Kitchen Features" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Bug report" }));
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+    const feature = useNoteStore
+      .getState()
+      .notes.find((note) => note.filePath.startsWith("/vault/kitchen/features/"));
+    expect(feature?.frontmatter.title).toBe("Bug report");
+    expect(feature?.content).toBe("Steps to reproduce.");
+    expect(feature?.frontmatter.template).toBe(false);
+    expect(feature?.frontmatter.important).toBe(false);
+    expect(feature?.frontmatter.unmanaged).toBeUndefined();
+    expect(feature?.frontmatter.state).toBe("Prepare");
+    expect(useNoteStore.getState().notes.find((note) => note.id === "tmpl")?.content).toBe(
+      "Steps to reproduce.",
+    );
+
+    fireEvent.click(
+      within(projectsNav).getByRole("button", { name: "New note in Kitchen Context / Docs" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Bug report" }));
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
+    const context = useNoteStore
+      .getState()
+      .notes.find((note) => note.filePath.startsWith("/vault/kitchen/context/"));
+    expect(context?.frontmatter.title).toBe("Bug report");
+    expect(context?.frontmatter.unmanaged).toBe(true);
+    expect(context?.frontmatter.state).toBe("");
+
+    fireEvent.click(within(projectsNav).getByRole("button", { name: "New note in Kitchen Bugs" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Blank" }));
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(3));
+    const bug = useNoteStore
+      .getState()
+      .notes.find((note) => note.filePath.startsWith("/vault/kitchen/bugs/"));
+    expect(bug?.frontmatter.title).toBe("Untitled");
+    expect(bug?.frontmatter.state).toBe("Prepare");
+    expect(bug?.frontmatter.unmanaged).toBeUndefined();
+    expect(bug?.content).toBe("");
+  });
+
   it("deletes a project from the Projects menu", async () => {
     showKitchenProject();
     useUIStore.setState({ selectedGrouping: { type: "folder", id: "/vault/kitchen" } });

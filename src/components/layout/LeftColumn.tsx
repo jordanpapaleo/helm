@@ -892,12 +892,7 @@ export function LeftColumn() {
                 onOpenProject={openProject}
                 onOpenFolder={openFolder}
                 onCreate={() => setCreateProjectOpen(true)}
-                onCaptureThinking={(project) => {
-                  void createNote({
-                    folderPath: `${project.rootPath}/thinking`,
-                    vaultId: activeVault?.id,
-                  });
-                }}
+                onCreateSectionNote={handleCreateNoteInFolder}
                 onContextMenu={handleFolderContextMenu}
                 renamingFolderPath={renamingFolderPath}
                 onRenameCommit={handleRenameFolder}

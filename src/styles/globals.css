@@ -127,8 +127,9 @@ body {
   padding-top: 0 !important;
   padding-bottom: var(--spacing-block) !important;
 }
+/* Emphasis changes the style only. It must not paint a different text color. */
 .prose :where(em) {
-  color: var(--color-neutral-content);
+  color: inherit;
 }
 .prose :where(a) {
   color: var(--color-accent);

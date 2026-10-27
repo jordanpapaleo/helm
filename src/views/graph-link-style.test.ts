@@ -40,10 +40,10 @@ describe("graphLinkEmphasis", () => {
 });
 
 describe("graphLinkStroke", () => {
-  it("draws connecting lines at 75% opacity", () => {
-    expect(GRAPH_LINK_OPACITY_PERCENT).toBe(75);
+  it("draws connecting lines at 80% opacity", () => {
+    expect(GRAPH_LINK_OPACITY_PERCENT).toBe(80);
     const stroke = graphLinkOpacityColor(sample.baseContent);
-    expect(stroke).toBe(`color-mix(in oklab, ${sample.baseContent} 75%, transparent)`);
+    expect(stroke).toBe(`color-mix(in oklab, ${sample.baseContent} 80%, transparent)`);
     expect(graphLinkStroke("rest", sample)).toBe(stroke);
     expect(graphLinkStroke("dim", sample)).toBe(stroke);
   });
@@ -51,8 +51,8 @@ describe("graphLinkStroke", () => {
   it("keeps hover colors solid", () => {
     expect(graphLinkStroke("active", sample)).toBe(sample.primary);
     expect(graphLinkStroke("delete", sample)).toBe(sample.error);
-    expect(graphLinkStroke("active", sample)).not.toContain("75%");
-    expect(graphLinkStroke("delete", sample)).not.toContain("75%");
+    expect(graphLinkStroke("active", sample)).not.toContain("80%");
+    expect(graphLinkStroke("delete", sample)).not.toContain("80%");
   });
 
   it("keeps resting edges thicker than a hairline and thicker than dimmed edges", () => {

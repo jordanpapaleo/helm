@@ -9,6 +9,7 @@ import {
   type ProjectCategoryId,
 } from "../../lib/projects";
 import { NewFolderRow } from "../sidebar/NewFolderRow";
+import { NewNoteMenu } from "../sidebar/NewNoteMenu";
 import { RenameInput } from "../sidebar/RenameInput";
 
 const CATEGORY_ICONS: Record<ProjectCategoryId, string> = {
@@ -25,7 +26,8 @@ interface ProjectsSidebarProps {
   onOpenProject: (project: Project) => void;
   onOpenFolder: (folderPath: string) => void;
   onCreate: () => void;
-  onCaptureThinking: (project: Project) => void;
+  /** Blank or a template, written into that section folder. */
+  onCreateSectionNote: (folderPath: string, templateId: string | null) => void;
   onContextMenu: (event: React.MouseEvent, folderPath: string) => void;
   renamingFolderPath: string | null;
   onRenameCommit: (oldPath: string, newName: string) => void;
@@ -45,7 +47,7 @@ export function ProjectsSidebar({
   onOpenProject,
   onOpenFolder,
   onCreate,
-  onCaptureThinking,
+  onCreateSectionNote,
   onContextMenu,
   renamingFolderPath,
   onRenameCommit,
@@ -199,17 +201,14 @@ export function ProjectsSidebar({
                             />
                             <span className="truncate">{category.label}</span>
                           </button>
-                          {category.id === "thinking" && (
-                            <button
-                              type="button"
-                              aria-label={`Capture into ${project.name} Thinking`}
-                              title="Capture into Thinking"
-                              onClick={() => onCaptureThinking(project)}
-                              className="btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100"
-                            >
-                              <Icon icon="uil:plus" className="h-3 w-3" aria-hidden="true" />
-                            </button>
-                          )}
+                          <NewNoteMenu
+                            ariaLabel={`New note in ${project.name} ${category.label}`}
+                            title={`New note in ${category.label}`}
+                            className="btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100"
+                            onSelect={(templateId) => onCreateSectionNote(folderPath, templateId)}
+                          >
+                            <Icon icon="uil:plus" className="h-3 w-3" aria-hidden="true" />
+                          </NewNoteMenu>
                         </li>
                       );
                     })}

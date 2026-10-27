@@ -7,6 +7,8 @@ import { createNote } from "../../lib/create-note";
 import { buildTree, type TreeNode } from "../../lib/file-tree";
 import { syncPrefs } from "../../lib/git-sync";
 import { syncConnectedVaults } from "../../lib/git-sync-runtime";
+import { folderDropId, tagDropId } from "../../lib/note-drag";
+import { addTagFromDrop, moveNoteToFolder } from "../../lib/note-drop";
 import { serializeNote } from "../../lib/note-parser";
 import { createProject, promoteFolder } from "../../lib/project-actions";
 import {
@@ -33,6 +35,7 @@ import { ProjectsSidebar } from "../projects/ProjectsSidebar";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
 import { NewFolderRow } from "../sidebar/NewFolderRow";
 import { RenameInput } from "../sidebar/RenameInput";
+import { NoteDropSurface } from "./NoteDropSurface";
 import { VaultSyncButton } from "./VaultSyncButton";
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
@@ -56,11 +59,13 @@ function FolderGroupings({
   projects,
   projectsEnabled,
   onOpenProject,
+  onDropNote,
 }: {
   depth?: number;
   nodes: TreeNode[];
   noteCount: (path: string) => number;
   onContextMenu: (e: React.MouseEvent, folderPath: string) => void;
+  onDropNote: (noteId: string, folderPath: string) => void;
   onNavigate: (grouping: Grouping) => void;
   newFolderParent: string | null;
   onCreateFolder: (parentPath: string, name: string) => void;
@@ -99,8 +104,8 @@ function FolderGroupings({
         return (
           <React.Fragment key={node.path}>
             <li>
-              {/* biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a supplementary affordance; all primary actions are reachable via the buttons inside this row */}
-              <div
+              <NoteDropSurface
+                dropId={folderDropId(node.path)}
                 className={`flex w-full items-center gap-1 py-1 text-sm transition-colors ${
                   isActive
                     ? "bg-base-300 text-base-content"
@@ -108,6 +113,7 @@ function FolderGroupings({
                 }`}
                 style={{ paddingLeft: depth * 12 + 8 }}
                 onContextMenu={(e) => onContextMenu(e, node.path)}
+                onDropNote={(noteId) => onDropNote(noteId, node.path)}
               >
                 <button
                   type="button"
@@ -162,7 +168,7 @@ function FolderGroupings({
                     {count > 0 && <span className="shrink-0 text-xs opacity-40">{count}</span>}
                   </button>
                 )}
-              </div>
+              </NoteDropSurface>
             </li>
             {isOpen && isAddingChild && (
               <li>
@@ -184,6 +190,7 @@ function FolderGroupings({
                 projects={projects}
                 projectsEnabled={projectsEnabled}
                 onOpenProject={onOpenProject}
+                onDropNote={onDropNote}
               />
             )}
           </React.Fragment>
@@ -202,11 +209,13 @@ function TagGroupings({
   renamingTag,
   onRenameCommit,
   onRenameCancel,
+  onDropNote,
 }: {
   tags: Record<string, TagNode>;
   parentPath?: string;
   depth?: number;
   onNavigate: (grouping: Grouping) => void;
+  onDropNote: (noteId: string, tagPath: string) => void;
   onContextMenu: (e: React.MouseEvent, tagPath: string) => void;
   renamingTag: string | null;
   /** `newName` is the leaf name; the parent path is preserved by the caller. */
@@ -241,8 +250,8 @@ function TagGroupings({
         return (
           <React.Fragment key={fullPath}>
             <li>
-              {/* biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a supplementary affordance; all primary actions are reachable via the buttons inside this row */}
-              <div
+              <NoteDropSurface
+                dropId={tagDropId(fullPath)}
                 className={`flex w-full items-center gap-1 py-1 text-sm transition-colors ${
                   isActive
                     ? "bg-base-300 text-base-content"
@@ -250,6 +259,7 @@ function TagGroupings({
                 }`}
                 style={{ paddingLeft: depth * 12 + 8 }}
                 onContextMenu={(e) => onContextMenu(e, fullPath)}
+                onDropNote={(noteId) => onDropNote(noteId, fullPath)}
               >
                 <button
                   type="button"
@@ -294,7 +304,7 @@ function TagGroupings({
                     {count > 0 && <span className="shrink-0 text-xs opacity-40">{count}</span>}
                   </button>
                 )}
-              </div>
+              </NoteDropSurface>
             </li>
             {isOpen && hasChildren && (
               <TagGroupings
@@ -306,6 +316,7 @@ function TagGroupings({
                 renamingTag={renamingTag}
                 onRenameCommit={onRenameCommit}
                 onRenameCancel={onRenameCancel}
+                onDropNote={onDropNote}
               />
             )}
           </React.Fragment>
@@ -702,6 +713,18 @@ export function LeftColumn() {
     setTrashMenu({ x, y });
   }
 
+  function handleDropOnFolder(noteId: string, folderPath: string) {
+    const note = useNoteStore.getState().notes.find((item) => item.id === noteId);
+    if (!note) return;
+    void moveNoteToFolder(note, folderPath);
+  }
+
+  function handleDropOnTag(noteId: string, tagPath: string) {
+    const note = useNoteStore.getState().notes.find((item) => item.id === noteId);
+    if (!note) return;
+    void addTagFromDrop(note, tagPath);
+  }
+
   function handleFolderContextMenu(e: React.MouseEvent, folderPath: string) {
     e.preventDefault();
     e.stopPropagation();
@@ -804,7 +827,10 @@ export function LeftColumn() {
           <ul>
             {vaults.map((vault) => (
               <li key={vault.id} className="group">
-                <div
+                <NoteDropSurface
+                  enabled={activeVaultId === vault.id}
+                  dropId={folderDropId(vault.path)}
+                  onDropNote={(noteId) => handleDropOnFolder(noteId, vault.path)}
                   className={`flex items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
                     activeVaultId === vault.id
                       ? "bg-base-300 text-base-content"
@@ -835,7 +861,7 @@ export function LeftColumn() {
                   >
                     <Icon icon="uil:times" className="h-3 w-3" aria-hidden="true" />
                   </button>
-                </div>
+                </NoteDropSurface>
               </li>
             ))}
             {vaults.filter((vault) => syncPrefs(vault).enabled).length > 1 &&
@@ -894,6 +920,7 @@ export function LeftColumn() {
                 onCreate={() => setCreateProjectOpen(true)}
                 onCreateSectionNote={handleCreateNoteInFolder}
                 onContextMenu={handleFolderContextMenu}
+                onDropNote={handleDropOnFolder}
                 renamingFolderPath={renamingFolderPath}
                 onRenameCommit={handleRenameFolder}
                 onRenameCancel={() => setRenamingFolderPath(null)}
@@ -948,6 +975,7 @@ export function LeftColumn() {
                 projects={vaultProjects}
                 projectsEnabled={enableProjects}
                 onOpenProject={openProject}
+                onDropNote={handleDropOnFolder}
               />
             </ul>
 
@@ -964,6 +992,7 @@ export function LeftColumn() {
                       navigate({ view: "notes", selectedNoteId, selectedGrouping: grouping })
                     }
                     onContextMenu={handleTagContextMenu}
+                    onDropNote={handleDropOnTag}
                     renamingTag={renamingTag}
                     onRenameCommit={handleRenameTag}
                     onRenameCancel={() => setRenamingTag(null)}

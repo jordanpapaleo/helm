@@ -5,6 +5,8 @@ import { isArchived } from "../../lib/archive";
 import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { createNote, creationTargetFromUI } from "../../lib/create-note";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
+import { writeNoteDrag } from "../../lib/note-drag";
+import { moveNoteToFolder } from "../../lib/note-drop";
 import { notesForList, trashForList } from "../../lib/note-list";
 import { serializeNote } from "../../lib/note-parser";
 import { moveNoteToCategory } from "../../lib/project-actions";
@@ -135,19 +137,77 @@ export function NoteListPanel() {
     }
   }
 
-  async function handleMoveNote(note: Note, targetFolderPath: string) {
-    const newFilePath = `${targetFolderPath}/${note.fileName}`;
-    if (newFilePath === note.filePath) return;
-    try {
-      await tauriCommands.renameNote(note.filePath, newFilePath);
-      updateNote({
-        ...note,
-        filePath: newFilePath,
-        fileName: newFilePath.split("/").pop() ?? note.fileName,
-      });
-    } catch (e) {
-      reportError("Failed to move note", e);
-    }
+  function handleMoveNote(note: Note, targetFolderPath: string) {
+    void moveNoteToFolder(note, targetFolderPath);
+  }
+
+  function openNoteMenu(note: Note, x: number, y: number) {
+    setMenu({
+      x,
+      y,
+      items: [
+        {
+          kind: "action",
+          label: note.frontmatter.pinned ? "Unpin" : "Pin",
+          onClick: () => handlePinToggle(note),
+        },
+        {
+          kind: "action",
+          label: "Rename",
+          onClick: () => setRenamingNoteId(note.id),
+        },
+        {
+          kind: "action",
+          label: note.frontmatter.locked ? "Unlock" : "Lock",
+          onClick: () => handleFrontmatterToggle(note, "locked"),
+        },
+        {
+          kind: "action",
+          label: note.frontmatter.unmanaged ? "Mark Managed" : "Mark Unmanaged",
+          onClick: () => handleFrontmatterToggle(note, "unmanaged"),
+        },
+        {
+          kind: "submenu",
+          label: "Move to…",
+          items: allFolders.map((f) => ({
+            label: f.label,
+            onClick: () => handleMoveNote(note, f.path),
+          })),
+        },
+        ...(enableProjects &&
+        projectForPath(note.filePath, projects) &&
+        projectForPath(note.filePath, projects)?.mainPageId !== note.id
+          ? [
+              {
+                kind: "submenu" as const,
+                label: "Move to category",
+                items: PROJECT_CATEGORIES.map((category) => ({
+                  label: category.label,
+                  onClick: () => {
+                    void handleMoveToCategory(note, category.id);
+                  },
+                })),
+              },
+            ]
+          : []),
+        ...(note.frontmatter.locked
+          ? []
+          : [
+              { kind: "separator" as const },
+              {
+                kind: "action" as const,
+                label: isArchived(note.frontmatter) ? "Unarchive" : "Archive",
+                onClick: () => handleArchiveToggle(note),
+              },
+              {
+                kind: "action" as const,
+                label: "Delete",
+                danger: true,
+                onClick: () => handleDeleteNote(note),
+              },
+            ]),
+      ],
+    });
   }
 
   async function handleFrontmatterToggle(note: Note, field: "locked" | "unmanaged") {
@@ -369,76 +429,25 @@ export function NoteListPanel() {
                   ) : (
                     <button
                       type="button"
+                      draggable
+                      aria-haspopup="menu"
+                      aria-keyshortcuts="Shift+F10"
                       onClick={() => openNote(note.id)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setMenu({
-                          x: e.clientX,
-                          y: e.clientY,
-                          items: [
-                            {
-                              kind: "action",
-                              label: note.frontmatter.pinned ? "Unpin" : "Pin",
-                              onClick: () => handlePinToggle(note),
-                            },
-                            {
-                              kind: "action",
-                              label: "Rename",
-                              onClick: () => setRenamingNoteId(note.id),
-                            },
-                            {
-                              kind: "action",
-                              label: note.frontmatter.locked ? "Unlock" : "Lock",
-                              onClick: () => handleFrontmatterToggle(note, "locked"),
-                            },
-                            {
-                              kind: "action",
-                              label: note.frontmatter.unmanaged ? "Mark Managed" : "Mark Unmanaged",
-                              onClick: () => handleFrontmatterToggle(note, "unmanaged"),
-                            },
-                            {
-                              kind: "submenu",
-                              label: "Move to…",
-                              items: allFolders.map((f) => ({
-                                label: f.label,
-                                onClick: () => handleMoveNote(note, f.path),
-                              })),
-                            },
-                            ...(enableProjects &&
-                            projectForPath(note.filePath, projects) &&
-                            projectForPath(note.filePath, projects)?.mainPageId !== note.id
-                              ? [
-                                  {
-                                    kind: "submenu" as const,
-                                    label: "Move to category",
-                                    items: PROJECT_CATEGORIES.map((category) => ({
-                                      label: category.label,
-                                      onClick: () => {
-                                        void handleMoveToCategory(note, category.id);
-                                      },
-                                    })),
-                                  },
-                                ]
-                              : []),
-                            ...(note.frontmatter.locked
-                              ? []
-                              : [
-                                  { kind: "separator" as const },
-                                  {
-                                    kind: "action" as const,
-                                    label: isArchived(note.frontmatter) ? "Unarchive" : "Archive",
-                                    onClick: () => handleArchiveToggle(note),
-                                  },
-                                  {
-                                    kind: "action" as const,
-                                    label: "Delete",
-                                    danger: true,
-                                    onClick: () => handleDeleteNote(note),
-                                  },
-                                ]),
-                          ],
-                        });
+                      onDragStart={(event) => {
+                        if (!event.dataTransfer) return;
+                        writeNoteDrag(event.dataTransfer, note.id);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openNoteMenu(note, event.clientX, event.clientY);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
+                          return;
+                        event.preventDefault();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        openNoteMenu(note, rect.left, rect.bottom);
                       }}
                       className={`flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors ${
                         note.id === selectedNoteId ? "bg-base-300" : "hover:bg-base-200"

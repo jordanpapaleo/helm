@@ -55,10 +55,9 @@ describe("graphLinkStroke", () => {
     expect(graphLinkStroke("delete", sample)).not.toContain("75%");
   });
 
-  it("keeps resting edges thicker than a hairline and thicker than dimmed edges", () => {
-    expect(GRAPH_LINK_WIDTH.rest).toBeGreaterThanOrEqual(2);
-    expect(GRAPH_LINK_WIDTH.dim).toBeGreaterThanOrEqual(1.5);
-    expect(GRAPH_LINK_WIDTH.rest).toBeGreaterThan(GRAPH_LINK_WIDTH.dim);
+  it("draws resting edges at 1px so they do not overpower the notes", () => {
+    expect(GRAPH_LINK_WIDTH.rest).toBe(1);
+    expect(GRAPH_LINK_WIDTH.dim).toBeLessThanOrEqual(GRAPH_LINK_WIDTH.rest);
     expect(GRAPH_LINK_WIDTH.active).toBeGreaterThan(GRAPH_LINK_WIDTH.rest);
     expect(GRAPH_LINK_WIDTH.delete).toBeGreaterThan(GRAPH_LINK_WIDTH.active);
   });

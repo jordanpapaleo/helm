@@ -10,8 +10,8 @@ export type GraphLinkEmphasis = "rest" | "dim" | "active" | "delete";
 
 /** Screen pixels. react-force-graph divides by zoom, so these stay constant. */
 export const GRAPH_LINK_WIDTH: Record<GraphLinkEmphasis, number> = {
-  rest: 2,
-  dim: 1.5,
+  rest: 1,
+  dim: 1,
   active: 2.75,
   delete: 3.25,
 };

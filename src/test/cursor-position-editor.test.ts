@@ -1,6 +1,9 @@
 import type { AnyExtension } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
 import { describe, expect, it } from "vitest";
+import { BlockCommands } from "../components/editor/BlockCommands";
+import { ClearMarksOnEnter, HeadingKeyboardFix } from "../components/editor/editor-keyboard";
+import { CodeBlockGapCursor } from "../components/editor/extensions";
 import { FindReplaceExtension } from "../components/editor/findReplaceExtension";
 import { InlineTagExtension } from "../components/editor/InlineTag";
 import { MermaidSourceExtension } from "../components/editor/MermaidSource";
@@ -142,6 +145,10 @@ const INTERACTION_ONLY: AnyExtension[] = [
   WikiLinkExtension.configure({ suggestion: {} }),
   FindReplaceExtension,
   MermaidSourceExtension,
+  ClearMarksOnEnter,
+  HeadingKeyboardFix,
+  CodeBlockGapCursor,
+  BlockCommands,
 ];
 
 describe("markdownExtensions — the excluded extensions cannot affect text", () => {

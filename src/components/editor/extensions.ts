@@ -341,9 +341,10 @@ export function getEditorMarkdown(editor: Editor): string {
  * parse/serialize behaviour — i.e. everything that decides what text a document
  * contains once markdown has been parsed.
  *
- * NoteEditor composes this with its interaction-only extensions (Placeholder,
- * WikiLinkExtension, FindReplaceExtension, CodeBlockGapCursor, ClearMarksOnEnter,
- * HeadingKeyboardFix). Those are deliberately excluded: none of them registers a
+ * NoteEditor and the pinned-note editor compose this with interaction-only
+ * extensions (Placeholder, WikiLinkExtension, FindReplaceExtension,
+ * CodeBlockGapCursor, ClearMarksOnEnter, HeadingKeyboardFix). Those are
+ * deliberately excluded: none of them registers a
  * node, a mark, or a markdown spec, so none can change the text of a parsed
  * document.
  *

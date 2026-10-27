@@ -1,72 +1,7 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextSelection } from "@tiptap/pm/state";
-import { EditorContent, Extension, useEditor } from "@tiptap/react";
-import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
-import { richCodeBlock } from "./CodeBlockView";
-import {
-  CodeBlockGapCursor,
-  getEditorMarkdown,
-  handleTextPaste,
-  markdownExtensions,
-} from "./extensions";
-import { MermaidSourceExtension } from "./MermaidSource";
-
-// Convert a heading to a paragraph when Backspace is pressed at position 0.
-// Without this, pressing Backspace at the start of a heading is a no-op,
-// leaving the user unable to demote a heading without switching to raw markdown.
-const HeadingKeyboardFix = Extension.create({
-  name: "headingKeyboardFix",
-  addKeyboardShortcuts() {
-    return {
-      Backspace: ({ editor }) => {
-        const { $from } = editor.state.selection;
-        if ($from.parent.type.name !== "heading") return false;
-        if ($from.parentOffset !== 0) return false;
-        return editor.chain().setParagraph().run();
-      },
-    };
-  },
-});
-
-// Clear all marks when pressing Enter outside of lists/code blocks
-// so new lines never inherit bold, italic, etc.
-const ClearMarksOnEnter = Extension.create({
-  name: "clearMarksOnEnter",
-  addKeyboardShortcuts() {
-    return {
-      Enter: ({ editor }) => {
-        if (
-          editor.isActive("listItem") ||
-          editor.isActive("taskItem") ||
-          editor.isActive("codeBlock")
-        ) {
-          return false;
-        }
-        // When the line is a code fence (``` or ```lang), explicitly convert the
-        // current paragraph to a code block. Input rules only fire on text insertion,
-        // not on Enter, so we must handle this ourselves.
-        const { $from } = editor.state.selection;
-        const fenceMatch = /^```([a-z]*)$/.exec($from.parent.textContent.trim());
-        if (fenceMatch) {
-          const language = fenceMatch[1];
-          return editor
-            .chain()
-            .command(({ tr, state }) => {
-              // Clear the fence text (e.g. "```css") before converting the node
-              const { $from } = state.selection;
-              tr.delete($from.start(), $from.end());
-              return true;
-            })
-            .setCodeBlock({ language })
-            .run();
-        }
-        return editor.chain().splitBlock().unsetAllMarks().run();
-      },
-    };
-  },
-});
-
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { EditorContent, useEditor } from "@tiptap/react";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import {
   forwardRef,
@@ -80,6 +15,7 @@ import {
 } from "react";
 import { wikiLinkCandidates } from "../../lib/archive";
 import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-position";
+import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
@@ -91,8 +27,17 @@ import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import type { Note } from "../../types/note";
 import { BlockCommands } from "./BlockCommands";
+import { richCodeBlock } from "./CodeBlockView";
+import { ClearMarksOnEnter, HeadingKeyboardFix } from "./editor-keyboard";
+import {
+  CodeBlockGapCursor,
+  getEditorMarkdown,
+  handleTextPaste,
+  markdownExtensions,
+} from "./extensions";
 import { FindReplaceExtension } from "./findReplaceExtension";
 import { InlineTagExtension } from "./InlineTag";
+import { MermaidSourceExtension } from "./MermaidSource";
 import { WikiLinkExtension } from "./WikiLink";
 
 interface SuggestionPopup {

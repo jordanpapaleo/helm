@@ -5,9 +5,15 @@ import { useNoteStore } from "../store/notes";
 import { useSettingsStore } from "../store/settings";
 import type { Note } from "../types/note";
 import { GraphView } from "./GraphView";
-import { GRAPH_LINK_WIDTH, graphLinkStroke, readGraphLinkColors } from "./graph-link-style";
+import {
+  GRAPH_LINK_WIDTH,
+  graphLinkStroke,
+  readGraphCanvasBackground,
+  readGraphLinkColors,
+} from "./graph-link-style";
 
 interface CapturedGraph {
+  backgroundColor?: string;
   linkColor?: (link: object) => string;
   linkWidth?: (link: object) => number;
   onNodeHover?: (node: object | null) => void;
@@ -79,6 +85,12 @@ beforeEach(() => {
 });
 
 describe("GraphView link canvas edges", () => {
+  it("fills the canvas with the selected side-panel color", () => {
+    const { container } = render(<GraphView />);
+    expect(captured?.backgroundColor).toBe(readGraphCanvasBackground());
+    expect(container.querySelector(".bg-base-300")).not.toBeNull();
+  });
+
   it("paints resting edges at 80% opacity and a readable width", () => {
     render(<GraphView />);
     expect(captured?.linkColor?.(savedLink)).toBe(stroke("rest"));

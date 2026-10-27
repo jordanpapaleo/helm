@@ -25,6 +25,7 @@ import {
   type GraphLinkEmphasis,
   graphLinkEmphasis,
   graphLinkStroke,
+  readGraphCanvasBackground,
   readGraphLinkColors,
 } from "./graph-link-style";
 
@@ -448,7 +449,7 @@ export function GraphView() {
     [hoveredId, hoveredLinkKey],
   );
 
-  const bgColor = cssVar("--color-surface", "#1c1c1e");
+  const bgColor = readGraphCanvasBackground();
 
   // Tooltip text: show "Release to link →" during drag targeting, otherwise full note title
   const tooltipText = dragLinkTarget
@@ -460,7 +461,7 @@ export function GraphView() {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: canvas container tracks mouse position for tooltip only — no keyboard interaction needed */}
       <div
         ref={containerRef}
-        className="relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+        className="relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-base-300"
         style={{ cursor: isNodeHovered || hoveredLinkKey ? "pointer" : "default" }}
         onMouseMove={(e) => {
           const rect = containerRef.current?.getBoundingClientRect();

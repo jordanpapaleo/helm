@@ -39,6 +39,15 @@ function cssColor(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
+/**
+ * Canvas fill. Selected rows in the side panel use `bg-base-300`, which is
+ * `--color-base-300`. The diagram sits on that same color so nodes and lines
+ * are not lost on the page surface.
+ */
+export function readGraphCanvasBackground(): string {
+  return cssColor("--color-base-300", "oklch(95% 0 0)");
+}
+
 /** Theme colors the canvas can stroke. Custom properties stay unresolved in canvas. */
 export function readGraphLinkColors(): {
   baseContent: string;

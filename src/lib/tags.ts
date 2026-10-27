@@ -3,7 +3,7 @@
  *
  * Tags live in two places and the two must agree: `frontmatter.tags` and the
  * inline `#tag` occurrences in the markdown body. The editor's save path
- * (`MainPanel.handleSave`) reconciles the two through `mergeTagsOnSave` below,
+ * (`saveNoteContent`) reconciles the two through `mergeTagsOnSave` below,
  * which drops a tag once it disappears from the body — so rewriting only the
  * frontmatter would be silently reverted the next time the note is edited.
  * Every operation here therefore rewrites the body as well.

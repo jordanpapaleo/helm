@@ -1,23 +1,7 @@
 import { Editor } from "@tiptap/core";
-import { Extension } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
-
-// Inline the extension logic here so the test is self-contained.
-// This mirrors what will live in NoteEditor.tsx.
-const HeadingKeyboardFix = Extension.create({
-  name: "headingKeyboardFix",
-  addKeyboardShortcuts() {
-    return {
-      Backspace: ({ editor }) => {
-        const { $from } = editor.state.selection;
-        if ($from.parent.type.name !== "heading") return false;
-        if ($from.parentOffset !== 0) return false;
-        return editor.chain().setParagraph().run();
-      },
-    };
-  },
-});
+import { HeadingKeyboardFix } from "../components/editor/editor-keyboard";
 
 function makeEditor(content: string) {
   return new Editor({

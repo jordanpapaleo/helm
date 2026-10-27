@@ -15,17 +15,12 @@ import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
-import {
-  extractInlineTags,
-  extractWikiLinks,
-  normalizeContent,
-  serializeNote,
-} from "../../lib/note-parser";
+import { normalizeContent, serializeNote } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
+import { saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
-import { mergeTagsOnSave } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
@@ -389,24 +384,6 @@ export const MarkdownTextarea = forwardRef<
   );
 });
 
-// Extract absolute file paths from asset:// URLs embedded in markdown image tags.
-// http://asset.localhost/Users/foo/notes/assets/img.png → /Users/foo/notes/assets/img.png
-function extractAssetPaths(content: string): Set<string> {
-  const paths = new Set<string>();
-  for (const match of content.matchAll(/!\[.*?\]\(([^)]+)\)/g)) {
-    const src = match[1];
-    try {
-      const url = new URL(src);
-      if (url.hostname === "asset.localhost") {
-        paths.add(decodeURIComponent(url.pathname));
-      }
-    } catch {
-      /* not a URL, skip */
-    }
-  }
-  return paths;
-}
-
 /** True when the open note is a trash snapshot rather than a live file. */
 function viewingDeletedNote(): boolean {
   const id = useNoteStore.getState().selectedNoteId;
@@ -549,84 +526,9 @@ export function MainPanel() {
     };
   }, [startPdfExport]);
 
-  const syncHoldReported = useRef<string | null>(null);
-
   async function handleSave(content: string) {
     if (!selectedNote || viewingDeleted) return;
-    if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) {
-      if (syncHoldReported.current !== selectedNote.id) {
-        syncHoldReported.current = selectedNote.id;
-        reportError(
-          "Sync kept this note",
-          new Error(
-            "Your latest edits are still in the editor and were not written over the synced file.",
-          ),
-        );
-      }
-      return;
-    }
-
-    // Opening, focusing, or blurring a note is not a modification. Bail before
-    // touching disk so viewing a note never bumps `updated`. Edge newlines are
-    // normalized away because gray-matter reintroduces a leading "\n" on parse,
-    // so a strict === would let those phantom saves through.
-    if (normalizeContent(content) === normalizeContent(selectedNote.content)) return;
-
-    // Time machine: snapshot the current on-disk content before overwriting.
-    // Rust coalesces rapid autosaves (min 5 min between snapshots) and prunes
-    // old versions, so this is safe to fire on every save.
-    if (selectedVaultPath) {
-      tauriCommands
-        .snapshotNote(selectedVaultPath, selectedNote.id, selectedNote.filePath)
-        .catch(() => {
-          /* snapshotting must never block a save */
-        });
-    }
-
-    // Tags are merged, never recomputed. Reading a note unions the frontmatter
-    // list with the body's inline tags, so recomputing from the body alone
-    // would delete every tag set from the property panel and never typed as
-    // `#tag`. Comparing the pre-save body with the incoming one tells us which
-    // tags the user actually removed. See mergeTagsOnSave.
-    const mergedTags = mergeTagsOnSave(
-      selectedNote.frontmatter.tags,
-      extractInlineTags(selectedNote.content),
-      extractInlineTags(content),
-    );
-    const wikiTitles = extractWikiLinks(content);
-    const linkedIds = wikiTitles
-      .map(
-        (title) => notes.find((n) => n.frontmatter.title.toLowerCase() === title.toLowerCase())?.id,
-      )
-      .filter((id): id is string => id !== undefined && id !== selectedNote.id);
-
-    const updated = {
-      ...selectedNote,
-      content,
-      frontmatter: {
-        ...selectedNote.frontmatter,
-        tags: mergedTags,
-        links: linkedIds.length > 0 ? linkedIds : undefined,
-        updated: nowTimestamp(),
-      },
-    };
-    updateNote(updated);
-    try {
-      await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-    } catch (e) {
-      reportError("Failed to save note", e);
-    }
-
-    // Delete any asset files removed from this note since the last save
-    const oldPaths = extractAssetPaths(selectedNote.content);
-    const newPaths = extractAssetPaths(content);
-    for (const path of oldPaths) {
-      if (!newPaths.has(path)) {
-        tauriCommands.deleteAsset(path).catch(() => {
-          /* already gone, ignore */
-        });
-      }
-    }
+    await saveNoteContent(selectedNote, content);
   }
 
   // Live title update while typing in the property panel — patches only the

@@ -615,4 +615,36 @@ describe("PropertyPanel tags", () => {
     expect(screen.getByText("#ai-skills/command")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "New tag" })).not.toBeInTheDocument();
   });
+
+  it("saves the next tag on blur after Escape cancelled the previous entry", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [tags, setTags] = useState<string[]>([]);
+      return (
+        <PropertyPanel
+          frontmatter={makeFrontmatter({ tags })}
+          onChange={(updates) => {
+            if (Array.isArray(updates.tags)) setTags(updates.tags);
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    const cancelled = screen.getByRole("textbox", { name: "New tag" });
+    await user.type(cancelled, "discard-me");
+    // keyDown alone does not blur. Unmounting the focused field must not
+    // leave the next entry unable to save on blur.
+    fireEvent.keyDown(cancelled, { key: "Escape" });
+    expect(screen.queryByText("#discard-me")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "New tag" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    const next = screen.getByRole("textbox", { name: "New tag" });
+    await user.type(next, "kept");
+    fireEvent.blur(next);
+
+    expect(screen.getByText("#kept")).toBeInTheDocument();
+  });
 });

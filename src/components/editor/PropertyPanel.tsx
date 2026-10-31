@@ -438,7 +438,10 @@ function HeaderTags({
           type="button"
           aria-label="Add tag"
           className="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
-          onClick={() => setAdding(true)}
+          onClick={() => {
+            skipCommit.current = false;
+            setAdding(true);
+          }}
         >
           <Icon icon="uil:plus" className="h-3 w-3" aria-hidden="true" />
           Tag

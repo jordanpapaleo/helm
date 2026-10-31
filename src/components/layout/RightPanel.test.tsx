@@ -4,7 +4,7 @@ import { registerEditorDraft } from "../../lib/editor-draft";
 import { useExtensionsStore, validateExtensionPreferences } from "../../store/extensions";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
-import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
+import { pinNoteToSide, usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
 import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
@@ -54,23 +54,25 @@ beforeEach(() => {
   useUIStore.setState({ activeView: "notes", selectedGrouping: { type: "all", id: null } });
 });
 
-it("keeps the tool host, with a pin action, when nothing is pinned", () => {
+it("shows only the wrench in the header when nothing is pinned or enabled", () => {
   render(<RightPanel />);
   expect(screen.getByText("No tools enabled")).toBeInTheDocument();
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Pin to side" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Pin to side" })).not.toBeInTheDocument();
 });
 
 it("pins notes as tabs and keeps the pinned note while another note changes", async () => {
   render(<RightPanel />);
-  fireEvent.click(screen.getByRole("button", { name: "Pin to side" }));
+  act(() => pinNoteToSide("draft"));
   expect(await screen.findByRole("tab", { name: "Draft" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
 
-  act(() => useNoteStore.setState({ selectedNoteId: "todo" }));
-  fireEvent.click(screen.getByRole("button", { name: "Pin to side" }));
+  act(() => {
+    useNoteStore.setState({ selectedNoteId: "todo" });
+    pinNoteToSide("todo");
+  });
   expect(screen.getByRole("tab", { name: "Todo" })).toHaveAttribute("aria-selected", "true");
   expect(await screen.findByRole("article", { name: "Pinned note Todo" })).toHaveTextContent(
     "Buy milk",
@@ -135,30 +137,6 @@ it("moves between tabs from the keyboard and unpins back to the tool host", asyn
   fireEvent.click(screen.getByRole("button", { name: "Unpin Todo" }));
   expect(screen.getByText("No tools enabled")).toBeInTheDocument();
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-});
-
-it("does not pin a leftover selection outside the notes editor", () => {
-  useUIStore.setState({ activeView: "dashboard" });
-  const { unmount } = render(<RightPanel />);
-  const pin = screen.getByRole("button", { name: "Pin to side" });
-  expect(pin).toBeDisabled();
-  fireEvent.click(pin);
-  expect(usePinnedPanelStore.getState().noteIds).toEqual([]);
-  unmount();
-
-  useUIStore.setState({ activeView: "notes", selectedGrouping: { type: "trash", id: null } });
-  render(<RightPanel />);
-  expect(screen.getByRole("button", { name: "Pin to side" })).toBeDisabled();
-});
-
-it("disables the tab-strip pin when Kanban leaves the editor", () => {
-  usePinnedPanelStore.setState({ noteIds: ["todo"], activeId: "todo" });
-  useUIStore.setState({ activeView: "kanban" });
-  render(<RightPanel />);
-  const pin = screen.getByRole("button", { name: "Pin to side" });
-  expect(pin).toBeDisabled();
-  fireEvent.click(pin);
-  expect(usePinnedPanelStore.getState().noteIds).toEqual(["todo"]);
 });
 
 it("shows a preserved sync draft instead of the externally loaded note", async () => {
@@ -226,19 +204,13 @@ it("keeps a tool's settings when it is disabled and enabled again", () => {
   });
 });
 
-it("keeps note tabs on the left and tool icons on the right before the pin and wrench", async () => {
+it("keeps note tabs on the left and tool icons on the right before the wrench, without a pin button", async () => {
   useExtensionsStore.getState().setEnabled("claude-assistant", true);
   useExtensionsStore.getState().setEnabled("openai-assistant", true);
   usePinnedPanelStore.setState({ noteIds: ["todo"], activeId: "todo" });
   render(<RightPanel />);
   await screen.findByRole("article", { name: "Pinned note Todo" });
-  expect(toolbarLabels()).toEqual([
-    "Todo",
-    "OpenAI Assistant",
-    "Claude Assistant",
-    "Pin to side",
-    "Manage tools",
-  ]);
+  expect(toolbarLabels()).toEqual(["Todo", "OpenAI Assistant", "Claude Assistant", "Manage tools"]);
 });
 
 it("shows one tool panel at a time and keeps pinned notes beside the tools", async () => {

@@ -1,6 +1,5 @@
 import { Icon } from "@iconify/react";
 import type { KeyboardEvent } from "react";
-import { openEditorNote } from "../../lib/open-editor-note";
 import { useNoteStore } from "../../store/notes";
 import { unpinNoteFromSide, usePinnedPanelStore } from "../../store/pinned-panel";
 import { useToolsStore } from "../../store/tools";
@@ -8,7 +7,6 @@ import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
 import { type ToolExtension, useExtensions } from "../tools/extensions";
 import { PinnedNoteView } from "./PinnedNoteView";
-import { PinToSideButton } from "./PinToSideButton";
 
 const FOCUS_RING =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]";
@@ -95,17 +93,12 @@ function NoteTab({ note, selected }: { note: Note; selected: boolean }) {
 
 /**
  * Right panel. Pinned notes are tabs on the left; enabled tools are icon tabs
- * on the right, before the pin and wrench actions. One tab is visible at a time.
+ * on the right, before the wrench. One tab is visible at a time.
  */
 export function RightPanel() {
   const noteIds = usePinnedPanelStore((state) => state.noteIds);
   const activeId = usePinnedPanelStore((state) => state.activeId);
   const notes = useNoteStore((state) => state.notes);
-  const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
-  const activeView = useUIStore((state) => state.activeView);
-  const selectedGrouping = useUIStore((state) => state.selectedGrouping);
-  const openNoteId =
-    openEditorNote(notes, selectedNoteId, activeView, selectedGrouping)?.id ?? null;
   const tools = useExtensions().filter((tool) => tool.enabled);
   const pinned = noteIds
     .map((id) => notes.find((note) => note.id === id))
@@ -141,7 +134,6 @@ export function RightPanel() {
         ) : (
           <span className="flex-1" />
         )}
-        <PinToSideButton noteId={openNoteId} variant="toolbar" />
         <button
           type="button"
           className="workspace-toolbar-button"

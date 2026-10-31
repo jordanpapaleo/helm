@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTE_STATES } from "../../lib/constants";
 import { DEFAULT_LAYOUT } from "../../lib/workspace-layout";
@@ -370,5 +371,49 @@ describe("PropertyPanel header layout", () => {
       expect(button).toHaveFocus();
       expect(button).toBeEnabled();
     }
+  });
+});
+
+describe("PropertyPanel tags", () => {
+  function openTags(frontmatter = makeFrontmatter({ tags: ["work"] })) {
+    const onChange = vi.fn();
+    render(<PropertyPanel frontmatter={frontmatter} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+    const input = screen.getByPlaceholderText("work, work/project");
+    return { input, onChange };
+  }
+
+  it("commits an empty list when the last tag is cleared", () => {
+    const { input, onChange } = openTags();
+    expect(input).toHaveValue("work");
+
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenCalledWith({ tags: [] });
+  });
+
+  it("stays empty after the empty list is saved", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [tags, setTags] = useState(["work"]);
+      return (
+        <PropertyPanel
+          frontmatter={makeFrontmatter({ tags })}
+          onChange={(updates) => {
+            if (Array.isArray(updates.tags)) setTags(updates.tags);
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: /Properties/ }));
+    const input = screen.getByPlaceholderText("work, work/project");
+    await user.clear(input);
+    await user.tab();
+
+    expect(input).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: /Properties/ }));
+    expect(screen.queryByText("#work")).not.toBeInTheDocument();
   });
 });

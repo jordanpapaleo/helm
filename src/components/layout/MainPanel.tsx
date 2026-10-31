@@ -21,6 +21,7 @@ import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/p
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
+import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
@@ -569,8 +570,16 @@ export function MainPanel() {
       return;
     }
     if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
+    // An empty tag list is a real edit. Reading a note unions frontmatter with
+    // inline `#tag`s, so a tag left in the body would be parsed back in and the
+    // last one would look like it could not be removed. Strip only the tags
+    // the field dropped; a child the field still lists stays in the body.
+    const content = Array.isArray(updates.tags)
+      ? dropRemovedInlineTags(selectedNote.content, selectedNote.frontmatter.tags, updates.tags)
+      : selectedNote.content;
     const updated = {
       ...selectedNote,
+      content,
       frontmatter: {
         ...selectedNote.frontmatter,
         ...updates,

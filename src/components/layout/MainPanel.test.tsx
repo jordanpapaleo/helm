@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { parseNote } from "../../lib/note-parser";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { todayDate } from "../../lib/timestamps";
@@ -249,6 +250,93 @@ describe("MainPanel.handleSave — tags are merged, not recomputed", () => {
     expect(savedTags()).toEqual([]);
     const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
     expect(serialized).not.toContain("#work");
+  });
+});
+
+describe("MainPanel properties — removing the last tag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function clearTags() {
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+    const input = screen.getByPlaceholderText("work, work/project");
+    fireEvent.change(input, { target: { value: "" } });
+    await act(async () => {
+      fireEvent.blur(input);
+    });
+    return input;
+  }
+
+  it("saves an empty tag list when the last tag is cleared", async () => {
+    const note = makeNote({ content: "Plan #work today" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    const input = await clearTags();
+
+    expect(input).toHaveValue("");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(useNoteStore.getState().notes[0].content).toBe("Plan today");
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(serialized).toContain("tags: []");
+    expect(serialized).not.toContain("#work");
+    // Reading the file back unions frontmatter with inline tags. An empty list
+    // only sticks once the body no longer contains the tag.
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
+  });
+
+  it("does not bring the removed tag back on the next edit", async () => {
+    const note = makeNote({ content: "Plan #work today" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+    vi.mocked(tauriCommands.writeNote).mockClear();
+
+    const body = screen.getByDisplayValue("Plan today");
+    fireEvent.change(body, { target: { value: "Plan today, edited" } });
+    await act(async () => {
+      fireEvent.blur(body);
+    });
+
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
+  });
+
+  it("keeps a tag that is still in the field", async () => {
+    const note = makeNote({ content: "Plan #work and #home today" });
+    note.frontmatter.tags = ["work", "home"];
+    setup(note, true);
+
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+    const input = screen.getByPlaceholderText("work, work/project");
+    fireEvent.change(input, { target: { value: "home" } });
+    await act(async () => {
+      fireEvent.blur(input);
+    });
+
+    expect(input).toHaveValue("home");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual(["home"]);
+    expect(useNoteStore.getState().notes[0].content).toBe("Plan and #home today");
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual(["home"]);
+  });
+
+  it("saves an empty list for a frontmatter-only tag and leaves the body alone", async () => {
+    const note = makeNote({ content: "No inline tag here" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(useNoteStore.getState().notes[0].content).toBe("No inline tag here");
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(serialized).toContain("tags: []");
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
   });
 });
 

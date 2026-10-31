@@ -9,6 +9,7 @@ import {
 } from "react";
 import { isArchived } from "../../lib/archive";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
+import { resolveOutgoingLinks } from "../../lib/note-links";
 import { formatTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
 import type { NoteFrontmatter, NoteState } from "../../types/note";
@@ -16,6 +17,8 @@ import { PinToSideButton } from "../layout/PinToSideButton";
 
 interface PropertyPanelProps {
   frontmatter: NoteFrontmatter;
+  /** Body used to resolve [[wiki links]]. Falls back to the loaded note. */
+  content?: string;
   filePath?: string;
   onChange: (updates: Partial<NoteFrontmatter>) => void;
   onDelete?: () => void;
@@ -279,6 +282,7 @@ function TagsInput({
 
 export function PropertyPanel({
   frontmatter,
+  content,
   filePath,
   onChange,
   onDelete,
@@ -352,6 +356,11 @@ export function PropertyPanel({
     });
   }
   const { notes } = useNoteStore();
+  const linkBody = content ?? notes.find((n) => n.id === frontmatter.id)?.content ?? "";
+  const outgoingLinks = resolveOutgoingLinks(
+    { id: frontmatter.id, content: linkBody, frontmatter },
+    notes,
+  );
 
   const unmanaged = frontmatter.unmanaged ?? false;
   const archived = isArchived(frontmatter);
@@ -716,12 +725,12 @@ export function PropertyPanel({
           <TagsInput value={frontmatter.tags} onChange={onChange} />
 
           <Row label="Links">
-            {frontmatter.links && frontmatter.links.length > 0 ? (
+            {outgoingLinks.length > 0 ? (
               <div className="flex flex-wrap gap-1">
-                {frontmatter.links.map((id) => {
-                  const title = notes.find((n) => n.id === id)?.frontmatter.title ?? id;
+                {outgoingLinks.map((link) => {
+                  const title = notes.find((n) => n.id === link.id)?.frontmatter.title ?? link.id;
                   return (
-                    <span key={id} className="badge badge-ghost badge-sm">
+                    <span key={link.id} className="badge badge-ghost badge-sm">
                       {title}
                     </span>
                   );

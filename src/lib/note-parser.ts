@@ -103,6 +103,8 @@ export function normalizeContent(content: string): string {
  * resaved. Removing this would break wiki links in all of those notes, so it
  * stays until the vault can be assumed clean.
  *
+ * KEEP IN SYNC with mcp-server/links.ts extractWikiLinks.
+ *
  * @param content - The markdown content to search
  * @returns Array of unique wiki link target titles (deduplicated)
  * @example

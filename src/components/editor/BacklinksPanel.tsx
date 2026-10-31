@@ -1,4 +1,5 @@
 import { isArchived, visibleNotes } from "../../lib/archive";
+import { resolveOutgoingLinks } from "../../lib/note-links";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
 import type { Note } from "../../types/note";
@@ -22,14 +23,17 @@ export function BacklinksPanel({ note }: BacklinksPanelProps) {
 
   // Incoming links are discovery. Outgoing links stay visible even when the
   // target is archived, so an existing link can still open that note.
+  // Both directions use the same resolver as the graph and the properties panel.
   const backlinks = visibleNotes(
-    notes.filter((n) => n.id !== note.id && (n.frontmatter.links ?? []).includes(note.id)),
+    notes.filter(
+      (n) => n.id !== note.id && resolveOutgoingLinks(n, notes).some((link) => link.id === note.id),
+    ),
     showArchivedNotes,
   );
 
-  // Notes this note links TO (outgoing)
-  const outgoing = (note.frontmatter.links ?? [])
-    .map((id) => notes.find((n) => n.id === id))
+  // Notes this note links TO (outgoing). Archived targets stay in `notes`.
+  const outgoing = resolveOutgoingLinks(note, notes)
+    .map((link) => notes.find((n) => n.id === link.id))
     .filter((n): n is Note => n !== undefined);
 
   if (backlinks.length === 0 && outgoing.length === 0) return null;

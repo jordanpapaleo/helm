@@ -707,6 +707,7 @@ export function MainPanel() {
             )}
             <PropertyPanel
               frontmatter={selectedNote.frontmatter}
+              content={selectedNote.content}
               filePath={selectedNote.filePath}
               onChange={handleFrontmatterChange}
               onDelete={

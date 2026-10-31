@@ -44,13 +44,13 @@ Use `HELM_VAULTS` (comma-separated) instead of `HELM_VAULT`:
 | Tool | Description |
 |------|-------------|
 | `get_rules` | Vault conventions — call this first in any session |
-| `list_notes` | List notes with rich filtering (tag, state, quadrant, blocked, pinned, overdue, team member, vault, `project_id`). Excludes archived notes unless `include_archived` is true. Does not list Trash |
-| `read_note` | Full content + frontmatter + derived info (wiki links, inline tags, quadrant, overdue). Works for archived notes by ULID |
+| `list_notes` | List notes with rich filtering (tag, state, quadrant, blocked, pinned, overdue, team member, vault, `project_id`). `links` is the resolved id list. Excludes archived notes unless `include_archived` is true. Does not list Trash |
+| `read_note` | Full content + frontmatter + derived info (resolved link ids, wiki titles, inline tags, quadrant, overdue). Works for archived notes by ULID |
 | `resolve_note` | Turn a title into a ULID — use before linking. Excludes archived notes unless `include_archived` is true |
 | `search_notes` | Keyword search across title, content, tags with relevance ranking. Excludes archived notes unless `include_archived` is true |
 | `get_eisenhower` | Managed Prepare/Doing notes grouped into the 4 Eisenhower quadrants. Unmanaged notes are excluded. Pass `project_id` to limit to one project. Excludes archived notes unless `include_archived` is true |
 | `get_kanban` | Managed notes grouped by state (Prepare / Doing / Maintain / Done). Unmanaged notes are excluded. Pass `project_id` to limit to one project. Excludes archived notes unless `include_archived` is true |
-| `get_backlinks` | Find all notes that link TO a given note (inbound references). Archived sources are excluded unless `include_archived` is true |
+| `get_backlinks` | Notes whose resolved links include this id (saved id or matching [[wiki link]]). Archived sources are excluded unless `include_archived` is true |
 | `get_tag_tree` | Hierarchical tag tree with note counts. Counts exclude archived notes unless `include_archived` is true |
 
 ### Write tools
@@ -137,7 +137,7 @@ archived: false          # true hides the note from default queries; absent or f
 template: false          # true offers this note in New Note menus
 deadline: 2026-03-20     # YYYY-MM-DD — the only date-only field
 team: [Alice, Bob]
-links: [01JPMXYZ456]     # ULIDs of related notes. The link canvas writes these.
+links: [01JPMXYZ456]     # saved ULIDs. [[Note Title]] in the body is also a link.
 ---
 
 Markdown body. Use [[Note Title]] for wiki links and #tag for inline tags.
@@ -146,9 +146,11 @@ Write lists as normal Markdown. Do not put blank lines between items — Helm sp
 
 **Key rules:**
 - Always use ULIDs as identifiers, never filenames. A drag onto a folder renames the file and keeps the id. A drag onto a tag appends the tag and keeps the body.
+- A note's links are the saved `links` ids that still match a loaded note, plus `[[wiki links]]` whose text matches another note's title (case-insensitive). The graph, the note footer, and the properties Links field all show that union. Loading a note does not rewrite the file.
+- Renaming a note replaces `[[Old Title]]` with `[[New Title]]` in other notes' bodies and keeps those notes' `links` ids.
 - Call `resolve_note` before adding to `links`. Put `[[Exact Title]]` in the body as well: the editor rebuilds `links` from wiki links on the next body save, which drops canvas-only edges.
 - `created` and `updated` are quoted UTC timestamps (`YYYY-MM-DDTHH:MM:SSZ`). `deadline` stays `YYYY-MM-DD`.
-- `update_note` does a **shallow merge** — use `append_tags`/`append_links` to add without replacing. It does not rebuild `links` from the body.
+- `update_note` does a **shallow merge** — use `append_tags`/`append_links` to add without replacing. It does not rebuild `links` from the body. Changing the title rewrites `[[Old Title]]` in other notes and keeps their link ids.
 - `locked: true` notes are read-only — unlock in the Helm app first
 - `archived: true` keeps the note on disk (same id, file, content, tags, links, and history) but list/search/board/briefing tools skip it unless you pass `include_archived: true`. `read_note` and `update_note` still work by ULID. The Helm app's **Show archived notes** setting does not affect these tools — pass `include_archived` yourself. Set the flag with `update_note` (`frontmatter.archived`); that write is refused when the note is locked. Archive is not Trash and not `state: Done`.
 - `unmanaged: true` with `state: ""` keeps a note off Kanban, Eisenhower, and `get_briefing`. Thinking and Context notes start that way.

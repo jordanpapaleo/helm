@@ -4,6 +4,7 @@
  * full-text search index for note discovery.
  */
 import { create } from "zustand";
+import { replaceWikiLinkTitle } from "../lib/note-links";
 import { serializeNote, slugify } from "../lib/note-parser";
 import { buildIndex, type NoteIndex, noteMatchesQuery, searchNotes } from "../lib/search";
 import {
@@ -275,6 +276,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
 
   renameNote: async (note, newTitle) => {
     if (!newTitle || newTitle === note.frontmatter.title) return;
+    const oldTitle = note.frontmatter.title;
     const folder = note.filePath.split("/").slice(0, -1).join("/");
     const newFileName = `${slugify(newTitle)}.md`;
     const newFilePath = `${folder}/${newFileName}`;
@@ -290,6 +292,37 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     await tauriCommands.writeNote(note.filePath, serializeNote(updated));
     await tauriCommands.renameNote(note.filePath, newFilePath);
     get().updateNote(updated);
+
+    // Other notes keep pointing at this one. Rewrite [[Old Title]] in their
+    // bodies and leave their saved link ids alone, so a wiki-only link is not
+    // dropped and a frontmatter id is not removed.
+    const stamp = nowTimestamp();
+    const rewrites = get()
+      .notes.filter((item) => item.id !== note.id)
+      .flatMap((item) => {
+        const content = replaceWikiLinkTitle(item.content, oldTitle, newTitle);
+        if (content === item.content) return [];
+        return [
+          {
+            ...item,
+            content,
+            frontmatter: { ...item.frontmatter, updated: stamp },
+          },
+        ];
+      });
+    if (rewrites.length === 0) return;
+
+    const written = await writeRewrittenNotes(
+      rewrites,
+      get().vaults,
+      "Failed to update links after rename",
+    );
+    if (written.length === 0) return;
+    const byId = new Map(written.map((item) => [item.id, item]));
+    set((state) => {
+      const notes = state.notes.map((item) => byId.get(item.id) ?? item);
+      return { notes, tagTree: buildTagTree(notes), searchIndex: buildIndex(notes) };
+    });
   },
 
   renameFolder: async (oldPath, newName) => {

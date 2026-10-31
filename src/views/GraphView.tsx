@@ -13,7 +13,8 @@ import { forceX, forceY } from "d3-force-3d";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { isArchived, visibleNotes } from "../lib/archive";
-import { extractWikiLinks, serializeNote } from "../lib/note-parser";
+import { resolveOutgoingLinks } from "../lib/note-links";
+import { serializeNote } from "../lib/note-parser";
 import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
 import { useSettingsStore } from "../store/settings";
@@ -162,25 +163,13 @@ export function GraphView() {
   // ── Graph data + neighbor map ─────────────────────────────────────────
 
   const graphData = useMemo(() => {
-    const titleToId = new Map(notes.map((n) => [n.frontmatter.title.toLowerCase(), n.id]));
-
-    const links: GraphLink[] = notes.flatMap((n) => {
-      const savedLinks = (n.frontmatter.links ?? [])
-        .filter((targetId) => notes.some((t) => t.id === targetId))
-        .map((targetId) => ({ source: n.id, target: targetId, fromFrontmatter: true }));
-
-      const contentLinks = extractWikiLinks(n.content)
-        .map((title) => titleToId.get(title.toLowerCase()))
-        .filter(
-          (targetId): targetId is string =>
-            targetId !== undefined &&
-            targetId !== n.id &&
-            !savedLinks.some((l) => l.target === targetId),
-        )
-        .map((targetId) => ({ source: n.id, target: targetId, fromFrontmatter: false }));
-
-      return [...savedLinks, ...contentLinks];
-    });
+    const links: GraphLink[] = notes.flatMap((n) =>
+      resolveOutgoingLinks(n, notes).map((link) => ({
+        source: n.id,
+        target: link.id,
+        fromFrontmatter: link.fromFrontmatter,
+      })),
+    );
 
     const degreeCount = new Map<string, number>();
     for (const link of links) {

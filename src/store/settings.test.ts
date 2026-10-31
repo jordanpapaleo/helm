@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS } from "../lib/settings";
+import { DEFAULT_SETTINGS, normalizeSettings, noteFontFamily } from "../lib/settings";
 import { useSettingsStore } from "./settings";
 
 beforeEach(() => {
@@ -81,6 +81,21 @@ describe("useSettingsStore", () => {
       });
       expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("20px");
     });
+
+    it("round-trips the note font through localStorage and the note-text property", () => {
+      const { result } = renderHook(() => useSettingsStore());
+      expect(result.current.settings.noteFont).toBe("system");
+      act(() => {
+        result.current.updateSettings({ noteFont: "serif" });
+      });
+      expect(result.current.settings.noteFont).toBe("serif");
+      expect(result.current.settings.fontSize).toBe(DEFAULT_SETTINGS.fontSize);
+      const stored = JSON.parse(localStorage.getItem("helm-settings") ?? "null");
+      expect(normalizeSettings(stored).noteFont).toBe("serif");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(
+        noteFontFamily("serif"),
+      );
+    });
   });
 
   describe("resetSettings", () => {
@@ -118,6 +133,22 @@ describe("useSettingsStore", () => {
         result.current.resetSettings();
       });
       expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("16px");
+    });
+
+    it("clears a custom note font", () => {
+      const { result } = renderHook(() => useSettingsStore());
+      act(() => {
+        result.current.updateSettings({ noteFont: "mono" });
+      });
+      act(() => {
+        result.current.resetSettings();
+      });
+      expect(result.current.settings.noteFont).toBe(DEFAULT_SETTINGS.noteFont);
+      const stored = JSON.parse(localStorage.getItem("helm-settings") ?? "null");
+      expect(stored.noteFont).toBe("system");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(
+        noteFontFamily("system"),
+      );
     });
   });
 });

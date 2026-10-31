@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState } from "react";
+import { requestNotePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { createNote, creationTargetFromUI } from "../../lib/create-note";
@@ -15,6 +16,7 @@ import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash"
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp, timestampDate } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
+import { pinNoteToSide, unpinNoteFromSide, usePinnedPanelStore } from "../../store/pinned-panel";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -141,7 +143,23 @@ export function NoteListPanel() {
     void moveNoteToFolder(note, targetFolderPath);
   }
 
+  function copyFilePath(note: Note) {
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(note.filePath);
+      } catch (error) {
+        reportError("Failed to copy file path", error);
+      }
+    })();
+  }
+
+  function toggleRightPanel(note: Note) {
+    if (usePinnedPanelStore.getState().noteIds.includes(note.id)) unpinNoteFromSide(note.id);
+    else pinNoteToSide(note.id);
+  }
+
   function openNoteMenu(note: Note, x: number, y: number) {
+    const onRightPanel = usePinnedPanelStore.getState().noteIds.includes(note.id);
     setMenu({
       x,
       y,
@@ -165,6 +183,21 @@ export function NoteListPanel() {
           kind: "action",
           label: note.frontmatter.unmanaged ? "Mark Managed" : "Mark Unmanaged",
           onClick: () => handleFrontmatterToggle(note, "unmanaged"),
+        },
+        {
+          kind: "action",
+          label: "Copy file path",
+          onClick: () => copyFilePath(note),
+        },
+        {
+          kind: "action",
+          label: "Export as PDF",
+          onClick: () => requestNotePdfExport(note.id),
+        },
+        {
+          kind: "action",
+          label: onRightPanel ? "Unpin from Right panel" : "Add to Right panel",
+          onClick: () => toggleRightPanel(note),
         },
         {
           kind: "submenu",

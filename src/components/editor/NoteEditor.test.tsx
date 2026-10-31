@@ -56,6 +56,13 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
     vi.useRealTimers();
   });
 
+  it("applies the note font variable on the editor surface", () => {
+    render(<NoteEditor note={makeNote()} onSave={vi.fn()} />);
+    expect(document.querySelector(".ProseMirror")?.getAttribute("style")).toContain(
+      "font-family: var(--editor-font-family)",
+    );
+  });
+
   it("does not call onSave when a note is first opened", () => {
     const onSave = vi.fn();
     render(<NoteEditor note={makeNote()} onSave={onSave} />);

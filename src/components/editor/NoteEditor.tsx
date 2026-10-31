@@ -20,6 +20,7 @@ import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
+import { NOTE_CONTENT_STYLE } from "../../lib/settings";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
@@ -236,10 +237,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       () => ({
         attributes: {
           class: "prose max-w-none w-full outline-none min-h-[300px] text-[var(--color-text)]",
-          style: [
-            "font-size: var(--editor-font-size)",
-            "line-height: var(--editor-line-height)",
-          ].join("; "),
+          style: NOTE_CONTENT_STYLE,
         },
         // biome-ignore lint/suspicious/noExplicitAny: ProseMirror EditorView type not re-exported by tiptap
         handlePaste(view: any, event: ClipboardEvent) {

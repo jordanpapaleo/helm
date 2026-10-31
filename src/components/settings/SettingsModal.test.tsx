@@ -15,6 +15,37 @@ function openGeneralTab() {
   fireEvent.click(screen.getByRole("tab", { name: "General" }));
 }
 
+describe("SettingsModal note font", () => {
+  it("round-trips the choice and Restore Defaults clears it", () => {
+    render(<SettingsModal onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Typography" }));
+
+    const font = screen.getByLabelText("Font");
+    expect(font.tagName).toBe("SELECT");
+    font.focus();
+    expect(font).toHaveFocus();
+    expect(font).toHaveValue("system");
+
+    fireEvent.change(font, { target: { value: "serif" } });
+    expect(useSettingsStore.getState().settings.noteFont).toBe("serif");
+    expect(JSON.parse(localStorage.getItem("helm-settings") ?? "{}").noteFont).toBe("serif");
+    expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain(
+      "Georgia",
+    );
+
+    fireEvent.change(font, { target: { value: "papyrus" } });
+    expect(useSettingsStore.getState().settings.noteFont).toBe("serif");
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore Defaults" }));
+    expect(useSettingsStore.getState().settings.noteFont).toBe(DEFAULT_SETTINGS.noteFont);
+    expect(font).toHaveValue("system");
+    expect(JSON.parse(localStorage.getItem("helm-settings") ?? "{}").noteFont).toBe("system");
+    expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(
+      "var(--font-sans)",
+    );
+  });
+});
+
 describe("SettingsModal General tab toggles", () => {
   it("renders each setting as a labeled DaisyUI toggle at its default", () => {
     openGeneralTab();

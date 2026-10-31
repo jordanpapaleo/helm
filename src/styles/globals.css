@@ -8,6 +8,8 @@
   /* ── Editor typography — overridden at runtime by applySettings() */
   --editor-font-size: 16px;
   --editor-line-height: 1.7;
+  /* Note text only. Defaults to the same sans stack as the app chrome. */
+  --editor-font-family: var(--font-sans);
   --editor-max-width: 72ch;
 
   /* Single spacing unit used for all block-level bottom spacing */
@@ -112,6 +114,10 @@ body {
 }
 
 /* ── Prose — all text follows theme colors ───────────────────── */
+/* Note body face. More specific code/pre rules below keep --font-mono. */
+.prose {
+  font-family: var(--editor-font-family);
+}
 .prose,
 .prose p,
 .prose li,
@@ -576,6 +582,7 @@ ul[data-type="taskList"] ul[data-type="taskList"] {
    Page margins come from the native print settings (src-tauri/src/pdf.rs). */
 .print-root {
   display: none;
+  font-family: var(--editor-font-family);
 }
 @page {
   background-color: var(--color-base-100);

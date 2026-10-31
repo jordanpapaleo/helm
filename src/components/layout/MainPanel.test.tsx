@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { parseNote } from "../../lib/note-parser";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { todayDate } from "../../lib/timestamps";
@@ -23,6 +24,7 @@ vi.mock("../../lib/tauri-commands", () => ({
     listNoteHistory: vi.fn().mockResolvedValue([]),
     readNote: vi.fn().mockResolvedValue(""),
     renameNote: vi.fn().mockResolvedValue(undefined),
+    savePdfDialog: vi.fn().mockResolvedValue(null),
   },
 }));
 
@@ -40,6 +42,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 import { listen } from "@tauri-apps/api/event";
+import { requestNotePdfExport } from "../../hooks/usePdfExport";
 import { tauriCommands } from "../../lib/tauri-commands";
 
 const VAULT: VaultConfig = { id: "v1", name: "Vault", path: "/vault" };
@@ -249,6 +252,128 @@ describe("MainPanel.handleSave — tags are merged, not recomputed", () => {
     expect(savedTags()).toEqual([]);
     const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
     expect(serialized).not.toContain("#work");
+  });
+});
+
+describe("MainPanel properties — removing the last tag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function clearTags() {
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+    const input = screen.getByPlaceholderText("work, work/project");
+    fireEvent.change(input, { target: { value: "" } });
+    await act(async () => {
+      fireEvent.blur(input);
+    });
+    return input;
+  }
+
+  it("saves an empty tag list when the last tag is cleared", async () => {
+    const note = makeNote({ content: "Plan #work today" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    const input = await clearTags();
+
+    expect(input).toHaveValue("");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(useNoteStore.getState().notes[0].content).toBe("Plan today");
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(serialized).toContain("tags: []");
+    expect(serialized).not.toContain("#work");
+    // Reading the file back unions frontmatter with inline tags. An empty list
+    // only sticks once the body no longer contains the tag.
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
+  });
+
+  it("does not bring the removed tag back on the next edit", async () => {
+    const note = makeNote({ content: "Plan #work today" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+    vi.mocked(tauriCommands.writeNote).mockClear();
+
+    const body = screen.getByDisplayValue("Plan today");
+    fireEvent.change(body, { target: { value: "Plan today, edited" } });
+    await act(async () => {
+      fireEvent.blur(body);
+    });
+
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
+  });
+
+  it("keeps a tag that is still in the field", async () => {
+    const note = makeNote({ content: "Plan #work and #home today" });
+    note.frontmatter.tags = ["work", "home"];
+    setup(note, true);
+
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+    const input = screen.getByPlaceholderText("work, work/project");
+    fireEvent.change(input, { target: { value: "home" } });
+    await act(async () => {
+      fireEvent.blur(input);
+    });
+
+    expect(input).toHaveValue("home");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual(["home"]);
+    expect(useNoteStore.getState().notes[0].content).toBe("Plan and #home today");
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual(["home"]);
+  });
+
+  it("saves an empty list for a frontmatter-only tag and leaves the body alone", async () => {
+    const note = makeNote({ content: "No inline tag here" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(useNoteStore.getState().notes[0].content).toBe("No inline tag here");
+    const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
+    expect(serialized).toContain("tags: []");
+    expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
+  });
+
+  it("snapshots the on-disk note before a tag edit rewrites the body", async () => {
+    const order: string[] = [];
+    vi.mocked(tauriCommands.snapshotNote).mockImplementation(async () => {
+      order.push("snapshot");
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async () => {
+      order.push("write");
+    });
+
+    const note = makeNote({ content: "- [ ] #work\n- [x] keep" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+
+    expect(useNoteStore.getState().notes[0].content).toBe("- [x] keep");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(order).toEqual(["snapshot", "write"]);
+    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", note.id, note.filePath);
+  });
+
+  it("still saves the rewritten body when the snapshot fails", async () => {
+    vi.mocked(tauriCommands.snapshotNote).mockRejectedValue(new Error("history unwritable"));
+    const note = makeNote({ content: "- #work\n- keep" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+
+    expect(useNoteStore.getState().notes[0].content).toBe("- keep");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1149,7 +1274,31 @@ describe("MainPanel deleted notes", () => {
   });
 });
 
+describe("MainPanel PDF export request", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("runs the existing export for the note the list menu asked for", async () => {
+    vi.mocked(tauriCommands.savePdfDialog).mockResolvedValue(null);
+    setup(makeNote(), true);
+    await act(async () => {
+      requestNotePdfExport("01JPMXYZ123");
+    });
+    await waitFor(() => {
+      expect(tauriCommands.savePdfDialog).toHaveBeenCalledWith("Test Note.pdf");
+    });
+  });
+});
+
 describe("MarkdownTextarea replace", () => {
+  it("uses the note font variable instead of a fixed monospace face", () => {
+    render(<MarkdownTextarea noteId="n1" vaultPath="/vault" content="hello" onSave={vi.fn()} />);
+    expect(screen.getByDisplayValue("hello")).toHaveStyle({
+      fontFamily: "var(--editor-font-family)",
+    });
+  });
+
   it("ignores replaceContent while locked and applies it again after unlock", () => {
     vi.useFakeTimers();
     try {

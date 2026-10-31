@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useState } from "react";
+import { isNoteFont, NOTE_FONTS } from "../../lib/settings";
 import { THEMES } from "../../lib/themes";
 import { useSettingsStore } from "../../store/settings";
 import { useThemeStore } from "../../store/theme";
@@ -162,6 +163,32 @@ function TypographyTab() {
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="flex items-center gap-4">
+        <label
+          htmlFor="note-font"
+          className="shrink-0 text-right text-sm opacity-50"
+          style={{ width: "9rem" }}
+        >
+          Font
+        </label>
+        <div className="min-w-0 flex-1">
+          <select
+            id="note-font"
+            value={settings.noteFont}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (isNoteFont(next)) updateSettings({ noteFont: next });
+            }}
+            className="select w-full"
+          >
+            {NOTE_FONTS.map((font) => (
+              <option key={font.id} value={font.id} style={{ fontFamily: font.family }}>
+                {font.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
       <SliderRow
         label="Font Size"
         value={settings.fontSize}
@@ -180,6 +207,16 @@ function TypographyTab() {
         unit="em"
         onChange={(lineHeight) => updateSettings({ lineHeight })}
       />
+      <p
+        className="rounded-lg border border-base-300 bg-base-100 px-4 py-3 text-[var(--color-text)]"
+        style={{
+          fontFamily: "var(--editor-font-family)",
+          fontSize: "var(--editor-font-size)",
+          lineHeight: "var(--editor-line-height)",
+        }}
+      >
+        The quick brown fox jumps over the lazy dog.
+      </p>
 
       <div className="mt-2 border-t border-base-300 pt-4">
         <button type="button" onClick={resetSettings} className="btn btn-ghost btn-sm">

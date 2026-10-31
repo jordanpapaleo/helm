@@ -15,6 +15,7 @@ import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { saveNoteContent } from "../../lib/save-note";
+import { NOTE_CONTENT_STYLE } from "../../lib/settings";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
@@ -88,9 +89,7 @@ function PinnedNoteBody({
   const editorProps = useRef({
     attributes: {
       class: "prose max-w-none w-full min-h-16 text-[var(--color-text)] outline-none",
-      style: ["font-size: var(--editor-font-size)", "line-height: var(--editor-line-height)"].join(
-        "; ",
-      ),
+      style: NOTE_CONTENT_STYLE,
       "aria-label": `${title} content`,
     },
     handlePaste(view: EditorView, event: ClipboardEvent) {

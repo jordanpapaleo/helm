@@ -281,23 +281,27 @@ ARCHIVED NOTES
 FRONTMATTER FIELDS
 • id: ULID (system-generated, never change)
 • title: string
-• created / updated: YYYY-MM-DD (updated is set automatically on every write)
+• created / updated: UTC timestamp at seconds precision, 'YYYY-MM-DDTHH:MM:SSZ', quoted so YAML does not turn it into a Date. updated is set automatically on every write. A legacy date-only value sorts as that day's start and is migrated only when the note is written.
 • tags: string[] — e.g. ["work", "work/project"]. Tags are hierarchical with '/'.
 • urgent / important: boolean — Eisenhower matrix axes
-• state: "Prepare" | "Doing" | "Maintain" | "Done"
+• state: "Prepare" | "Doing" | "Maintain" | "Done" | "" (empty only when unmanaged: true)
 • blocked: boolean — note is blocked from progress
 • locked: boolean — note is read-only (only changeable in the Helm app)
-• pinned: boolean — floats to top of lists
+• pinned: boolean — floats to the top of lists when Helm's "Pinned notes float" setting is on (the default). It does not move the file or change state.
 • archived: boolean — true hides the note from default queries; absent or false means active. See ARCHIVED NOTES.
-• template: boolean — when true, Helm lists this note in New Note menus. Absent means false.
+• unmanaged: boolean — true with state "" keeps the note off Kanban, Eisenhower, and the briefing. Thinking and Context notes start this way.
+• template: boolean — when true, Helm lists this note in New Note menus. Absent means false. Notes in Trash are not offered.
   A note created from a template copies the title, the body, and the tags. It does not copy
-  state, urgent, important, blocked, pinned, locked, or links. The new note keeps its own id,
-  created, and updated, and sets template: false. Workflow fields stay blank unless creation
-  context sets them (a Kanban column sets state, an Eisenhower cell sets urgent/important, a
-  selected tag is applied). Those come from where the note was created, never from the template.
-• deadline: YYYY-MM-DD
+  state, urgent, important, blocked, pinned, locked, links, deadline, team, unmanaged, or order
+  fields. The new note keeps its own id, created, and updated, and sets template: false.
+  Workflow fields stay blank unless creation context sets them (a Kanban column sets state, an
+  Eisenhower cell sets urgent/important, a selected tag is applied, Thinking or Context sets
+  unmanaged). Those come from where the note was created, never from the template.
+• deadline: YYYY-MM-DD (a calendar date, not a timestamp)
 • team: string[] — team member names (freeform strings)
 • links: string[] — ULIDs of linked notes (outbound graph edges)
+• kanbanOrder / eisenhowerOrder: number — drag order inside a column or quadrant. Leave them alone unless you are reordering that board.
+• Do not invent other fields. A project main page may also store purpose, plan, nextAction, leftOff, and blockers (strings).
 
 TAGS
 • Tags go in the frontmatter 'tags' array AND/OR inline in the body as #tag or #parent/child.
@@ -305,14 +309,17 @@ TAGS
 • Hierarchical tags use '/' — e.g. "work/project/alpha" appears nested under "work/project" under "work".
 • To APPEND tags without losing existing ones, use append_tags in update_note. Don't replace the full array.
 
-LINKS
-• The 'links' frontmatter field stores ULIDs of related notes (outbound edges).
-• Use [[Note Title]] syntax in the body for inline wiki links — Helm resolves these to IDs on open.
-• To APPEND links without losing existing ones, use append_links in update_note.
-• Always resolve titles to ULIDs with resolve_note before adding to 'links'.
+LINKS AND THE LINK CANVAS
+• The 'links' frontmatter field stores ULIDs of related notes (outbound edges). The graph draws those, plus any [[Note Title]] in the body whose title matches a note.
+• Dragging one node onto another on the link canvas appends the target ULID to 'links'. It does not write a wiki link. Clicking an edge that came from 'links' removes that ULID. An edge that exists only as a [[wiki link]] is not removed by that click.
+• The Helm editor, on a body save, rebuilds 'links' from [[Note Title]] only. A canvas-only edge disappears on that save unless the body also contains [[Exact Title]] (case-insensitive).
+• update_note does not rebuild 'links' from the body. To add an edge, use append_links with a ULID from resolve_note, and put [[Exact Title]] in the body if the edge should survive an editor save.
+• Always resolve titles to ULIDs with resolve_note before adding to 'links'. Never store filenames or titles in 'links'.
 
 DATES
-• All dates must be YYYY-MM-DD. Full ISO 8601 timestamps are not accepted.
+• created and updated are UTC timestamps: 'YYYY-MM-DDTHH:MM:SSZ'. Quote them. Do not write a local offset.
+• deadline is the only date-only field: YYYY-MM-DD.
+• A date-only created/updated is legacy. It still sorts, as that day's start. New writes use the timestamp.
 
 SHALLOW MERGE
 • update_note does a shallow merge of frontmatter fields.
@@ -331,13 +338,28 @@ PROTECTED FIELDS
 • id and locked can never be changed via the MCP server — changes will be silently ignored.
 
 NOTE HISTORY (TIME MACHINE)
-• Every update_note and delete_note automatically snapshots the previous version first.
-• Snapshots live in <vault>/.helm-history/<note-id>/ — shared with the Helm app's own history.
-• Use get_note_history → read_note_version → restore_note_version to inspect or roll back.
-• Restores are themselves snapshotted, so they are always undoable.
+• Every update_note and delete_note snapshots the previous version first. The app does the same on content saves.
+• Snapshots live in <vault>/.helm-history/<note-id>/<epoch-ms>.md — hidden, shared with the app. Do not put notes there, and do not edit snapshot files.
+• Coalesced to one snapshot per 5 minutes, 50 kept. Deletes and restores force a snapshot.
+• Use get_note_history → read_note_version → restore_note_version to inspect or roll back a note that still exists. Restores snapshot the current file first, so they are undoable, and they keep id and locked.
+• Those tools look up the live file. They cannot open history for a note delete_note has already removed.
+
+TRASH VERSUS DELETE
+• Helm Trash is not a vault folder and not .helm-history. The app copies the note into its own Trash, then removes the file. Restore writes that copy back. Permanent delete drops the copy.
+• delete_note removes the file and does not put it in Trash. The history snapshot is not reachable from these tools once the file is gone. Prefer archived: true unless the user asked to delete. Never create a Trash folder.
+
+DRAG TO A FOLDER OR A TAG
+• Dropping a note on a folder renames the file into that folder. id, body, links, history, and workflow fields stay. There is no folder field — the path is the location. Project membership is that folder.
+• Dropping a note on a tag appends the tag and leaves the body unchanged. A locked note refuses the tag. A tag the note already has is a no-op.
+• create_note writes at the vault root. capture_to_thinking and move_note_to_category place a note in a project section. Any other move is a rename that must keep the id.
+
+LIST SPACING
+• Write ordinary Markdown lists. Do not insert blank lines between items — a blank line splits the list. Helm draws the gap with --spacing-list-item (0.5em). Nested lists stay tight; do not add HTML or blank lines to fix indent spacing.
 
 DAILY DIGEST
-• Prefer get_briefing over assembling overdue/blocked/doing state from multiple list_notes calls.
+• Prefer get_briefing over assembling overdue, blocked, and Doing state from multiple list_notes calls.
+• It returns overdue deadlines, deadlines due within 7 days, blocked notes, notes in Doing, and Doing notes untouched for 14 or more days.
+• Unmanaged notes are excluded. Archived notes are excluded unless include_archived is true. Pass project_id to limit it to one project.
 
 PROJECTS
 • A project is a folder with helm-project.json at its root. The id in that file is the project identity — never the folder name.
@@ -347,8 +369,9 @@ PROJECTS
 • Thinking and Context notes are created unmanaged (state cleared) so they stay off Kanban, Eisenhower, and the briefing until someone marks them managed.
 • Features and Bugs classify the note. Creating one does not set state to Doing. Moving a note between categories renames the file only — id, content, links, history, and workflow fields stay as they are.
 • The main page stays at the project root. Its overview fields are purpose, plan, nextAction, leftOff, and blockers.
-• list_notes, get_kanban, get_eisenhower, and get_briefing accept project_id. Unmanaged notes stay off those boards and the briefing.
+• list_notes, get_kanban, get_eisenhower, and get_briefing accept project_id. Unmanaged notes stay off those boards and the briefing. list_notes still returns them.
 • The Helm app's Enable Projects setting only hides navigation. These tools still read and write project files.
+• Do not change the id inside helm-project.json, and do not nest a project inside another.
 `.trim();
 
 // ── Server ────────────────────────────────────────────────────────────────────
@@ -379,7 +402,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_notes",
       description:
-        "List notes with their metadata and a short preview. Supports rich filtering. Archived notes are excluded unless include_archived is true. Returns summaries — use read_note for full content.",
+        "List notes with their metadata and a short preview. Supports rich filtering, including pinned notes and project_id (notes inside that project folder). Archived notes are excluded unless include_archived is true. Deleted notes are absent — Trash is not a vault folder. Returns summaries — use read_note for full content.",
       inputSchema: {
         type: "object",
         properties: {
@@ -396,7 +419,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           urgent: { type: "boolean" },
           important: { type: "boolean" },
           blocked: { type: "boolean", description: "Filter by blocked status." },
-          pinned: { type: "boolean", description: "Filter to pinned notes only." },
+          pinned: {
+            type: "boolean",
+            description:
+              "Filter by pinned. Pinned notes float to the top of Helm lists when Pinned notes float is on (the default).",
+          },
           locked: { type: "boolean", description: "Filter to locked (read-only) notes." },
           overdue: {
             type: "boolean",
@@ -463,13 +490,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "get_eisenhower",
       description:
-        "Get all active notes (state=Prepare or Doing) grouped into the four Eisenhower quadrants: do, schedule, delegate, eliminate. Archived notes are excluded unless include_archived is true.",
+        "Get managed notes in Prepare or Doing, grouped into the four Eisenhower quadrants: do, schedule, delegate, eliminate. Unmanaged notes are excluded. Pass project_id to limit to one project. Archived notes are excluded unless include_archived is true.",
       inputSchema: { type: "object", properties: { ...PROJECT_ID_ARG, ...INCLUDE_ARCHIVED } },
     },
     {
       name: "get_kanban",
       description:
-        "Get all notes grouped by workflow state (Prepare, Doing, Maintain, Done). Unmanaged notes are excluded. Archived notes are excluded unless include_archived is true.",
+        "Get managed notes grouped by workflow state (Prepare, Doing, Maintain, Done). Unmanaged notes are excluded. Pass project_id to limit to one project. Archived notes are excluded unless include_archived is true.",
       inputSchema: { type: "object", properties: { ...PROJECT_ID_ARG, ...INCLUDE_ARCHIVED } },
     },
     {
@@ -494,7 +521,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "create_note",
       description:
-        "Create a new note in the vault. Read get_rules first. Use resolve_note to get ULIDs before setting links.",
+        "Create a new note at the vault root. Read get_rules first. Use resolve_note to get ULIDs before setting links. This tool does not choose a folder — use capture_to_thinking or move_note_to_category for a project section.",
       inputSchema: {
         type: "object",
         properties: {
@@ -530,7 +557,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           pinned: {
             type: "boolean",
             default: false,
-            description: "Pin this note to the top of lists.",
+            description:
+              "Pin this note so it floats to the top of lists when Helm's Pinned notes float setting is on (the default).",
           },
           deadline: { type: "string", description: "Due date in YYYY-MM-DD format." },
           team: {
@@ -541,7 +569,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           created: {
             type: "string",
             description:
-              "Creation date in YYYY-MM-DD. Defaults to today. Set this when bulk-importing historical notes.",
+              "Creation timestamp, UTC, seconds precision: YYYY-MM-DDTHH:MM:SSZ. A date-only YYYY-MM-DD is accepted as that day's start. Defaults to now. Set this when bulk-importing historical notes.",
           },
           vault: {
             type: "string",
@@ -575,7 +603,7 @@ Read get_rules for full merge semantics.`,
           frontmatter: {
             type: "object",
             description:
-              "Frontmatter fields to shallow-merge in. Safe fields: title, tags, links, urgent, important, state, blocked, pinned, archived, template, deadline, team. Protected: id, locked (ignored if provided).",
+              'Frontmatter fields to shallow-merge in. Safe fields: title, tags, links, urgent, important, state, blocked, pinned, archived, unmanaged, template, deadline, team. Set unmanaged true together with state "" to keep a note off the boards and the briefing. Protected: id, locked (ignored if provided). Leave kanbanOrder and eisenhowerOrder unless reordering a board.',
           },
           append_tags: {
             type: "array",
@@ -594,7 +622,7 @@ Read get_rules for full merge semantics.`,
     {
       name: "delete_note",
       description:
-        "Delete a note from disk. Refuses if the note is locked. A snapshot is kept in note history first, so the note can be recovered with get_note_history + restore_note_version.",
+        "Remove a note file. This is not Helm Trash — Trash is an in-app copy this server cannot write, and history tools cannot open a note once its file is gone. A snapshot is still written to .helm-history first. Prefer frontmatter.archived unless the user asked to delete. Refuses if the note is locked.",
       inputSchema: {
         type: "object",
         properties: {
@@ -606,7 +634,7 @@ Read get_rules for full merge semantics.`,
     {
       name: "get_note_history",
       description:
-        "List a note's history snapshots (newest first). Snapshots are taken automatically before every write — by both the Helm app and this server.",
+        "List a note's history snapshots (newest first). Snapshots are taken automatically before every write — by both the Helm app and this server. The note file must still exist; a note removed by delete_note cannot be listed.",
       inputSchema: {
         type: "object",
         properties: {
@@ -644,7 +672,7 @@ Read get_rules for full merge semantics.`,
     {
       name: "get_briefing",
       description:
-        "One-call daily digest: overdue deadlines, deadlines due within 7 days, blocked notes, notes in Doing, and Doing notes untouched for 14+ days. Prefer this over assembling the picture from multiple list_notes calls. Unmanaged notes are excluded. Archived notes are excluded unless include_archived is true.",
+        "One-call daily digest: overdue deadlines, deadlines due within 7 days, blocked notes, notes in Doing, and Doing notes untouched for 14+ days. Prefer this over assembling the picture from multiple list_notes calls. Unmanaged notes are excluded. Pass project_id to limit to one project. Archived notes are excluded unless include_archived is true.",
       inputSchema: { type: "object", properties: { ...PROJECT_ID_ARG, ...INCLUDE_ARCHIVED } },
     },
     {
@@ -1216,7 +1244,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    // Force a snapshot (minAge 0) so a delete is always recoverable via history
+    // Force a snapshot (minAge 0). The file is removed next, and history tools
+    // only open a note that still exists, so this copy is on disk only.
     try {
       snapshotNoteFile(vaultPathFor(note), id, note.filePath, 0);
     } catch {
@@ -1229,7 +1258,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: "text",
-          text: `Deleted: "${note.frontmatter.title}" (${id}). A snapshot was kept — recoverable via get_note_history/restore_note_version.`,
+          text: `Deleted: "${note.frontmatter.title}" (${id}). The file is gone and was not moved to Helm Trash. A snapshot was written under .helm-history, but get_note_history cannot open a note whose file is gone.`,
         },
       ],
     };

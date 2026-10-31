@@ -1,12 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { bindNotePdfExport } from "../../hooks/usePdfExport";
 import { parseNote } from "../../lib/note-parser";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { tauriCommands } from "../../lib/tauri-commands";
+import { DEFAULT_LAYOUT } from "../../lib/workspace-layout";
+import { useLayoutStore } from "../../store/layout";
 import { useNoteStore } from "../../store/notes";
+import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
+import { useToastStore } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
@@ -561,5 +567,132 @@ describe("NoteListPanel — move into a project", () => {
     expect(moved?.frontmatter.links).toEqual(["01OTHER"]);
     expect(moved?.content).toBe("Keep this body");
     expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+  });
+});
+
+describe("NoteListPanel — note menu actions", () => {
+  const exportNote = vi.fn();
+  let releaseExport: (() => void) | undefined;
+
+  function installClipboard(writeText: ReturnType<typeof vi.fn>) {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+  }
+
+  function openFromKeyboard() {
+    const row = screen.getByRole("button", { name: /Note/ });
+    fireEvent.keyDown(row, { key: "F10", shiftKey: true });
+  }
+
+  async function activate(user: ReturnType<typeof userEvent.setup>, label: string) {
+    openFromKeyboard();
+    const menu = screen.getByRole("menu");
+    await waitFor(() => expect(screen.getAllByRole("menuitem")[0]).toHaveFocus());
+    let guard = 0;
+    while (screen.getByRole("menuitem", { name: label }) !== document.activeElement && guard < 12) {
+      fireEvent.keyDown(menu, { key: "ArrowDown" });
+      guard += 1;
+    }
+    expect(screen.getByRole("menuitem", { name: label })).toHaveFocus();
+    await user.keyboard("{Enter}");
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    exportNote.mockReset();
+    releaseExport?.();
+    releaseExport = bindNotePdfExport(exportNote);
+    resetStores(makeNote());
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+    useProjectStore.setState({ projects: [] });
+    usePinnedPanelStore.setState({ noteIds: [], activeId: WRITER_TAB });
+    useLayoutStore.setState({ preferences: DEFAULT_LAYOUT, priority: "left" });
+    useToastStore.setState({ toasts: [] });
+    localStorage.removeItem("helm-pinned-panel");
+    localStorage.removeItem("helm-layout");
+  });
+
+  it("lists the new actions with the rest of the note menu", () => {
+    render(<NoteListPanel />);
+    openFromKeyboard();
+    const labels = screen
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent?.replace("▶", ""));
+    expect(labels).toEqual([
+      "Pin",
+      "Rename",
+      "Lock",
+      "Mark Unmanaged",
+      "Copy file path",
+      "Export as PDF",
+      "Add to Right panel",
+      "Move to…",
+      "Archive",
+      "Delete",
+    ]);
+  });
+
+  it("copies the note file path from the keyboard", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    installClipboard(writeText);
+    render(<NoteListPanel />);
+
+    await activate(user, "Copy file path");
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("/vault/note.md"));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("reports a clipboard failure", async () => {
+    const user = userEvent.setup();
+    installClipboard(vi.fn().mockRejectedValue(new Error("denied")));
+    render(<NoteListPanel />);
+
+    await activate(user, "Copy file path");
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts[0]?.message).toContain("Failed to copy file path");
+    });
+  });
+
+  it("exports that note through the existing PDF export", async () => {
+    const user = userEvent.setup();
+    render(<NoteListPanel />);
+
+    await activate(user, "Export as PDF");
+
+    expect(exportNote).toHaveBeenCalledWith("01JPMXYZ123");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("pins the note in the right panel without changing the list pin", async () => {
+    const user = userEvent.setup();
+    const note = makeNote({ pinned: true });
+    resetStores(note);
+    render(<NoteListPanel />);
+
+    await activate(user, "Add to Right panel");
+
+    expect(usePinnedPanelStore.getState().noteIds).toEqual(["01JPMXYZ123"]);
+    expect(useLayoutStore.getState().preferences.rightOpen).toBe(true);
+    expect(useNoteStore.getState().notes[0]?.frontmatter.pinned).toBe(true);
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+  });
+
+  it("unpins a note that is already in the right panel", async () => {
+    const user = userEvent.setup();
+    usePinnedPanelStore.setState({ noteIds: ["01JPMXYZ123"], activeId: "01JPMXYZ123" });
+    render(<NoteListPanel />);
+    openFromKeyboard();
+
+    expect(screen.getByRole("menuitem", { name: "Unpin from Right panel" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Add to Right panel" })).not.toBeInTheDocument();
+
+    await activate(user, "Unpin from Right panel");
+
+    expect(usePinnedPanelStore.getState().noteIds).toEqual([]);
   });
 });

@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { usePdfExport } from "../../hooks/usePdfExport";
+import { bindNotePdfExport, usePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
@@ -21,6 +21,7 @@ import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/p
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
+import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
@@ -375,7 +376,7 @@ export const MarkdownTextarea = forwardRef<
       spellCheck={false}
       className={`flex-1 resize-none bg-transparent px-12 py-6 outline-none ${locked ? "opacity-75 cursor-not-allowed" : ""}`}
       style={{
-        fontFamily: "var(--font-mono)",
+        fontFamily: "var(--editor-font-family)",
         fontSize: "var(--editor-font-size)",
         lineHeight: "var(--editor-line-height)",
         color: "var(--color-text)",
@@ -412,8 +413,16 @@ async function persistFrontmatterChange(
 
   const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
   if (!current) return;
+  // An empty tag list is a real edit. Reading a note unions frontmatter with
+  // inline `#tag`s, so a tag left in the body would be parsed back in and the
+  // last one would look like it could not be removed. Strip only the tags
+  // the field dropped; a child the field still lists stays in the body.
+  const content = Array.isArray(updates.tags)
+    ? dropRemovedInlineTags(current.content, current.frontmatter.tags, updates.tags)
+    : current.content;
   const updated = {
     ...current,
+    content,
     frontmatter: {
       ...current.frontmatter,
       ...updates,
@@ -421,6 +430,15 @@ async function persistFrontmatterChange(
     },
   };
   useNoteStore.getState().updateNote(updated);
+  // A tag edit can delete body text, including a list or task line that held
+  // only that tag. Snapshot the file that is still on disk before overwriting
+  // it. The snapshot is awaited so it lands first, and a failure must not block
+  // the write. Frontmatter-only edits leave the body alone and skip this.
+  if (content !== current.content && vaultPath) {
+    await tauriCommands.snapshotNote(vaultPath, current.id, current.filePath).catch(() => {
+      /* snapshotting must never block a save */
+    });
+  }
   try {
     await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
   } catch (error) {
@@ -563,6 +581,8 @@ export function MainPanel() {
     };
   }, [startPdfExport]);
 
+  useEffect(() => bindNotePdfExport(startPdfExport), [startPdfExport]);
+
   async function handleSave(content: string) {
     if (!selectedNote || viewingDeleted) return;
     await saveNoteContent(selectedNote, content);
@@ -590,14 +610,15 @@ export function MainPanel() {
     }
   }
 
-  function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
-    if (!selectedNote || viewingDeleted) return;
+  function handleFrontmatterChange(updates: Partial<NoteFrontmatter>): Promise<void> {
+    if (!selectedNote || viewingDeleted) return Promise.resolve();
     const noteId = selectedNote.id;
     const run = frontmatterWrites.current.then(() => persistFrontmatterChange(noteId, updates));
     frontmatterWrites.current = run.then(
       () => undefined,
       () => undefined,
     );
+    return run;
   }
 
   async function handleArchiveToggle() {

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { isMermaidLanguage } from "../../lib/mermaid";
 import { printTheme } from "../../lib/pdf-export";
+import { NOTE_CONTENT_STYLE } from "../../lib/settings";
 import { useThemeStore } from "../../store/theme";
 import type { Note } from "../../types/note";
 import { richCodeBlock } from "./CodeBlockView";
@@ -36,7 +37,7 @@ export function NotePrintView({ note, onReady }: NotePrintViewProps) {
     editorProps: {
       attributes: {
         class: "prose max-w-none w-full text-[var(--color-text)]",
-        style: "font-size: var(--editor-font-size); line-height: var(--editor-line-height)",
+        style: NOTE_CONTENT_STYLE,
       },
     },
   });

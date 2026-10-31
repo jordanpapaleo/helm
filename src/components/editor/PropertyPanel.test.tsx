@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTE_STATES } from "../../lib/constants";
@@ -23,41 +23,109 @@ function makeFrontmatter(overrides: Partial<NoteFrontmatter> = {}): NoteFrontmat
   };
 }
 
-describe("PropertyPanel title sync", () => {
-  it("fires onTitleInput live on each keystroke, and onChange only on blur", () => {
-    const onTitleInput = vi.fn();
-    const onChange = vi.fn();
-    render(
-      <PropertyPanel
-        frontmatter={makeFrontmatter()}
-        onChange={onChange}
-        onTitleInput={onTitleInput}
-      />,
-    );
+describe("PropertyPanel title", () => {
+  function startEdit() {
+    fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    return screen.getByRole("textbox", { name: "Note title" });
+  }
 
-    const input = screen.getByPlaceholderText("Untitled");
-    fireEvent.change(input, { target: { value: "My" } });
-    fireEvent.change(input, { target: { value: "My Untitled" } });
+  it("shows the title with an edit button until the pencil is clicked", () => {
+    render(<PropertyPanel frontmatter={makeFrontmatter({ title: "Old" })} onChange={vi.fn()} />);
 
-    // Live sync to the store happens on every keystroke...
-    expect(onTitleInput).toHaveBeenCalledWith("My");
-    expect(onTitleInput).toHaveBeenLastCalledWith("My Untitled");
-    // ...while the persisting onChange has NOT fired yet (no blur).
-    expect(onChange).not.toHaveBeenCalled();
-
-    fireEvent.blur(input);
-    expect(onChange).toHaveBeenCalledWith({ title: "My Untitled" });
+    expect(screen.getByRole("heading", { name: "Old" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Note title" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit title" })).toBeEnabled();
   });
 
-  it("resyncs the field when the title changes in the store (e.g. renamed from the list)", () => {
+  it("saves the trimmed title on blur, Enter, and the save icon", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PropertyPanel frontmatter={makeFrontmatter({ title: "Old" })} onChange={onChange} />,
+    );
+
+    fireEvent.change(startEdit(), { target: { value: "  From blur  " } });
+    fireEvent.blur(screen.getByRole("textbox", { name: "Note title" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({ title: "From blur" });
+
+    rerender(<PropertyPanel frontmatter={makeFrontmatter({ title: "Old" })} onChange={onChange} />);
+    const byEnter = startEdit();
+    fireEvent.change(byEnter, { target: { value: "From enter" } });
+    fireEvent.keyDown(byEnter, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith({ title: "From enter" });
+
+    rerender(<PropertyPanel frontmatter={makeFrontmatter({ title: "Old" })} onChange={onChange} />);
+    fireEvent.change(startEdit(), { target: { value: "From save" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save title" }));
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(onChange).toHaveBeenLastCalledWith({ title: "From save" });
+  });
+
+  it("does not save while typing, and Escape restores the original title", () => {
+    const onChange = vi.fn();
+    render(<PropertyPanel frontmatter={makeFrontmatter({ title: "Old" })} onChange={onChange} />);
+
+    const input = startEdit();
+    fireEvent.change(input, { target: { value: "Halfway" } });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Old" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Note title" })).not.toBeInTheDocument();
+  });
+
+  it("ignores an empty title and a title that did not change", () => {
+    const onChange = vi.fn();
+    render(<PropertyPanel frontmatter={makeFrontmatter({ title: "Old" })} onChange={onChange} />);
+
+    fireEvent.change(startEdit(), { target: { value: "   " } });
+    fireEvent.blur(screen.getByRole("textbox", { name: "Note title" }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Old" })).toBeInTheDocument();
+
+    fireEvent.change(startEdit(), { target: { value: "Old" } });
+    fireEvent.blur(screen.getByRole("textbox", { name: "Note title" }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("resyncs the heading when the title changes in the store (e.g. renamed from the list)", () => {
     const { rerender } = render(
       <PropertyPanel frontmatter={makeFrontmatter({ title: "Old" })} onChange={vi.fn()} />,
     );
-    const input = screen.getByDisplayValue("Old");
 
-    // Same note (same id), title changed externally in the store.
     rerender(<PropertyPanel frontmatter={makeFrontmatter({ title: "New" })} onChange={vi.fn()} />);
-    expect(input).toHaveValue("New");
+    expect(screen.getByRole("heading", { name: "New" })).toBeInTheDocument();
+  });
+
+  it("hides the edit button when the note is locked or read-only", () => {
+    const { rerender } = render(
+      <PropertyPanel frontmatter={makeFrontmatter({ locked: true })} onChange={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: "Edit title" })).not.toBeInTheDocument();
+
+    rerender(<PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} readOnly />);
+    expect(screen.queryByRole("button", { name: "Edit title" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Untitled" })).toBeInTheDocument();
+  });
+});
+
+describe("PropertyPanel header tags", () => {
+  it("does not render tag chips in the header", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ tags: ["ai-skills/skill", "work"] })}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("#ai-skills/skill")).not.toBeInTheDocument();
+    expect(screen.queryByText("#work")).not.toBeInTheDocument();
+    expect(screen.queryByText("ai-skills/skill")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
+    expect(screen.getByDisplayValue("ai-skills/skill, work")).toBeInTheDocument();
   });
 });
 
@@ -127,14 +195,34 @@ describe("PropertyPanel unmanaged notes", () => {
     expect(onChange).toHaveBeenCalledWith({ unmanaged: false });
   });
 
-  it("renders a blank option so an empty state shows as empty", () => {
+  it("shows a cleared state as None instead of Prepare", () => {
     // A note that was unmanaged and got flipped back to managed still has state: "".
     render(<PropertyPanel frontmatter={makeFrontmatter({ state: "" })} onChange={vi.fn()} />);
 
-    const select = screen.getByLabelText("State") as HTMLSelectElement;
-    expect(select.value).toBe("");
-    // The blank option exists alongside the four real states.
-    expect(select.options).toHaveLength(NOTE_STATES.length + 1);
+    const button = screen.getByRole("button", { name: "State" });
+    expect(button).toHaveTextContent("None");
+    expect(button).not.toHaveTextContent("Prepare");
+  });
+
+  it("opens state choices as a menu and applies the chosen state", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyPanel frontmatter={makeFrontmatter({ state: "Prepare" })} onChange={onChange} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "State" }));
+    const menu = screen.getByRole("menu", { name: "Note state" });
+    expect(menu.className).toContain("fixed");
+    expect(
+      within(menu)
+        .getAllByRole("menuitemradio")
+        .map((item) => item.textContent),
+    ).toEqual(["None", ...NOTE_STATES]);
+
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Done" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({ state: "Done" });
+    expect(screen.queryByRole("menu", { name: "Note state" })).not.toBeInTheDocument();
   });
 });
 
@@ -272,7 +360,7 @@ describe("PropertyPanel archive", () => {
       />,
     );
     const badge = screen.getByText("Archived");
-    const titleRow = screen.getByDisplayValue("Untitled").parentElement;
+    const titleRow = screen.getByRole("heading", { name: "Untitled" }).parentElement;
     expect(titleRow).toContainElement(badge);
     expect(
       screen.getByRole("button", { name: "Unarchive note" }).parentElement,
@@ -328,7 +416,7 @@ describe("PropertyPanel header layout", () => {
     renderCrowdedHeader();
 
     const titleRow = rowOf(
-      screen.getByDisplayValue("A long title that would crowd the action icons"),
+      screen.getByRole("heading", { name: "A long title that would crowd the action icons" }),
     );
     const buttons = HEADER_ACTIONS.map((name) => screen.getByRole("button", { name }));
     const actionRow = rowOf(buttons[0]);
@@ -360,8 +448,7 @@ describe("PropertyPanel header layout", () => {
     const user = userEvent.setup();
     renderCrowdedHeader();
 
-    // The title field captures Tab to enter the editor, so these actions stay
-    // in the tab order ahead of the metadata controls.
+    // Action buttons sit between the title and the metadata controls.
     screen.getByLabelText("State").focus();
 
     for (const name of [...HEADER_ACTIONS].reverse()) {

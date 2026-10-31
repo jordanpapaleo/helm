@@ -394,16 +394,8 @@ function viewingDeletedNote(): boolean {
 
 export function MainPanel() {
   const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
-  const {
-    notes,
-    vaults,
-    selectedNoteId,
-    updateNote,
-    setNoteTitleLive,
-    removeNote,
-    selectNote,
-    addNote,
-  } = useNoteStore();
+  const { notes, vaults, selectedNoteId, updateNote, renameNote, removeNote, selectNote, addNote } =
+    useNoteStore();
   const trashItems = useTrashStore((state) => state.items);
   const { settings } = useSettingsStore();
   const enableProjects = settings.enableProjects;
@@ -531,15 +523,6 @@ export function MainPanel() {
     await saveNoteContent(selectedNote, content);
   }
 
-  // Live title update while typing in the property panel — patches only the
-  // title in the store (so the note list reflects it immediately) with no disk
-  // write and no index rebuild per keystroke. Persistence + index refresh happen
-  // on blur/Tab via handleFrontmatterChange → updateNote.
-  function handleTitleInput(title: string) {
-    if (!selectedNote) return;
-    setNoteTitleLive(selectedNote.id, title);
-  }
-
   const openProject =
     enableProjects && selectedNote
       ? (projects.find(
@@ -569,6 +552,16 @@ export function MainPanel() {
       return;
     }
     if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
+    // A title edit renames the file the same way the sidebar Rename action does.
+    // The note id stays put; only the title and the slugified path change.
+    if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
+      try {
+        await renameNote(selectedNote, updates.title);
+      } catch (e) {
+        reportError("Failed to rename note", e);
+      }
+      return;
+    }
     const updated = {
       ...selectedNote,
       frontmatter: {
@@ -673,8 +666,6 @@ export function MainPanel() {
               frontmatter={selectedNote.frontmatter}
               filePath={selectedNote.filePath}
               onChange={handleFrontmatterChange}
-              onTitleInput={viewingDeleted ? undefined : handleTitleInput}
-              onTitleTab={() => editorRef.current?.focus()}
               onDelete={
                 viewingDeleted || selectedNote.frontmatter.locked ? undefined : handleDelete
               }

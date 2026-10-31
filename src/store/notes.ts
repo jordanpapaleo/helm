@@ -4,7 +4,7 @@
  * full-text search index for note discovery.
  */
 import { create } from "zustand";
-import { replaceWikiLinkTitle } from "../lib/note-links";
+import { notesToRewrite, replaceWikiLinkTitle } from "../lib/note-links";
 import { serializeNote, slugify } from "../lib/note-parser";
 import { buildIndex, type NoteIndex, noteMatchesQuery, searchNotes } from "../lib/search";
 import {
@@ -277,6 +277,10 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   renameNote: async (note, newTitle) => {
     if (!newTitle || newTitle === note.frontmatter.title) return;
     const oldTitle = note.frontmatter.title;
+    // Resolve [[Old Title]] against titles as they are now. updateNote below
+    // replaces this note's title, which would make the wiki link look like it
+    // belonged to a different note that still has the old title.
+    const catalog = get().notes;
     const folder = note.filePath.split("/").slice(0, -1).join("/");
     const newFileName = `${slugify(newTitle)}.md`;
     const newFilePath = `${folder}/${newFileName}`;
@@ -293,23 +297,21 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     await tauriCommands.renameNote(note.filePath, newFilePath);
     get().updateNote(updated);
 
-    // Other notes keep pointing at this one. Rewrite [[Old Title]] in their
-    // bodies and leave their saved link ids alone, so a wiki-only link is not
-    // dropped and a frontmatter id is not removed.
+    // Rewrite [[Old Title]] only where that wiki link resolved to this note.
+    // Locked notes are left untouched: no snapshot and no write. Saved link
+    // ids stay in place either way.
     const stamp = nowTimestamp();
-    const rewrites = get()
-      .notes.filter((item) => item.id !== note.id)
-      .flatMap((item) => {
-        const content = replaceWikiLinkTitle(item.content, oldTitle, newTitle);
-        if (content === item.content) return [];
-        return [
-          {
-            ...item,
-            content,
-            frontmatter: { ...item.frontmatter, updated: stamp },
-          },
-        ];
-      });
+    const rewrites = notesToRewrite(catalog, note.id, oldTitle).flatMap((item) => {
+      const content = replaceWikiLinkTitle(item.content, oldTitle, newTitle);
+      if (content === item.content) return [];
+      return [
+        {
+          ...item,
+          content,
+          frontmatter: { ...item.frontmatter, updated: stamp },
+        },
+      ];
+    });
     if (rewrites.length === 0) return;
 
     const written = await writeRewrittenNotes(

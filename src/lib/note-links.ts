@@ -17,6 +17,7 @@ export interface LinkNote {
   frontmatter: {
     title: string;
     links?: string[];
+    locked?: boolean;
   };
 }
 
@@ -58,6 +59,34 @@ export function resolveOutgoingLinks(note: LinkNote, notes: readonly LinkNote[])
   }
 
   return resolved;
+}
+
+/**
+ * Id a [[title]] resolves to, using the same last-wins title map as
+ * `resolveOutgoingLinks`. Undefined when no loaded note has that title.
+ */
+export function wikiLinkTargetId(notes: readonly LinkNote[], title: string): string | undefined {
+  const key = title.trim().toLowerCase();
+  if (!key) return undefined;
+  let target: string | undefined;
+  for (const item of notes) {
+    if (item.frontmatter.title.trim().toLowerCase() === key) target = item.id;
+  }
+  return target;
+}
+
+/**
+ * Notes whose [[oldTitle]] should be rewritten when `renamedId` is renamed.
+ * The wiki link must resolve to that note. Locked notes are omitted so a
+ * rename does not snapshot or write them. The renamed note is omitted too.
+ */
+export function notesToRewrite<T extends LinkNote>(
+  catalog: readonly T[],
+  renamedId: string,
+  oldTitle: string,
+): T[] {
+  if (wikiLinkTargetId(catalog, oldTitle) !== renamedId) return [];
+  return catalog.filter((item) => item.id !== renamedId && item.frontmatter.locked !== true);
 }
 
 /**

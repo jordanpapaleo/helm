@@ -14,7 +14,12 @@ import matter from "gray-matter";
 import { excludeArchivedUnless, isArchived } from "./archive";
 import { buildBriefing } from "./briefing";
 import { listNoteHistory, snapshotNoteFile } from "./history";
-import { extractWikiLinks, replaceWikiLinkTitle, resolveOutgoingLinks } from "./links";
+import {
+  extractWikiLinks,
+  notesToRewrite,
+  replaceWikiLinkTitle,
+  resolveOutgoingLinks,
+} from "./links";
 import {
   captureThinkingNote,
   createProjectDir,
@@ -137,12 +142,28 @@ function writeNote(filePath: string, frontmatter: NoteData, content: string): vo
 }
 
 /**
- * After a title change, point other notes' [[Old Title]] text at the new title.
- * Saved link ids stay as they are. A failed rewrite does not undo the rename.
+ * After a title change, point [[Old Title]] at the new title only when that
+ * wiki link resolved to the renamed note. Locked notes are skipped entirely:
+ * no snapshot and no write. Saved link ids stay as they are.
  */
 function rewriteWikiTitles(catalog: Note[], renamedId: string, oldTitle: string, newTitle: string) {
+  const selected = new Set(
+    notesToRewrite(
+      catalog.map((item) => ({
+        id: item.frontmatter.id,
+        content: item.content,
+        frontmatter: {
+          title: item.frontmatter.title ?? "",
+          links: item.frontmatter.links,
+          locked: item.frontmatter.locked,
+        },
+      })),
+      renamedId,
+      oldTitle,
+    ).map((item) => item.id),
+  );
   for (const other of catalog) {
-    if (other.frontmatter.id === renamedId) continue;
+    if (!selected.has(other.frontmatter.id)) continue;
     const nextContent = replaceWikiLinkTitle(other.content, oldTitle, newTitle);
     if (nextContent === other.content) continue;
     const frontmatter: NoteData = { ...other.frontmatter, updated: nowTimestamp() };
@@ -333,10 +354,10 @@ LINKS AND THE LINK CANVAS
 • A note's links are the union of (1) saved frontmatter 'links' ids that still match a loaded note and (2) [[wiki links]] in the body whose text matches another loaded note's title, case-insensitive. The note itself is excluded. Dangling ids and titles that match no loaded note are not links. Opening or loading a note does not rewrite the file.
 • The graph, the note footer (Links to / Backlinks), and the properties Links field all use that same union.
 • The on-disk 'links' array is only the saved ids. A note written outside Helm can have [[wiki links]] and no 'links' key; those still show up.
-• Renaming a note replaces [[Old Title]] with [[New Title]] in other notes' bodies, case-insensitive (also the older \\[\\[Old Title\\]\\] form). Those notes keep their frontmatter link ids. The link is not dropped.
+• Renaming a note replaces [[Old Title]] with [[New Title]] in other notes only when that wiki link resolved to the renamed note (case-insensitive, including the older \\[\\[Old Title\\]\\] form). If two notes share a title, links that resolved to the other note are left as they are. A locked note is not snapshotted or rewritten. Frontmatter link ids are kept either way.
 • Dragging one node onto another on the link canvas appends the target ULID to 'links'. It does not write a wiki link. Clicking an edge that came from 'links' removes that ULID. An edge that exists only as a [[wiki link]] is not removed by that click.
 • The Helm editor, on a body save, rebuilds 'links' from [[Note Title]] only. A canvas-only edge disappears on that save unless the body also contains [[Exact Title]] (case-insensitive).
-• update_note does not rebuild 'links' from the body. To add an edge, use append_links with a ULID from resolve_note, and put [[Exact Title]] in the body if the edge should survive an editor save. Changing frontmatter.title rewrites [[Old Title]] to the new title in other notes and keeps their link ids, same as a rename in Helm.
+• update_note does not rebuild 'links' from the body. To add an edge, use append_links with a ULID from resolve_note, and put [[Exact Title]] in the body if the edge should survive an editor save. Changing frontmatter.title follows the same rename rule: rewrite [[Old Title]] only where it resolved to that note, skip locked notes, and keep every note's link ids.
 • list_notes, search_notes, get_eisenhower, and get_kanban report 'links' as this resolved id list. read_note returns the saved frontmatter (including the on-disk 'links' array) plus derived.links (the resolved ids) and derived.wikiLinks (the raw titles).
 • Always resolve titles to ULIDs with resolve_note before adding to 'links'. Never store filenames or titles in 'links'.
 
@@ -615,7 +636,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 IMPORTANT — shallow merge: passing frontmatter.tags replaces the ENTIRE tags array.
 Use append_tags and append_links to safely add values without overwriting existing ones.
-Changing frontmatter.title rewrites [[Old Title]] to the new title in other notes and keeps their link ids.
+Changing frontmatter.title rewrites [[Old Title]] only where that wiki link resolved to this note, skips locked notes, and keeps link ids.
 Read get_rules for full merge semantics.`,
       inputSchema: {
         type: "object",

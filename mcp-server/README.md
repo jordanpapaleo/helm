@@ -147,10 +147,10 @@ Write lists as normal Markdown. Do not put blank lines between items — Helm sp
 **Key rules:**
 - Always use ULIDs as identifiers, never filenames. A drag onto a folder renames the file and keeps the id. A drag onto a tag appends the tag and keeps the body.
 - A note's links are the saved `links` ids that still match a loaded note, plus `[[wiki links]]` whose text matches another note's title (case-insensitive). The graph, the note footer, and the properties Links field all show that union. Loading a note does not rewrite the file.
-- Renaming a note replaces `[[Old Title]]` with `[[New Title]]` in other notes' bodies and keeps those notes' `links` ids.
+- Renaming a note replaces `[[Old Title]]` with `[[New Title]]` only in notes whose wiki link resolved to the renamed note. A shared title does not retarget links that resolved to the other note. Locked notes are not rewritten. `links` ids stay.
 - Call `resolve_note` before adding to `links`. Put `[[Exact Title]]` in the body as well: the editor rebuilds `links` from wiki links on the next body save, which drops canvas-only edges.
 - `created` and `updated` are quoted UTC timestamps (`YYYY-MM-DDTHH:MM:SSZ`). `deadline` stays `YYYY-MM-DD`.
-- `update_note` does a **shallow merge** — use `append_tags`/`append_links` to add without replacing. It does not rebuild `links` from the body. Changing the title rewrites `[[Old Title]]` in other notes and keeps their link ids.
+- `update_note` does a **shallow merge** — use `append_tags`/`append_links` to add without replacing. It does not rebuild `links` from the body. Changing the title follows the rename rule above.
 - `locked: true` notes are read-only — unlock in the Helm app first
 - `archived: true` keeps the note on disk (same id, file, content, tags, links, and history) but list/search/board/briefing tools skip it unless you pass `include_archived: true`. `read_note` and `update_note` still work by ULID. The Helm app's **Show archived notes** setting does not affect these tools — pass `include_archived` yourself. Set the flag with `update_note` (`frontmatter.archived`); that write is refused when the note is locked. Archive is not Trash and not `state: Done`.
 - `unmanaged: true` with `state: ""` keeps a note off Kanban, Eisenhower, and `get_briefing`. Thinking and Context notes start that way.

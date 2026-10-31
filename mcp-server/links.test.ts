@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  notesToRewrite as appNotesToRewrite,
   replaceWikiLinkTitle as appReplace,
   resolveOutgoingLinks as appResolve,
+  wikiLinkTargetId as appWikiLinkTargetId,
   type LinkNote,
 } from "../src/lib/note-links";
 import { extractWikiLinks as appExtract } from "../src/lib/note-parser";
-import { extractWikiLinks, replaceWikiLinkTitle, resolveOutgoingLinks } from "./links";
+import {
+  extractWikiLinks,
+  notesToRewrite,
+  replaceWikiLinkTitle,
+  resolveOutgoingLinks,
+  wikiLinkTargetId,
+} from "./links";
 
 function note(id: string, title: string, content = "", links?: string[]): LinkNote {
   return {
@@ -46,6 +54,27 @@ describe("MCP links stay in sync with the app", () => {
         appResolve(fixture.note, fixture.notes),
       );
     }
+  });
+
+  it("rewrites a shared title only when the wiki link resolved to that note", () => {
+    const early = note("early", "Alpha");
+    const late = note("late", "Alpha");
+    const linker = note("linker", "Linker", "See [[Alpha]]");
+    const locked = {
+      ...note("locked", "Locked", "See [[Alpha]]"),
+      frontmatter: { title: "Locked", locked: true },
+    };
+    const catalog = [early, linker, locked, late];
+    expect(wikiLinkTargetId(catalog, "Alpha")).toBe("late");
+    expect(wikiLinkTargetId(catalog, "Alpha")).toBe(appWikiLinkTargetId(catalog, "Alpha"));
+    expect(notesToRewrite(catalog, "early", "Alpha")).toEqual([]);
+    expect(notesToRewrite(catalog, "late", "Alpha").map((item) => item.id)).toEqual([
+      "early",
+      "linker",
+    ]);
+    expect(notesToRewrite(catalog, "late", "Alpha")).toEqual(
+      appNotesToRewrite(catalog, "late", "Alpha"),
+    );
   });
 
   it("rewrites wiki titles the same way the app does", () => {

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { type LinkNote, replaceWikiLinkTitle, resolveOutgoingLinks } from "./note-links";
+import {
+  type LinkNote,
+  notesToRewrite,
+  replaceWikiLinkTitle,
+  resolveOutgoingLinks,
+  wikiLinkTargetId,
+} from "./note-links";
 import { extractWikiLinks } from "./note-parser";
 
 function note(id: string, title: string, content = "", links?: string[]): LinkNote {
@@ -42,6 +48,33 @@ describe("resolveOutgoingLinks", () => {
     expect(resolveOutgoingLinks(source, [source, target])).toEqual([
       { id: "target", fromFrontmatter: false },
     ]);
+  });
+
+  it("points a shared title at the later note, and a rename rewrites only that target", () => {
+    const early = note("early", "Alpha");
+    const late = note("late", "Alpha");
+    const linker = note("linker", "Linker", "See [[Alpha]]", ["early"]);
+    const catalog = [early, linker, late];
+
+    expect(wikiLinkTargetId(catalog, "alpha")).toBe("late");
+    expect(resolveOutgoingLinks(linker, catalog).map((link) => link.id)).toEqual(["early", "late"]);
+    expect(notesToRewrite(catalog, "early", "Alpha")).toEqual([]);
+    expect(notesToRewrite(catalog, "late", "Alpha").map((item) => item.id)).toEqual([
+      "early",
+      "linker",
+    ]);
+  });
+
+  it("leaves a locked note out of the rename rewrite", () => {
+    const renamed = note("renamed", "Alpha");
+    const locked = {
+      ...note("locked", "Locked", "See [[Alpha]]"),
+      frontmatter: { title: "Locked", locked: true },
+    };
+    const open = note("open", "Open", "See [[alpha]]");
+    expect(
+      notesToRewrite([renamed, locked, open], "renamed", "Alpha").map((item) => item.id),
+    ).toEqual(["open"]);
   });
 
   it("lets the later note win when two titles match", () => {

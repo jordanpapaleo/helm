@@ -11,6 +11,26 @@ export interface PdfExportJob {
   path: string;
 }
 
+type NotePdfExport = (noteId: string) => void | Promise<void>;
+
+let notePdfExport: NotePdfExport | null = null;
+
+/**
+ * MainPanel owns the print surface and registers its export here.
+ * The note-list menu calls `requestNotePdfExport` so both entry points
+ * share that one print job.
+ */
+export function bindNotePdfExport(start: NotePdfExport): () => void {
+  notePdfExport = start;
+  return () => {
+    if (notePdfExport === start) notePdfExport = null;
+  };
+}
+
+export function requestNotePdfExport(noteId: string): void {
+  void notePdfExport?.(noteId);
+}
+
 /**
  * Drives "Export to PDF": pick a destination, mount `NotePrintView` for
  * `job`, and once it reports ready (`handleReady`) print it to the file.

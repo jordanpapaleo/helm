@@ -1034,6 +1034,13 @@ describe("MainPanel deleted notes", () => {
 });
 
 describe("MarkdownTextarea replace", () => {
+  it("uses the note font variable instead of a fixed monospace face", () => {
+    render(<MarkdownTextarea noteId="n1" vaultPath="/vault" content="hello" onSave={vi.fn()} />);
+    expect(screen.getByDisplayValue("hello")).toHaveStyle({
+      fontFamily: "var(--editor-font-family)",
+    });
+  });
+
   it("ignores replaceContent while locked and applies it again after unlock", () => {
     vi.useFakeTimers();
     try {

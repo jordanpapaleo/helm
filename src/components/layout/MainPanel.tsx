@@ -375,7 +375,7 @@ export const MarkdownTextarea = forwardRef<
       spellCheck={false}
       className={`flex-1 resize-none bg-transparent px-12 py-6 outline-none ${locked ? "opacity-75 cursor-not-allowed" : ""}`}
       style={{
-        fontFamily: "var(--font-mono)",
+        fontFamily: "var(--editor-font-family)",
         fontSize: "var(--editor-font-size)",
         lineHeight: "var(--editor-line-height)",
         color: "var(--color-text)",

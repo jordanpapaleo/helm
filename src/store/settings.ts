@@ -3,7 +3,7 @@
  * Persists settings to localStorage and applies them globally on change.
  */
 import { create } from "zustand";
-import { applySettings, DEFAULT_SETTINGS, type Settings } from "../lib/settings";
+import { applySettings, DEFAULT_SETTINGS, normalizeSettings, type Settings } from "../lib/settings";
 
 const STORAGE_KEY = "helm-settings";
 
@@ -16,7 +16,7 @@ function loadPersistedSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    return normalizeSettings(JSON.parse(raw));
   } catch {
     return DEFAULT_SETTINGS;
   }

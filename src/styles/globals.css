@@ -361,9 +361,26 @@ ul[data-type="taskList"] li > label {
   display: flex;
   align-items: flex-start;
 }
-/* Native checkboxes use accent-color so they follow the active theme */
-input[type="checkbox"]:not(ul[data-type="taskList"] li > label input) {
+/* Native checkboxes use accent-color so they follow the active theme.
+   DaisyUI toggles paint themselves; leave their appearance alone. */
+input[type="checkbox"]:not(.toggle):not(ul[data-type="taskList"] li > label input) {
   accent-color: var(--color-accent);
+}
+
+/* Helm themes supply color tokens only. DaisyUI toggles also size and
+   round themselves from these structural tokens; without them the control
+   collapses. Scoped to the toggle so other components stay as they are. */
+.toggle {
+  --border: 1px;
+  --radius-selector: 0.5rem;
+  --depth: 1;
+  --noise: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input.toggle {
+    transition: none;
+  }
 }
 
 ul[data-type="taskList"] li > label input[type="checkbox"] {

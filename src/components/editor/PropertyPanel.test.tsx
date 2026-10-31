@@ -446,6 +446,14 @@ describe("PropertyPanel header layout", () => {
     );
     expect(labels).toEqual([...TITLE_ROW_ACTIONS]);
     expect(screen.queryByRole("button", { name: "Note info" })).not.toBeInTheDocument();
+    expect(titleRow.className).toContain("justify-start");
+    expect(titleRow.className).not.toContain("justify-between");
+    expect(metaRow.className).toContain("justify-start");
+    expect(metaRow.className).not.toContain("justify-between");
+    expect(screen.getByTestId("note-heading-actions").className).not.toContain("ml-auto");
+    expect(screen.getByRole("heading", { name: "Command" }).parentElement?.className).not.toContain(
+      "flex-1",
+    );
 
     const state = screen.getByRole("button", { name: "State" });
     expect(metaRow).toContainElement(state);

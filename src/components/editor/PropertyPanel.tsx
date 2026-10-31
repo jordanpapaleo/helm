@@ -543,9 +543,9 @@ export function PropertyPanel({
     <div className="space-y-3 border-b border-base-300 px-12 py-4" data-testid="note-heading">
       <div
         data-testid="note-heading-title-row"
-        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2"
+        className="flex min-w-0 flex-wrap items-center justify-start gap-x-3 gap-y-2"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {editingTitle ? (
             <>
               <input
@@ -700,11 +700,11 @@ export function PropertyPanel({
 
       <div
         data-testid="note-heading-meta-row"
-        className="flex min-w-0 flex-wrap items-center gap-2"
+        className="flex min-w-0 flex-wrap items-center justify-start gap-2"
       >
         <fieldset
           disabled={readOnly}
-          className="m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0"
+          className="m-0 flex min-w-0 flex-wrap items-center justify-start gap-2 border-0 p-0"
         >
           {!unmanaged && (
             <>

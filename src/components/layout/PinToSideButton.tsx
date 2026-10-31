@@ -17,7 +17,7 @@ export function PinToSideButton({
   const className =
     variant === "toolbar"
       ? "workspace-toolbar-button"
-      : `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-[var(--color-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] disabled:opacity-40 ${
+      : `note-heading-icon btn btn-outline btn-sm btn-square ${
           pinned
             ? "text-[var(--color-accent)]"
             : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"

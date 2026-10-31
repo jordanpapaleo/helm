@@ -3,7 +3,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -105,11 +104,8 @@ const STATE_CHOICES: Array<{ value: NoteState; label: string }> = [
   ...NOTE_STATES.map((state) => ({ value: state as NoteState, label: state })),
 ];
 
-const menuItemClass =
-  "flex w-full items-center px-3 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-accent)]";
-
 /**
- * Workflow state as a normal menu. A daisyUI `<select class="select">` opts into
+ * Workflow state as a DaisyUI dropdown. A daisyUI `<select class="select">` opts into
  * `appearance: base-select`, and that picker anchors to the wrong box — it paints
  * over the note title instead of opening under the control.
  */
@@ -122,23 +118,8 @@ function StateMenu({
 }) {
   const menuId = useId();
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ left: 0, top: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    if (!open || !buttonRef.current || !menuRef.current) return;
-    const trigger = buttonRef.current.getBoundingClientRect();
-    const menu = menuRef.current.getBoundingClientRect();
-    const margin = 4;
-    const spaceBelow = window.innerHeight - trigger.bottom - margin;
-    const top =
-      spaceBelow >= menu.height || spaceBelow >= trigger.top
-        ? trigger.bottom + margin
-        : Math.max(margin, trigger.top - menu.height - margin);
-    const left = Math.max(margin, Math.min(trigger.left, window.innerWidth - menu.width - margin));
-    setPos({ left, top });
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -204,7 +185,7 @@ function StateMenu({
   }
 
   return (
-    <>
+    <div className={`dropdown dropdown-bottom ${open ? "dropdown-open" : ""}`}>
       <button
         ref={buttonRef}
         type="button"
@@ -212,7 +193,7 @@ function StateMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-sm font-medium text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+        className="note-heading-state btn btn-sm gap-2 rounded-full px-3 font-medium"
         onClick={() => setOpen((current) => !current)}
       >
         <span
@@ -229,25 +210,27 @@ function StateMenu({
           id={menuId}
           role="menu"
           aria-label="Note state"
-          className="fixed z-50 min-w-[10rem] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-xl"
-          style={{ left: pos.left, top: pos.top }}
+          className="dropdown-content z-50 mt-1 min-w-[10rem]"
           onKeyDown={onMenuKeyDown}
         >
-          {STATE_CHOICES.map((choice) => (
-            <button
-              key={choice.label}
-              type="button"
-              role="menuitemradio"
-              aria-checked={value === choice.value}
-              className={`${menuItemClass} ${value === choice.value ? "bg-[var(--color-bg)]" : ""}`}
-              onClick={() => choose(choice.value)}
-            >
-              {choice.label}
-            </button>
-          ))}
+          <ul className="menu w-full rounded-box border border-base-300 bg-base-100 p-1 shadow-xl">
+            {STATE_CHOICES.map((choice) => (
+              <li key={choice.label}>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={value === choice.value}
+                  className={value === choice.value ? "bg-base-200" : undefined}
+                  onClick={() => choose(choice.value)}
+                >
+                  {choice.label}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -290,20 +273,22 @@ function iconButtonClass(tone: "default" | "active" | "danger" = "default"): str
     tone === "active"
       ? "text-[var(--color-accent)]"
       : tone === "danger"
-        ? "text-[var(--color-text-muted)] hover:text-[var(--color-error)]"
-        : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]";
-  return `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-[var(--color-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] disabled:opacity-40 ${color}`;
+        ? "text-[var(--color-text-muted)] hover:border-[var(--color-error)] hover:text-[var(--color-error)]"
+        : "text-[var(--color-text-muted)] hover:bg-base-200 hover:text-[var(--color-text)]";
+  return `note-heading-icon btn btn-outline btn-sm btn-square ${color}`;
 }
 
-function segmentClass(selected: boolean): string {
-  const base =
-    "rounded-md border px-2.5 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]";
-  return selected
-    ? `${base} border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-content)]`
-    : `${base} border-[var(--color-border)] bg-transparent text-[var(--color-text)]`;
+function HeadingDivider() {
+  return (
+    <span
+      data-testid="heading-divider"
+      aria-hidden="true"
+      className="mx-1 inline-block h-5 w-px shrink-0 self-center bg-[var(--color-border)]"
+    />
+  );
 }
 
-function SegmentedControl({
+function JoinToggle({
   label,
   segments,
 }: {
@@ -316,7 +301,7 @@ function SegmentedControl({
   }>;
 }) {
   return (
-    <fieldset className="m-0 inline-flex min-w-0 items-center gap-1 border-0 p-0 [min-inline-size:0]">
+    <fieldset className="join note-heading-join m-0 border-0 p-0 [min-inline-size:0]">
       <legend className="sr-only">{label}</legend>
       {segments.map((segment) => (
         <button
@@ -326,7 +311,7 @@ function SegmentedControl({
           aria-pressed={segment.pressed}
           title={segment.title ?? segment.label}
           data-selected={segment.pressed ? "true" : "false"}
-          className={segmentClass(segment.pressed)}
+          className="btn btn-sm join-item"
           onClick={segment.onClick}
         >
           {segment.label}
@@ -390,10 +375,7 @@ function HeaderTags({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1">
       {value.map((tag) => (
-        <span
-          key={tag}
-          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-0.5 pr-1 pl-2 text-xs text-[var(--color-text)]"
-        >
+        <span key={tag} className="badge badge-ghost gap-1 font-normal">
           <span>#{tag}</span>
           <button
             type="button"
@@ -412,7 +394,7 @@ function HeaderTags({
           aria-label="New tag"
           value={draft}
           placeholder="tag"
-          className="w-28 rounded-full border border-[var(--color-border)] bg-transparent px-2 py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          className="w-28 border-b border-[var(--color-border)] bg-transparent px-1 py-0.5 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => {
             if (skipCommit.current) {
@@ -437,7 +419,7 @@ function HeaderTags({
         <button
           type="button"
           aria-label="Add tag"
-          className="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          className="inline-flex items-center gap-1 px-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
           onClick={() => {
             skipCommit.current = false;
             setAdding(true);
@@ -600,7 +582,7 @@ export function PropertyPanel({
           {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
         </div>
 
-        <div data-testid="note-heading-actions" className="flex flex-wrap items-center gap-1">
+        <div data-testid="note-heading-actions" className="flex flex-wrap items-center gap-2">
           {filePath && (
             <button
               type="button"
@@ -641,7 +623,7 @@ export function PropertyPanel({
             </button>
           )}
           {onToggleMarkdown && (
-            <SegmentedControl
+            <JoinToggle
               label="Editor mode"
               segments={[
                 {
@@ -673,17 +655,6 @@ export function PropertyPanel({
           >
             <Icon icon="uil:sliders-v-alt" className="h-4 w-4" aria-hidden="true" />
           </button>
-          {onArchive && (
-            <button
-              type="button"
-              onClick={onArchive}
-              title={archived ? "Unarchive note" : "Archive note"}
-              aria-label={archived ? "Unarchive note" : "Archive note"}
-              className={iconButtonClass()}
-            >
-              <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
-            </button>
-          )}
           {onDelete && (
             <button
               type="button"
@@ -693,6 +664,18 @@ export function PropertyPanel({
               className={iconButtonClass("danger")}
             >
               <Icon icon="uil:trash-alt" className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          {onDelete && onArchive && <HeadingDivider />}
+          {onArchive && (
+            <button
+              type="button"
+              onClick={onArchive}
+              title={archived ? "Unarchive note" : "Archive note"}
+              aria-label={archived ? "Unarchive note" : "Archive note"}
+              className={iconButtonClass()}
+            >
+              <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
         </div>
@@ -709,7 +692,7 @@ export function PropertyPanel({
           {!unmanaged && (
             <>
               <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
-              <SegmentedControl
+              <JoinToggle
                 label="Priority"
                 segments={[
                   {
@@ -724,6 +707,7 @@ export function PropertyPanel({
                   },
                 ]}
               />
+              <HeadingDivider />
             </>
           )}
           <FlagSwitch
@@ -738,6 +722,7 @@ export function PropertyPanel({
             icon={frontmatter.locked ? "uil:lock" : "uil:lock-open-alt"}
             onToggle={() => onChange({ locked: !(frontmatter.locked ?? false) })}
           />
+          <HeadingDivider />
           <HeaderTags key={frontmatter.id} value={frontmatter.tags} onChange={onChange} />
         </fieldset>
       </div>

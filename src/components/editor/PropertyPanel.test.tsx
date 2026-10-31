@@ -215,7 +215,11 @@ describe("PropertyPanel unmanaged notes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "State" }));
     const menu = screen.getByRole("menu", { name: "Note state" });
-    expect(menu.className).toContain("fixed");
+    expect(menu.className).toContain("dropdown-content");
+    expect(menu.querySelector(".menu")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "State" }).parentElement?.className).toContain(
+      "dropdown",
+    );
     expect(
       within(menu)
         .getAllByRole("menuitemradio")
@@ -390,8 +394,8 @@ const TITLE_ROW_ACTIONS = [
   "Rich",
   "Markdown",
   "Properties",
-  "Archive note",
   "Delete note",
+  "Archive note",
 ] as const;
 
 describe("PropertyPanel header layout", () => {
@@ -464,15 +468,36 @@ describe("PropertyPanel header layout", () => {
     const important = screen.getByRole("button", { name: "Important" });
     expect(metaRow).toContainElement(urgent);
     expect(metaRow).toContainElement(important);
+    expect(urgent.parentElement?.className).toContain("join");
     expect(urgent).toHaveAttribute("data-selected", "false");
-    expect(urgent.className).toContain("bg-transparent");
+    expect(urgent.className).toContain("join-item");
+    expect(urgent).toHaveAttribute("aria-pressed", "false");
     expect(important).toHaveAttribute("data-selected", "true");
-    expect(important.className).toContain("bg-[var(--color-accent)]");
+    expect(important.className).toContain("join-item");
+    expect(important).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Rich" }).className).toContain("join-item");
+    expect(screen.getByRole("button", { name: "Markdown" }).className).toContain("join-item");
+
+    const deleteNote = screen.getByRole("button", { name: "Delete note" });
+    const archive = screen.getByRole("button", { name: "Archive note" });
+    const titleDivider = within(titleRow).getByTestId("heading-divider");
+    expect(
+      deleteNote.compareDocumentPosition(titleDivider) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      titleDivider.compareDocumentPosition(archive) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(metaRow).getAllByTestId("heading-divider")).toHaveLength(2);
 
     expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));
     expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Locked" }));
-    expect(metaRow).toContainElement(screen.getByText("#ai-skills/command"));
-    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Add tag" }));
+    const tag = screen.getByText("#ai-skills/command");
+    expect(tag.closest(".badge")).not.toBeNull();
+    expect(metaRow).toContainElement(tag);
+    const addTag = screen.getByRole("button", { name: "Add tag" });
+    expect(metaRow).toContainElement(addTag);
+    expect(addTag.className).not.toContain("badge");
+    expect(addTag.className).not.toContain("rounded-full");
     expect(titleRow).not.toContainElement(state);
   });
 

@@ -77,6 +77,17 @@
      Using base-content directly gives full contrast in both light and dark without looking
      like a "special" token. Overridable per-theme if a subtler value is preferred. */
   --color-syntax-punctuation: var(--color-base-content);
+
+  /* DaisyUI structural tokens. Theme blocks only set colors. Without these,
+     toggles, joins, buttons, dropdowns, and badges collapse: border width,
+     corner radius, depth, and noise all read these variables with no fallback.
+     --radius-field rounds joins and buttons; --radius-box rounds dropdown panels. */
+  --border: 1px;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --depth: 1;
+  --noise: 0;
 }
 
 input[type="range"] {
@@ -367,14 +378,29 @@ input[type="checkbox"]:not(.toggle):not(ul[data-type="taskList"] li > label inpu
   accent-color: var(--color-accent);
 }
 
-/* Helm themes supply color tokens only. DaisyUI toggles also size and
-   round themselves from these structural tokens; without them the control
-   collapses. Scoped to the toggle so other components stay as they are. */
-.toggle {
-  --border: 1px;
-  --radius-selector: 0.5rem;
-  --depth: 1;
-  --noise: 0;
+/* Heading joins keep Daisy's geometry and only swap the button fill:
+   the pressed side is the page surface, the other side is the muted fill. */
+.note-heading-join .btn[aria-pressed="false"] {
+  --btn-bg: var(--color-base-200);
+  --btn-fg: var(--color-base-content);
+  --btn-border: var(--color-base-300);
+}
+.note-heading-join .btn[aria-pressed="true"] {
+  --btn-bg: var(--color-base-100);
+  --btn-fg: var(--color-base-content);
+  --btn-border: var(--color-base-300);
+}
+
+/* Outline icon buttons and the state trigger. Daisy outline reads --btn-color,
+   which Helm themes do not set, so pin the button tokens here. */
+.note-heading-icon.btn,
+.note-heading-state.btn {
+  --btn-bg: var(--color-base-100);
+  --btn-fg: currentColor;
+  --btn-border: var(--color-base-300);
+}
+.note-heading-icon.btn:hover {
+  --btn-bg: var(--color-base-200);
 }
 
 /* Same gap as .toggle: DaisyUI rounds the status dot with --radius-selector

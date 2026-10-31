@@ -421,6 +421,12 @@ Drag the vertical separators to resize each column, or focus a separator and use
 
 At narrow widths Helm reduces panels to their minimum widths, then temporarily hides the right panel followed by an open left area to reserve 320px for the center. A left panel the user closed stays the icon nav. Explicitly opening either side gives that side priority. Growing the window restores the requested layout and remembered widths.
 
+## Right-panel tools (interface preview)
+
+Built-in extensions are **OpenAI Assistant** and **Claude Assistant**. Each has an id, name, description, icon, enabled state, and panel. Enabling one adds its icon to the right-panel toolbar; disabling hides the icon and keeps its connection settings. Pinned notes are tabs on the left. On the right are OpenAI (chat) and Claude (asterisk), then the wrench, which opens **Settings → Tools**. To pin or unpin a note, use **Add to Right panel** or **Unpin from Right panel** in the note list's context menu. Tools and pinned notes are tabs, and one is visible at a time. Left/Right arrows move between tabs. With no tool enabled and nothing pinned, the panel says **No tools enabled**.
+
+OpenAI Assistant opens connected, with a composer, a **Use open note** toggle, and Send. Claude Assistant shows a connection form until **Connect**. The form has Subscription / API key, Check connection, and an optional model. In this preview, Send only records the message in memory and Connect only changes the panel. Neither calls a model or the network. Writer is no longer shown in the right panel.
+
 ## Writer tool (subscription prototype)
 
 Open **Settings → Tools**, enable **Writer**, and open the right panel. Choose **Codex · ChatGPT subscription** or **Claude Code · Claude subscription**. Install the corresponding command-line client first; Helm discovers it on PATH and in common macOS/Linux installation locations. The sign-in button launches that client's browser flow. Terminal fallback: `codex login` or `claude auth login`, then **Check connection**.

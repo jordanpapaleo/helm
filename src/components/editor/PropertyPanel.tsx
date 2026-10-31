@@ -193,7 +193,7 @@ function StateMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        className="note-heading-state btn btn-sm gap-2 rounded-full px-3 font-medium"
+        className="note-heading-state btn btn-sm h-8 min-h-8 gap-2 rounded-full px-3 font-medium"
         onClick={() => setOpen((current) => !current)}
       >
         <span
@@ -273,9 +273,9 @@ function iconButtonClass(tone: "default" | "active" | "danger" = "default"): str
     tone === "active"
       ? "text-[var(--color-accent)]"
       : tone === "danger"
-        ? "text-[var(--color-text-muted)] hover:border-[var(--color-error)] hover:text-[var(--color-error)]"
-        : "text-[var(--color-text-muted)] hover:bg-base-200 hover:text-[var(--color-text)]";
-  return `note-heading-icon btn btn-outline btn-sm btn-square ${color}`;
+        ? "text-[var(--color-text-muted)] hover:text-[var(--color-error)]"
+        : "text-[var(--color-text-muted)]";
+  return `btn btn-ghost btn-sm btn-square ${color}`;
 }
 
 function HeadingDivider() {
@@ -283,16 +283,18 @@ function HeadingDivider() {
     <span
       data-testid="heading-divider"
       aria-hidden="true"
-      className="mx-1 inline-block h-5 w-px shrink-0 self-center bg-[var(--color-border)]"
+      className="inline-block h-4 w-px shrink-0 self-center bg-base-300"
     />
   );
 }
 
 function JoinToggle({
   label,
+  tone,
   segments,
 }: {
   label: string;
+  tone: "mode" | "priority";
   segments: Array<{
     label: string;
     pressed: boolean;
@@ -301,7 +303,13 @@ function JoinToggle({
   }>;
 }) {
   return (
-    <fieldset className="join note-heading-join m-0 border-0 p-0 [min-inline-size:0]">
+    <fieldset
+      className={
+        tone === "mode"
+          ? "join note-heading-mode m-0 inline-flex h-8 items-center rounded-full border-0 bg-base-200 p-0.5 [min-inline-size:0]"
+          : "join note-heading-priority m-0 inline-flex h-8 items-center overflow-hidden rounded-full border border-base-300 bg-base-100 p-0 [min-inline-size:0]"
+      }
+    >
       <legend className="sr-only">{label}</legend>
       {segments.map((segment) => (
         <button
@@ -311,7 +319,7 @@ function JoinToggle({
           aria-pressed={segment.pressed}
           title={segment.title ?? segment.label}
           data-selected={segment.pressed ? "true" : "false"}
-          className="btn btn-sm join-item"
+          className={`btn btn-sm join-item h-7 min-h-0 px-3 font-medium ${tone === "mode" ? "rounded-full" : ""}`}
           onClick={segment.onClick}
         >
           {segment.label}
@@ -448,11 +456,15 @@ export function PropertyPanel({
   readOnly = false,
 }: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(frontmatter.title);
   const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const infoRef = useRef<HTMLDivElement>(null);
+  const infoButtonRef = useRef<HTMLButtonElement>(null);
+  const infoId = useId();
   const canEditTitle = !readOnly && !frontmatter.locked;
 
   // Drop an in-progress edit when the open note changes, even if the titles match.
@@ -461,6 +473,7 @@ export function PropertyPanel({
     editingTitleRef.current = false;
     setEditingTitle(false);
     setTitleDraft(frontmatter.title);
+    setInfoOpen(false);
   }, [frontmatter.id]);
 
   useEffect(() => {
@@ -473,6 +486,26 @@ export function PropertyPanel({
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
   }, [editingTitle]);
+
+  useEffect(() => {
+    if (!infoOpen) return;
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (infoRef.current?.contains(target) || infoButtonRef.current?.contains(target)) return;
+      setInfoOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setInfoOpen(false);
+      infoButtonRef.current?.focus();
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [infoOpen]);
 
   function beginTitleEdit() {
     if (!canEditTitle) return;
@@ -525,7 +558,7 @@ export function PropertyPanel({
     <div className="space-y-3 border-b border-base-300 px-12 py-4" data-testid="note-heading">
       <div
         data-testid="note-heading-title-row"
-        className="flex min-w-0 flex-wrap items-center justify-start gap-x-3 gap-y-2"
+        className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
       >
         <div className="flex min-w-0 items-center gap-2">
           {editingTitle ? (
@@ -571,7 +604,7 @@ export function PropertyPanel({
                   type="button"
                   aria-label="Edit title"
                   title="Edit title"
-                  className={iconButtonClass()}
+                  className="btn btn-ghost btn-xs btn-square shrink-0 text-[var(--color-text-muted)]"
                   onClick={beginTitleEdit}
                 >
                   <Icon icon="uil:pen" className="h-4 w-4" aria-hidden="true" />
@@ -582,7 +615,10 @@ export function PropertyPanel({
           {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
         </div>
 
-        <div data-testid="note-heading-actions" className="flex flex-wrap items-center gap-2">
+        <div
+          data-testid="note-heading-actions"
+          className="flex shrink-0 flex-wrap items-center gap-1"
+        >
           {filePath && (
             <button
               type="button"
@@ -623,50 +659,33 @@ export function PropertyPanel({
             </button>
           )}
           {onToggleMarkdown && (
-            <JoinToggle
-              label="Editor mode"
-              segments={[
-                {
-                  label: "Rich",
-                  pressed: markdownMode !== true,
-                  title: markdownMode ? "Switch to editor" : "Rich text",
-                  onClick: () => {
-                    if (markdownMode) onToggleMarkdown();
+            <>
+              <HeadingDivider />
+              <JoinToggle
+                label="Editor mode"
+                tone="mode"
+                segments={[
+                  {
+                    label: "Rich",
+                    pressed: markdownMode !== true,
+                    title: markdownMode ? "Switch to editor" : "Rich text",
+                    onClick: () => {
+                      if (markdownMode) onToggleMarkdown();
+                    },
                   },
-                },
-                {
-                  label: "Markdown",
-                  pressed: markdownMode === true,
-                  title: markdownMode ? "Markdown" : "Switch to Markdown",
-                  onClick: () => {
-                    if (!markdownMode) onToggleMarkdown();
+                  {
+                    label: "Markdown",
+                    pressed: markdownMode === true,
+                    title: markdownMode ? "Markdown" : "Switch to Markdown",
+                    onClick: () => {
+                      if (!markdownMode) onToggleMarkdown();
+                    },
                   },
-                },
-              ]}
-            />
+                ]}
+              />
+            </>
           )}
-          <button
-            type="button"
-            aria-label="Properties"
-            aria-expanded={expanded}
-            title="Properties"
-            className={iconButtonClass(expanded ? "active" : "default")}
-            onClick={() => setExpanded((open) => !open)}
-          >
-            <Icon icon="uil:sliders-v-alt" className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label="Delete note"
-              title="Delete note"
-              className={iconButtonClass("danger")}
-            >
-              <Icon icon="uil:trash-alt" className="h-4 w-4" aria-hidden="true" />
-            </button>
-          )}
-          {onDelete && onArchive && <HeadingDivider />}
+          {(onArchive || onDelete) && <HeadingDivider />}
           {onArchive && (
             <button
               type="button"
@@ -678,6 +697,69 @@ export function PropertyPanel({
               <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="Delete note"
+              title="Delete note"
+              className={iconButtonClass("danger")}
+            >
+              <Icon icon="uil:trash-alt" className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          <HeadingDivider />
+          <div className="relative">
+            <button
+              ref={infoButtonRef}
+              type="button"
+              aria-label="Note info"
+              aria-expanded={infoOpen}
+              aria-controls={infoOpen ? infoId : undefined}
+              title="Note info"
+              className={iconButtonClass(infoOpen ? "active" : "default")}
+              onClick={() => setInfoOpen((open) => !open)}
+            >
+              <Icon icon="uil:info-circle" className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {infoOpen && (
+              <section
+                ref={infoRef}
+                id={infoId}
+                aria-label="Note info"
+                className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-base-300 bg-base-100 p-3 text-xs shadow-xl"
+              >
+                <dl className="space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-[var(--color-text-muted)]">Created</dt>
+                    <dd className="text-[var(--color-text)]" title={frontmatter.created}>
+                      {formatTimestamp(frontmatter.created)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-[var(--color-text-muted)]">Updated</dt>
+                    <dd className="text-[var(--color-text)]" title={frontmatter.updated}>
+                      {formatTimestamp(frontmatter.updated)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-[var(--color-text-muted)]">ID</dt>
+                    <dd className="truncate font-mono text-[var(--color-text)]">
+                      {frontmatter.id}
+                    </dd>
+                  </div>
+                  {filePath && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-[var(--color-text-muted)]">Path</dt>
+                      <dd className="truncate text-[var(--color-text)]" title={filePath}>
+                        {filePath}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
+          </div>
         </div>
       </div>
 
@@ -689,27 +771,24 @@ export function PropertyPanel({
           disabled={readOnly}
           className="m-0 flex min-w-0 flex-wrap items-center justify-start gap-2 border-0 p-0"
         >
-          {!unmanaged && (
-            <>
-              <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
-              <JoinToggle
-                label="Priority"
-                segments={[
-                  {
-                    label: "Urgent",
-                    pressed: frontmatter.urgent,
-                    onClick: () => onChange({ urgent: !frontmatter.urgent }),
-                  },
-                  {
-                    label: "Important",
-                    pressed: frontmatter.important,
-                    onClick: () => onChange({ important: !frontmatter.important }),
-                  },
-                ]}
-              />
-              <HeadingDivider />
-            </>
-          )}
+          <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
+          <JoinToggle
+            label="Priority"
+            tone="priority"
+            segments={[
+              {
+                label: "Urgent",
+                pressed: frontmatter.urgent,
+                onClick: () => onChange({ urgent: !frontmatter.urgent }),
+              },
+              {
+                label: "Important",
+                pressed: frontmatter.important,
+                onClick: () => onChange({ important: !frontmatter.important }),
+              },
+            ]}
+          />
+          <HeadingDivider />
           <FlagSwitch
             label="Pinned"
             pressed={frontmatter.pinned ?? false}
@@ -725,6 +804,19 @@ export function PropertyPanel({
           <HeadingDivider />
           <HeaderTags key={frontmatter.id} value={frontmatter.tags} onChange={onChange} />
         </fieldset>
+        <button
+          type="button"
+          onClick={() => setExpanded((open) => !open)}
+          aria-expanded={expanded}
+          className="btn btn-ghost btn-xs ml-auto gap-1 self-center"
+        >
+          Properties
+          <Icon
+            icon="uil:angle-down"
+            className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
       </div>
 
       {/* Expanded frontmatter panel */}

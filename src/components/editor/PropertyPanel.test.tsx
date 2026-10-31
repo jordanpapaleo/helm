@@ -141,12 +141,19 @@ describe("PropertyPanel unmanaged notes", () => {
     expect(screen.getByLabelText("Blocked")).toBeInTheDocument();
   });
 
-  it("hides State / Urgent / Important / Blocked when the note is unmanaged", () => {
-    render(<PropertyPanel frontmatter={makeFrontmatter({ unmanaged: true })} onChange={vi.fn()} />);
+  it("keeps state and urgency on the heading when the note is unmanaged", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ unmanaged: true, state: "" })}
+        onChange={vi.fn()}
+      />,
+    );
 
-    expect(screen.queryByRole("button", { name: "State" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Urgent" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Important" })).not.toBeInTheDocument();
+    const metaRow = screen.getByTestId("note-heading-meta-row");
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "State" }));
+    expect(screen.getByRole("button", { name: "State" })).toHaveTextContent("None");
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
 
     expect(screen.getByLabelText("Pinned")).toBeInTheDocument();
     expect(screen.getByLabelText("Locked")).toBeInTheDocument();
@@ -196,6 +203,26 @@ describe("PropertyPanel unmanaged notes", () => {
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ unmanaged: false });
+  });
+
+  it("renders state and urgency on row 2 when the note has no state", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ state: "", urgent: false, important: false, tags: [] })}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const metaRow = screen.getByTestId("note-heading-meta-row");
+    const state = screen.getByRole("button", { name: "State" });
+    expect(metaRow).toContainElement(state);
+    expect(state).toHaveTextContent("None");
+    expect(state).not.toHaveTextContent("Prepare");
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Locked" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Add tag" }));
   });
 
   it("shows a cleared state as None instead of Prepare", () => {
@@ -393,9 +420,9 @@ const TITLE_ROW_ACTIONS = [
   "Export to PDF",
   "Rich",
   "Markdown",
-  "Properties",
-  "Delete note",
   "Archive note",
+  "Delete note",
+  "Note info",
 ] as const;
 
 describe("PropertyPanel header layout", () => {
@@ -449,12 +476,15 @@ describe("PropertyPanel header layout", () => {
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
     );
     expect(labels).toEqual([...TITLE_ROW_ACTIONS]);
-    expect(screen.queryByRole("button", { name: "Note info" })).not.toBeInTheDocument();
-    expect(titleRow.className).toContain("justify-start");
-    expect(titleRow.className).not.toContain("justify-between");
+    expect(screen.getByRole("button", { name: "Copy file path" }).className).toContain("btn-ghost");
+    expect(screen.getByRole("button", { name: "Edit title" }).className).toContain("btn-ghost");
+    expect(titleRow).not.toContainElement(screen.getByRole("button", { name: "Properties" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Properties" }));
+    expect(titleRow.className).toContain("justify-between");
+    expect(titleRow.className).toContain("items-center");
     expect(metaRow.className).toContain("justify-start");
-    expect(metaRow.className).not.toContain("justify-between");
-    expect(screen.getByTestId("note-heading-actions").className).not.toContain("ml-auto");
+    expect(metaRow.className).toContain("items-center");
+    expect(screen.getByTestId("note-heading-actions").className).toContain("items-center");
     expect(screen.getByRole("heading", { name: "Command" }).parentElement?.className).not.toContain(
       "flex-1",
     );
@@ -469,24 +499,35 @@ describe("PropertyPanel header layout", () => {
     expect(metaRow).toContainElement(urgent);
     expect(metaRow).toContainElement(important);
     expect(urgent.parentElement?.className).toContain("join");
+    expect(urgent.parentElement?.className).toContain("note-heading-priority");
     expect(urgent).toHaveAttribute("data-selected", "false");
     expect(urgent.className).toContain("join-item");
     expect(urgent).toHaveAttribute("aria-pressed", "false");
     expect(important).toHaveAttribute("data-selected", "true");
     expect(important.className).toContain("join-item");
     expect(important).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Rich" }).className).toContain("join-item");
+    const rich = screen.getByRole("button", { name: "Rich" });
+    expect(rich.className).toContain("join-item");
+    expect(rich.parentElement?.className).toContain("note-heading-mode");
     expect(screen.getByRole("button", { name: "Markdown" }).className).toContain("join-item");
 
-    const deleteNote = screen.getByRole("button", { name: "Delete note" });
     const archive = screen.getByRole("button", { name: "Archive note" });
-    const titleDivider = within(titleRow).getByTestId("heading-divider");
+    const deleteNote = screen.getByRole("button", { name: "Delete note" });
+    const info = screen.getByRole("button", { name: "Note info" });
     expect(
-      deleteNote.compareDocumentPosition(titleDivider) & Node.DOCUMENT_POSITION_FOLLOWING,
+      archive.compareDocumentPosition(deleteNote) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      titleDivider.compareDocumentPosition(archive) & Node.DOCUMENT_POSITION_FOLLOWING,
+      deleteNote.compareDocumentPosition(info) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    const titleDividers = within(titleRow).getAllByTestId("heading-divider");
+    expect(titleDividers).toHaveLength(3);
+    for (const divider of [
+      ...titleDividers,
+      ...within(metaRow).getAllByTestId("heading-divider"),
+    ]) {
+      expect(divider.className).toContain("self-center");
+    }
     expect(within(metaRow).getAllByTestId("heading-divider")).toHaveLength(2);
 
     expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));

@@ -23,6 +23,7 @@ vi.mock("../../lib/tauri-commands", () => ({
     listNoteHistory: vi.fn().mockResolvedValue([]),
     readNote: vi.fn().mockResolvedValue(""),
     renameNote: vi.fn().mockResolvedValue(undefined),
+    savePdfDialog: vi.fn().mockResolvedValue(null),
   },
 }));
 
@@ -40,6 +41,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 import { listen } from "@tauri-apps/api/event";
+import { requestNotePdfExport } from "../../hooks/usePdfExport";
 import { tauriCommands } from "../../lib/tauri-commands";
 
 const VAULT: VaultConfig = { id: "v1", name: "Vault", path: "/vault" };
@@ -1030,6 +1032,23 @@ describe("MainPanel deleted notes", () => {
     expect(tauriCommands.writeNote).not.toHaveBeenCalled();
     expect(useTrashStore.getState().items.map((item) => item.note.id)).toEqual([deleted.id]);
     expect(useNoteStore.getState().notes.map((item) => item.content)).toEqual(["live body"]);
+  });
+});
+
+describe("MainPanel PDF export request", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("runs the existing export for the note the list menu asked for", async () => {
+    vi.mocked(tauriCommands.savePdfDialog).mockResolvedValue(null);
+    setup(makeNote(), true);
+    await act(async () => {
+      requestNotePdfExport("01JPMXYZ123");
+    });
+    await waitFor(() => {
+      expect(tauriCommands.savePdfDialog).toHaveBeenCalledWith("Test Note.pdf");
+    });
   });
 });
 

@@ -18,7 +18,7 @@ vi.mock("../lib/pending-saves", () => ({
 
 import { useNoteStore } from "../store/notes";
 import { useToastStore } from "../store/toast";
-import { usePdfExport } from "./usePdfExport";
+import { bindNotePdfExport, requestNotePdfExport, usePdfExport } from "./usePdfExport";
 
 function makeNote(id: string, title: string, content = "body"): Note {
   return {
@@ -115,5 +115,15 @@ describe("usePdfExport", () => {
     const { result } = renderHook(() => usePdfExport());
     await act(() => result.current.start("missing"));
     expect(savePdfDialog).not.toHaveBeenCalled();
+  });
+
+  it("forwards a menu request to the export MainPanel registered", () => {
+    const start = vi.fn();
+    const release = bindNotePdfExport(start);
+    requestNotePdfExport("n1");
+    expect(start).toHaveBeenCalledWith("n1");
+    release();
+    requestNotePdfExport("n1");
+    expect(start).toHaveBeenCalledTimes(1);
   });
 });

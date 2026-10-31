@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { usePdfExport } from "../../hooks/usePdfExport";
+import { bindNotePdfExport, usePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
@@ -525,6 +525,8 @@ export function MainPanel() {
       for (const fn of unlisteners) fn();
     };
   }, [startPdfExport]);
+
+  useEffect(() => bindNotePdfExport(startPdfExport), [startPdfExport]);
 
   async function handleSave(content: string) {
     if (!selectedNote || viewingDeleted) return;

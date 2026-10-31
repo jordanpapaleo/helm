@@ -988,10 +988,124 @@ describe("MainPanel archive", () => {
     note.frontmatter = { ...note.frontmatter, archived: true, locked: true, title: "Old Decision" };
     setup(note, true);
 
-    expect(screen.getByDisplayValue("Old Decision")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Old Decision" })).toBeInTheDocument();
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Unarchive note" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Archive note" })).not.toBeInTheDocument();
+  });
+});
+
+describe("MainPanel title rename", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  it("renames the file when the header title is saved and keeps the note id", async () => {
+    const note = makeNote();
+    note.frontmatter = { ...note.frontmatter, tags: ["ai-skills/skill"] };
+    setup(note, true);
+
+    expect(screen.queryByText("#ai-skills/skill")).not.toBeInTheDocument();
+    expect(screen.queryByText("ai-skills/skill")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    const input = screen.getByRole("textbox", { name: "Note title" });
+    fireEvent.change(input, { target: { value: "New Title" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+        "/vault/test.md",
+        "/vault/new-title.md",
+      );
+    });
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/test.md",
+      expect.stringContaining("New Title"),
+    );
+    const saved = useNoteStore.getState().notes[0];
+    expect(saved.id).toBe(note.id);
+    expect(saved.frontmatter.id).toBe(note.id);
+    expect(saved.frontmatter.title).toBe("New Title");
+    expect(saved.filePath).toBe("/vault/new-title.md");
+    expect(saved.fileName).toBe("new-title.md");
+    expect(saved.content).toBe(note.content);
+    expect(screen.getByRole("heading", { name: "New Title" })).toBeInTheDocument();
+  });
+
+  it("keeps a checkbox change that lands while the title rename is still saving", async () => {
+    let releaseRenameWrite: () => void = () => {};
+    const renameWriteGate = new Promise<void>((resolve) => {
+      releaseRenameWrite = resolve;
+    });
+    const writes: Array<{ path: string; content: string }> = [];
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (path, content) => {
+      writes.push({ path, content });
+      if (writes.length === 1) await renameWriteGate;
+    });
+
+    const note = makeNote();
+    setup(note, true);
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+      const input = screen.getByRole("textbox", { name: "Note title" });
+      fireEvent.change(input, { target: { value: "New Title" } });
+      // Clicking another control blurs the title first, which starts the rename,
+      // and only then delivers the checkbox change.
+      fireEvent.blur(input);
+      fireEvent.click(screen.getByLabelText("Urgent"));
+
+      await waitFor(() => expect(writes).toHaveLength(1));
+      expect(writes[0]?.path).toBe("/vault/test.md");
+      expect(writes[0]?.content).toContain("New Title");
+      expect(writes[0]?.content).not.toContain("urgent: true");
+
+      releaseRenameWrite();
+
+      await waitFor(() => {
+        const saved = useNoteStore.getState().notes[0];
+        expect(saved.frontmatter.title).toBe("New Title");
+        expect(saved.frontmatter.urgent).toBe(true);
+        expect(saved.filePath).toBe("/vault/new-title.md");
+        expect(saved.id).toBe(note.id);
+      });
+
+      expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+        "/vault/test.md",
+        "/vault/new-title.md",
+      );
+      const followUp = writes[writes.length - 1];
+      expect(followUp?.path).toBe("/vault/new-title.md");
+      expect(followUp?.content).toContain("New Title");
+      expect(followUp?.content).toContain("urgent: true");
+      expect(
+        writes.some(
+          (write) =>
+            write.path === "/vault/new-title.md" && write.content.includes("title: Test Note"),
+        ),
+      ).toBe(false);
+    } finally {
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
+  it("does not rename the file when the title edit is cancelled", () => {
+    const note = makeNote();
+    setup(note, true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    const input = screen.getByRole("textbox", { name: "Note title" });
+    fireEvent.change(input, { target: { value: "New Title" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(tauriCommands.renameNote).not.toHaveBeenCalled();
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes[0].filePath).toBe(note.filePath);
+    expect(useNoteStore.getState().notes[0].frontmatter.title).toBe("Test Note");
+    expect(useNoteStore.getState().notes[0].id).toBe(note.id);
+    expect(screen.getByRole("heading", { name: "Test Note" })).toBeInTheDocument();
   });
 });
 
@@ -1025,7 +1139,8 @@ describe("MainPanel deleted notes", () => {
   it("shows a deleted note on the note screen and restores it", async () => {
     const note = openDeleted();
 
-    expect(screen.getByDisplayValue("Gone")).toHaveProperty("readOnly", true);
+    expect(screen.getByRole("heading", { name: "Gone" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit title" })).not.toBeInTheDocument();
     expect(screen.getByDisplayValue("deleted body")).toHaveProperty("readOnly", true);
     expect(screen.getByText("This note is in Trash.")).toBeInTheDocument();
     expect(screen.getByLabelText("State")).toBeDisabled();
@@ -1125,8 +1240,9 @@ describe("MainPanel deleted notes", () => {
     handlers.get("format-heading")?.({ payload: 1 });
     handlers.get("format-paragraph")?.({});
 
-    expect(document.querySelector("h1, h2, h3")).toBeNull();
-    expect(document.querySelector(".ProseMirror")?.textContent).toContain("deleted body");
+    const editor = document.querySelector(".ProseMirror");
+    expect(editor?.querySelector("h1, h2, h3")).toBeNull();
+    expect(editor?.textContent).toContain("deleted body");
     vi.mocked(listen).mockResolvedValue(() => {});
   });
 

@@ -1,5 +1,12 @@
 import { Icon } from "@iconify/react";
-import { useEffect, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { isArchived } from "../../lib/archive";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { formatTimestamp } from "../../lib/timestamps";
@@ -11,9 +18,6 @@ interface PropertyPanelProps {
   frontmatter: NoteFrontmatter;
   filePath?: string;
   onChange: (updates: Partial<NoteFrontmatter>) => void;
-  /** Live title updates while typing — keeps the note list in sync before blur. */
-  onTitleInput?: (title: string) => void;
-  onTitleTab?: () => void;
   onDelete?: () => void;
   /** Archive or unarchive. Omitted when the note is locked. */
   onArchive?: () => void;
@@ -93,6 +97,152 @@ function TeamInput({
   );
 }
 
+const STATE_CHOICES: Array<{ value: NoteState; label: string }> = [
+  { value: "", label: "None" },
+  ...NOTE_STATES.map((state) => ({ value: state as NoteState, label: state })),
+];
+
+const menuItemClass =
+  "flex w-full items-center px-3 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-accent)]";
+
+/**
+ * Workflow state as a normal menu. A daisyUI `<select class="select">` opts into
+ * `appearance: base-select`, and that picker anchors to the wrong box — it paints
+ * over the note title instead of opening under the control.
+ */
+function StateMenu({
+  value,
+  onChange,
+}: {
+  value: NoteState;
+  onChange: (state: NoteState) => void;
+}) {
+  const menuId = useId();
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current || !menuRef.current) return;
+    const trigger = buttonRef.current.getBoundingClientRect();
+    const menu = menuRef.current.getBoundingClientRect();
+    const margin = 4;
+    const spaceBelow = window.innerHeight - trigger.bottom - margin;
+    const top =
+      spaceBelow >= menu.height || spaceBelow >= trigger.top
+        ? trigger.bottom + margin
+        : Math.max(margin, trigger.top - menu.height - margin);
+    const left = Math.max(margin, Math.min(trigger.left, window.innerWidth - menu.width - margin));
+    setPos({ left, top });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const selected = menuRef.current?.querySelector<HTMLElement>('[aria-checked="true"]');
+    const first = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"]');
+    (selected ?? first)?.focus();
+
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      buttonRef.current?.focus();
+    }
+    function onScroll() {
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onScroll);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = [
+      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+    ];
+    if (items.length === 0) return;
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (
+      event.key !== "ArrowDown" &&
+      event.key !== "ArrowUp" &&
+      event.key !== "Home" &&
+      event.key !== "End"
+    ) {
+      return;
+    }
+    event.preventDefault();
+    const current = index === -1 ? (event.key === "ArrowUp" ? 0 : -1) : index;
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? items.length - 1
+          : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  }
+
+  function choose(state: NoteState) {
+    onChange(state);
+    setOpen(false);
+    buttonRef.current?.focus();
+  }
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="State"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        className="btn btn-ghost btn-sm h-auto min-h-0 gap-1 px-2 py-0.5 font-normal"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{value || "None"}</span>
+        <Icon icon="uil:angle-down" className="h-4 w-4 opacity-70" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          aria-label="Note state"
+          className="fixed z-50 min-w-[10rem] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-xl"
+          style={{ left: pos.left, top: pos.top }}
+          onKeyDown={onMenuKeyDown}
+        >
+          {STATE_CHOICES.map((choice) => (
+            <button
+              key={choice.label}
+              type="button"
+              role="menuitemradio"
+              aria-checked={value === choice.value}
+              className={`${menuItemClass} ${value === choice.value ? "bg-[var(--color-bg)]" : ""}`}
+              onClick={() => choose(choice.value)}
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function TagsInput({
   value,
   onChange,
@@ -131,8 +281,6 @@ export function PropertyPanel({
   frontmatter,
   filePath,
   onChange,
-  onTitleInput,
-  onTitleTab,
   onDelete,
   onArchive,
   markdownMode,
@@ -144,13 +292,57 @@ export function PropertyPanel({
 }: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(frontmatter.title);
-  // Resync when the note switches (id) or the title changes in the store from
-  // another surface (e.g. renaming from the note list).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: frontmatter.id is intentionally included — an in-progress draft must reset when switching notes even if both notes share the same title
+  const editingTitleRef = useRef(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const canEditTitle = !readOnly && !frontmatter.locked;
+
+  // Drop an in-progress edit when the open note changes, even if the titles match.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: frontmatter.id is the note switch; title is read from the new note
   useEffect(() => {
+    editingTitleRef.current = false;
+    setEditingTitle(false);
     setTitleDraft(frontmatter.title);
-  }, [frontmatter.id, frontmatter.title]);
+  }, [frontmatter.id]);
+
+  useEffect(() => {
+    if (editingTitleRef.current) return;
+    setTitleDraft(frontmatter.title);
+  }, [frontmatter.title]);
+
+  useEffect(() => {
+    if (!editingTitle) return;
+    titleInputRef.current?.focus();
+    titleInputRef.current?.select();
+  }, [editingTitle]);
+
+  function beginTitleEdit() {
+    if (!canEditTitle) return;
+    setTitleDraft(frontmatter.title);
+    editingTitleRef.current = true;
+    setEditingTitle(true);
+  }
+
+  function commitTitle(raw: string) {
+    if (!editingTitleRef.current) return;
+    editingTitleRef.current = false;
+    setEditingTitle(false);
+    const next = raw.trim();
+    if (!next || next === frontmatter.title) {
+      setTitleDraft(frontmatter.title);
+      return;
+    }
+    setTitleDraft(next);
+    onChange({ title: next });
+  }
+
+  function cancelTitleEdit() {
+    if (!editingTitleRef.current) return;
+    editingTitleRef.current = false;
+    setEditingTitle(false);
+    setTitleDraft(frontmatter.title);
+  }
 
   function copyPath() {
     if (!filePath) return;
@@ -170,29 +362,58 @@ export function PropertyPanel({
   return (
     <div className="border-b border-base-300 px-12 py-4 space-y-3">
       {/* Title row stays clear of the action icons. */}
-      <div className="flex min-w-0 items-center gap-3">
-        <input
-          className="min-w-0 flex-1 bg-transparent text-3xl font-bold text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
-          value={titleDraft}
-          readOnly={readOnly}
-          onChange={(e) => {
-            if (readOnly) return;
-            setTitleDraft(e.target.value);
-            onTitleInput?.(e.target.value);
-          }}
-          onBlur={() => {
-            if (!readOnly) onChange({ title: titleDraft });
-          }}
-          onKeyDown={(e) => {
-            if (readOnly) return;
-            if (e.key === "Tab") {
-              e.preventDefault();
-              onChange({ title: titleDraft });
-              onTitleTab?.();
-            }
-          }}
-          placeholder="Untitled"
-        />
+      <div className="flex min-w-0 items-center gap-2">
+        {editingTitle ? (
+          <>
+            <input
+              ref={titleInputRef}
+              aria-label="Note title"
+              className="min-w-[8ch] max-w-[calc(100%-2.75rem)] rounded-md border border-base-300 bg-transparent px-2 text-3xl font-bold text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+              style={{ width: `${Math.max(titleDraft.length + 1, 8)}ch` }}
+              value={titleDraft}
+              placeholder="Untitled"
+              autoComplete="off"
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={(e) => commitTitle(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitTitle(e.currentTarget.value);
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelTitleEdit();
+                }
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Save title"
+              title="Save title"
+              className="btn btn-ghost btn-sm btn-square shrink-0 text-[var(--color-accent)]"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => commitTitle(titleDraft)}
+            >
+              <Icon icon="uil:check" className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <>
+            <h1 className="min-w-0 break-words text-3xl font-bold leading-tight text-[var(--color-text)]">
+              {frontmatter.title || "Untitled"}
+            </h1>
+            {canEditTitle && (
+              <button
+                type="button"
+                aria-label="Edit title"
+                title="Edit title"
+                className="btn btn-ghost btn-sm btn-square shrink-0 opacity-60 hover:opacity-100 focus-visible:opacity-100"
+                onClick={beginTitleEdit}
+              >
+                <Icon icon="uil:pen" className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+          </>
+        )}
         {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
       </div>
 
@@ -352,20 +573,7 @@ export function PropertyPanel({
             <>
               <div className="flex items-center gap-2">
                 <span className="text-[var(--color-text-muted)]">State</span>
-                <select
-                  aria-label="State"
-                  className="select select-ghost select-sm h-auto min-h-0 py-0.5"
-                  value={frontmatter.state}
-                  onChange={(e) => onChange({ state: e.target.value as NoteState })}
-                >
-                  {/* Blank entry so a cleared state renders as empty, not as "Prepare" */}
-                  <option value="" />
-                  {NOTE_STATES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+                <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
               </div>
 
               <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
@@ -538,17 +746,6 @@ export function PropertyPanel({
             </Row>
           ))}
         </fieldset>
-      )}
-
-      {/* Tags display */}
-      {frontmatter.tags.length > 0 && !expanded && (
-        <div className="flex flex-wrap gap-1.5">
-          {frontmatter.tags.map((tag) => (
-            <span key={tag} className="badge badge-ghost badge-sm">
-              #{tag}
-            </span>
-          ))}
-        </div>
       )}
     </div>
   );

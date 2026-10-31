@@ -1006,8 +1006,7 @@ describe("MainPanel title rename", () => {
     note.frontmatter = { ...note.frontmatter, tags: ["ai-skills/skill"] };
     setup(note, true);
 
-    expect(screen.queryByText("#ai-skills/skill")).not.toBeInTheDocument();
-    expect(screen.queryByText("ai-skills/skill")).not.toBeInTheDocument();
+    expect(screen.getByText("#ai-skills/skill")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
     const input = screen.getByRole("textbox", { name: "Note title" });

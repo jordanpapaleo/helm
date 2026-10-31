@@ -113,7 +113,7 @@ describe("PropertyPanel title", () => {
 });
 
 describe("PropertyPanel header tags", () => {
-  it("does not render tag chips in the header", () => {
+  it("renders tag chips on the header and keeps the properties field", () => {
     render(
       <PropertyPanel
         frontmatter={makeFrontmatter({ tags: ["ai-skills/skill", "work"] })}
@@ -121,9 +121,9 @@ describe("PropertyPanel header tags", () => {
       />,
     );
 
-    expect(screen.queryByText("#ai-skills/skill")).not.toBeInTheDocument();
-    expect(screen.queryByText("#work")).not.toBeInTheDocument();
-    expect(screen.queryByText("ai-skills/skill")).not.toBeInTheDocument();
+    expect(screen.getByText("#ai-skills/skill")).toBeInTheDocument();
+    expect(screen.getByText("#work")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add tag" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
     expect(screen.getByDisplayValue("ai-skills/skill, work")).toBeInTheDocument();
@@ -134,25 +134,25 @@ describe("PropertyPanel unmanaged notes", () => {
   it("shows the workflow controls for a managed note", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} />);
 
-    expect(screen.getByText("State")).toBeInTheDocument();
-    expect(screen.getByLabelText("Urgent")).toBeInTheDocument();
-    expect(screen.getByLabelText("Important")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "State" })).toHaveTextContent("Prepare");
+    expect(screen.getByRole("button", { name: "Urgent" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Important" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     expect(screen.getByLabelText("Blocked")).toBeInTheDocument();
   });
 
   it("hides State / Urgent / Important / Blocked when the note is unmanaged", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter({ unmanaged: true })} onChange={vi.fn()} />);
 
-    expect(screen.queryByText("State")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Urgent")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Important")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Blocked")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "State" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Urgent" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Important" })).not.toBeInTheDocument();
 
-    // Everything else in the metadata row stays put.
     expect(screen.getByLabelText("Pinned")).toBeInTheDocument();
     expect(screen.getByLabelText("Locked")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    expect(screen.queryByLabelText("Blocked")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Unmanaged")).toBeInTheDocument();
-    expect(screen.getByText("Properties")).toBeInTheDocument();
   });
 
   it("clears the workflow fields in a single onChange when Unmanaged is switched on", () => {
@@ -169,6 +169,7 @@ describe("PropertyPanel unmanaged notes", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     fireEvent.click(screen.getByLabelText("Unmanaged"));
 
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -190,6 +191,7 @@ describe("PropertyPanel unmanaged notes", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     fireEvent.click(screen.getByLabelText("Unmanaged"));
 
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -263,6 +265,7 @@ describe("PropertyPanel template flag", () => {
       <PropertyPanel frontmatter={makeFrontmatter()} onChange={onChange} />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     fireEvent.click(screen.getByLabelText("Template"));
     expect(onChange).toHaveBeenCalledWith({ template: true });
 
@@ -379,80 +382,156 @@ describe("PropertyPanel archive", () => {
   });
 });
 
-function rowOf(element: HTMLElement): HTMLElement {
-  const row = element.parentElement;
-  if (!row) throw new Error("expected the header control to sit in a row");
-  return row;
-}
-
-const HEADER_ACTIONS = [
+const TITLE_ROW_ACTIONS = [
   "Copy file path",
   "Pin to side",
   "Note history",
   "Export to PDF",
-  "Switch to Markdown",
+  "Rich",
+  "Markdown",
+  "Properties",
   "Archive note",
   "Delete note",
+  "Note info",
 ] as const;
 
 describe("PropertyPanel header layout", () => {
-  function renderCrowdedHeader() {
-    render(
+  function renderHeader(
+    frontmatter: Partial<NoteFrontmatter> = {},
+    handlers: {
+      onChange?: (updates: Partial<NoteFrontmatter>) => void;
+      onToggleMarkdown?: () => void;
+    } = {},
+  ) {
+    const onChange = handlers.onChange ?? vi.fn();
+    const onToggleMarkdown = handlers.onToggleMarkdown ?? vi.fn();
+    const view = render(
       <PropertyPanel
         frontmatter={makeFrontmatter({
-          title: "A long title that would crowd the action icons",
+          title: "Command",
+          state: "Maintain",
+          urgent: false,
+          important: true,
+          tags: ["ai-skills/command"],
+          ...frontmatter,
         })}
-        filePath="/vault/rule.md"
-        onChange={vi.fn()}
+        filePath="/vault/command.md"
+        onChange={onChange}
         onDelete={vi.fn()}
         onArchive={vi.fn()}
-        onToggleMarkdown={vi.fn()}
+        onToggleMarkdown={onToggleMarkdown}
         onShowHistory={vi.fn()}
         onExportPdf={vi.fn()}
       />,
     );
+    return { onChange, onToggleMarkdown, ...view };
   }
 
-  it("puts the action icons on their own line under the title", () => {
-    renderCrowdedHeader();
+  it("lays the open note out as a title row and a metadata row", () => {
+    renderHeader();
 
-    const titleRow = rowOf(
-      screen.getByRole("heading", { name: "A long title that would crowd the action icons" }),
-    );
-    const buttons = HEADER_ACTIONS.map((name) => screen.getByRole("button", { name }));
-    const actionRow = rowOf(buttons[0]);
-
-    expect(actionRow).not.toBe(titleRow);
+    const titleRow = screen.getByTestId("note-heading-title-row");
+    const metaRow = screen.getByTestId("note-heading-meta-row");
     expect(
-      titleRow.compareDocumentPosition(actionRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+      titleRow.compareDocumentPosition(metaRow) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
-    for (const button of buttons) {
-      expect(actionRow).toContainElement(button);
-      expect(titleRow).not.toContainElement(button);
+    expect(titleRow).toContainElement(screen.getByRole("heading", { name: "Command" }));
+    expect(titleRow).toContainElement(screen.getByRole("button", { name: "Edit title" }));
+    for (const name of TITLE_ROW_ACTIONS) {
+      expect(titleRow).toContainElement(screen.getByRole("button", { name }));
     }
 
-    const labels = [...actionRow.querySelectorAll("button")].map(
+    const labels = [...screen.getByTestId("note-heading-actions").querySelectorAll("button")].map(
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
     );
-    expect(labels).toEqual([...HEADER_ACTIONS]);
+    expect(labels).toEqual([...TITLE_ROW_ACTIONS]);
 
-    const locked = screen.getByLabelText("Locked");
-    expect(titleRow).not.toContainElement(locked);
-    expect(actionRow).not.toContainElement(locked);
-    expect(
-      actionRow.compareDocumentPosition(locked) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    const state = screen.getByRole("button", { name: "State" });
+    expect(metaRow).toContainElement(state);
+    expect(state).toHaveTextContent("Maintain");
+    expect(screen.getByTestId("state-dot").className).toContain("bg-[var(--color-success)]");
+
+    const urgent = screen.getByRole("button", { name: "Urgent" });
+    const important = screen.getByRole("button", { name: "Important" });
+    expect(metaRow).toContainElement(urgent);
+    expect(metaRow).toContainElement(important);
+    expect(urgent).toHaveAttribute("data-selected", "false");
+    expect(urgent.className).toContain("bg-transparent");
+    expect(important).toHaveAttribute("data-selected", "true");
+    expect(important.className).toContain("bg-[var(--color-accent)]");
+
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Locked" }));
+    expect(metaRow).toContainElement(screen.getByText("#ai-skills/command"));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Add tag" }));
+    expect(titleRow).not.toContainElement(state);
+  });
+
+  it("toggles urgent and important from the segmented control", () => {
+    const onChange = vi.fn();
+    renderHeader({}, { onChange });
+
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Important" }));
+
+    expect(onChange).toHaveBeenNthCalledWith(1, { urgent: true });
+    expect(onChange).toHaveBeenNthCalledWith(2, { important: false });
+  });
+
+  it("switches editor mode from the unselected Rich or Markdown segment", () => {
+    const onToggleMarkdown = vi.fn();
+    const view = renderHeader({}, { onToggleMarkdown });
+
+    expect(screen.getByRole("button", { name: "Rich" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Markdown" })).toHaveAttribute(
+      "title",
+      "Switch to Markdown",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rich" }));
+    expect(onToggleMarkdown).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    expect(onToggleMarkdown).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter()}
+        markdownMode
+        onChange={vi.fn()}
+        onToggleMarkdown={onToggleMarkdown}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Rich" })).toHaveAttribute(
+      "title",
+      "Switch to editor",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    expect(onToggleMarkdown).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Rich" }));
+    expect(onToggleMarkdown).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the existing note identity from the info icon", () => {
+    renderHeader();
+
+    expect(screen.queryByRole("region", { name: "Note info" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Note info" }));
+    const info = screen.getByRole("region", { name: "Note info" });
+    expect(info).toHaveTextContent("01JPMXYZ123");
+    expect(info).toHaveTextContent("/vault/command.md");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Note info" })).not.toBeInTheDocument();
   });
 
   it("keeps every action keyboard accessible with its existing label", async () => {
     const user = userEvent.setup();
-    renderCrowdedHeader();
+    renderHeader();
 
-    // Action buttons sit between the title and the metadata controls.
     screen.getByLabelText("State").focus();
 
-    for (const name of [...HEADER_ACTIONS].reverse()) {
+    for (const name of [...TITLE_ROW_ACTIONS].reverse()) {
       await user.tab({ shift: true });
       const button = screen.getByRole("button", { name });
       expect(button).toHaveFocus();
@@ -502,5 +581,38 @@ describe("PropertyPanel tags", () => {
     expect(input).toHaveValue("");
     await user.click(screen.getByRole("button", { name: /Properties/ }));
     expect(screen.queryByText("#work")).not.toBeInTheDocument();
+  });
+
+  it("removes the last tag from its chip", () => {
+    const onChange = vi.fn();
+    render(<PropertyPanel frontmatter={makeFrontmatter({ tags: ["work"] })} onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove tag work" }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({ tags: [] });
+  });
+
+  it("adds a tag from the header control and strips a leading hash", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [tags, setTags] = useState<string[]>([]);
+      return (
+        <PropertyPanel
+          frontmatter={makeFrontmatter({ tags })}
+          onChange={(updates) => {
+            if (Array.isArray(updates.tags)) setTags(updates.tags);
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    const input = screen.getByRole("textbox", { name: "New tag" });
+    await user.type(input, "#ai-skills/command{Enter}");
+
+    expect(screen.getByText("#ai-skills/command")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "New tag" })).not.toBeInTheDocument();
   });
 });

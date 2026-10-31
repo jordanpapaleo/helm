@@ -212,9 +212,14 @@ function StateMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        className="btn btn-ghost btn-sm h-auto min-h-0 gap-1 px-2 py-0.5 font-normal"
+        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-sm font-medium text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
         onClick={() => setOpen((current) => !current)}
       >
+        <span
+          data-testid="state-dot"
+          aria-hidden="true"
+          className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-success)]"
+        />
         <span>{value || "None"}</span>
         <Icon icon="uil:angle-down" className="h-4 w-4 opacity-70" aria-hidden="true" />
       </button>
@@ -280,6 +285,169 @@ function TagsInput({
   );
 }
 
+function iconButtonClass(tone: "default" | "active" | "danger" = "default"): string {
+  const color =
+    tone === "active"
+      ? "text-[var(--color-accent)]"
+      : tone === "danger"
+        ? "text-[var(--color-text-muted)] hover:text-[var(--color-error)]"
+        : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]";
+  return `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-[var(--color-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] disabled:opacity-40 ${color}`;
+}
+
+function segmentClass(selected: boolean): string {
+  const base =
+    "rounded-md border px-2.5 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]";
+  return selected
+    ? `${base} border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-content)]`
+    : `${base} border-[var(--color-border)] bg-transparent text-[var(--color-text)]`;
+}
+
+function SegmentedControl({
+  label,
+  segments,
+}: {
+  label: string;
+  segments: Array<{
+    label: string;
+    pressed: boolean;
+    title?: string;
+    onClick: () => void;
+  }>;
+}) {
+  return (
+    <fieldset className="m-0 inline-flex min-w-0 items-center gap-1 border-0 p-0 [min-inline-size:0]">
+      <legend className="sr-only">{label}</legend>
+      {segments.map((segment) => (
+        <button
+          key={segment.label}
+          type="button"
+          aria-label={segment.label}
+          aria-pressed={segment.pressed}
+          title={segment.title ?? segment.label}
+          data-selected={segment.pressed ? "true" : "false"}
+          className={segmentClass(segment.pressed)}
+          onClick={segment.onClick}
+        >
+          {segment.label}
+        </button>
+      ))}
+    </fieldset>
+  );
+}
+
+function FlagSwitch({
+  label,
+  pressed,
+  icon,
+  onToggle,
+}: {
+  label: string;
+  pressed: boolean;
+  icon: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={pressed}
+      aria-label={label}
+      title={label}
+      className={iconButtonClass(pressed ? "active" : "default")}
+      onClick={onToggle}
+    >
+      <Icon icon={icon} className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
+}
+
+function HeaderTags({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (u: Partial<NoteFrontmatter>) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const skipCommit = useRef(false);
+
+  useEffect(() => {
+    if (!adding) return;
+    inputRef.current?.focus();
+  }, [adding]);
+
+  function commit() {
+    const next = draft.trim().replace(/^#/, "");
+    setDraft("");
+    setAdding(false);
+    if (!next || value.includes(next)) return;
+    onChange({ tags: [...value, next] });
+  }
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
+      {value.map((tag) => (
+        <span
+          key={tag}
+          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-0.5 pr-1 pl-2 text-xs text-[var(--color-text)]"
+        >
+          <span>#{tag}</span>
+          <button
+            type="button"
+            aria-label={`Remove tag ${tag}`}
+            title={`Remove tag ${tag}`}
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
+            onClick={() => onChange({ tags: value.filter((item) => item !== tag) })}
+          >
+            <Icon icon="uil:times" className="h-3 w-3" aria-hidden="true" />
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <input
+          ref={inputRef}
+          aria-label="New tag"
+          value={draft}
+          placeholder="tag"
+          className="w-28 rounded-full border border-[var(--color-border)] bg-transparent px-2 py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            if (skipCommit.current) {
+              skipCommit.current = false;
+              return;
+            }
+            commit();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              skipCommit.current = true;
+              setDraft("");
+              setAdding(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          aria-label="Add tag"
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          onClick={() => setAdding(true)}
+        >
+          <Icon icon="uil:plus" className="h-3 w-3" aria-hidden="true" />
+          Tag
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PropertyPanel({
   frontmatter,
   content,
@@ -295,11 +463,15 @@ export function PropertyPanel({
   readOnly = false,
 }: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(frontmatter.title);
   const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const infoRef = useRef<HTMLDivElement>(null);
+  const infoButtonRef = useRef<HTMLButtonElement>(null);
+  const infoId = useId();
   const canEditTitle = !readOnly && !frontmatter.locked;
 
   // Drop an in-progress edit when the open note changes, even if the titles match.
@@ -308,6 +480,7 @@ export function PropertyPanel({
     editingTitleRef.current = false;
     setEditingTitle(false);
     setTitleDraft(frontmatter.title);
+    setInfoOpen(false);
   }, [frontmatter.id]);
 
   useEffect(() => {
@@ -320,6 +493,26 @@ export function PropertyPanel({
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
   }, [editingTitle]);
+
+  useEffect(() => {
+    if (!infoOpen) return;
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (infoRef.current?.contains(target) || infoButtonRef.current?.contains(target)) return;
+      setInfoOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setInfoOpen(false);
+      infoButtonRef.current?.focus();
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [infoOpen]);
 
   function beginTitleEdit() {
     if (!canEditTitle) return;
@@ -369,321 +562,257 @@ export function PropertyPanel({
   const extraFields = Object.entries(frontmatter).filter(([k]) => !KNOWN_FIELDS.has(k));
 
   return (
-    <div className="border-b border-base-300 px-12 py-4 space-y-3">
-      {/* Title row stays clear of the action icons. */}
-      <div className="flex min-w-0 items-center gap-2">
-        {editingTitle ? (
-          <>
-            <input
-              ref={titleInputRef}
-              aria-label="Note title"
-              className="min-w-[8ch] max-w-[calc(100%-2.75rem)] rounded-md border border-base-300 bg-transparent px-2 text-3xl font-bold text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
-              style={{ width: `${Math.max(titleDraft.length + 1, 8)}ch` }}
-              value={titleDraft}
-              placeholder="Untitled"
-              autoComplete="off"
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={(e) => commitTitle(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitTitle(e.currentTarget.value);
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelTitleEdit();
-                }
-              }}
-            />
-            <button
-              type="button"
-              aria-label="Save title"
-              title="Save title"
-              className="btn btn-ghost btn-sm btn-square shrink-0 text-[var(--color-accent)]"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => commitTitle(titleDraft)}
-            >
-              <Icon icon="uil:check" className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </>
-        ) : (
-          <>
-            <h1 className="min-w-0 break-words text-3xl font-bold leading-tight text-[var(--color-text)]">
-              {frontmatter.title || "Untitled"}
-            </h1>
-            {canEditTitle && (
+    <div className="space-y-3 border-b border-base-300 px-12 py-4" data-testid="note-heading">
+      <div
+        data-testid="note-heading-title-row"
+        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {editingTitle ? (
+            <>
+              <input
+                ref={titleInputRef}
+                aria-label="Note title"
+                className="min-w-[8ch] max-w-[calc(100%-2.75rem)] rounded-md border border-base-300 bg-transparent px-2 text-3xl font-bold text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+                style={{ width: `${Math.max(titleDraft.length + 1, 8)}ch` }}
+                value={titleDraft}
+                placeholder="Untitled"
+                autoComplete="off"
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={(e) => commitTitle(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitTitle(e.currentTarget.value);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelTitleEdit();
+                  }
+                }}
+              />
               <button
                 type="button"
-                aria-label="Edit title"
-                title="Edit title"
-                className="btn btn-ghost btn-sm btn-square shrink-0 opacity-60 hover:opacity-100 focus-visible:opacity-100"
-                onClick={beginTitleEdit}
+                aria-label="Save title"
+                title="Save title"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--color-accent)] hover:bg-[var(--color-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => commitTitle(titleDraft)}
               >
-                <Icon icon="uil:pen" className="h-4 w-4" aria-hidden="true" />
+                <Icon icon="uil:check" className="h-4 w-4" aria-hidden="true" />
               </button>
-            )}
-          </>
-        )}
-        {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
-      </div>
-
-      {/* Same actions as before, on their own line under the title. */}
-      <div className="flex flex-wrap items-center gap-1">
-        {filePath && (
-          <button
-            type="button"
-            onClick={copyPath}
-            title="Copy file path"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            {copied ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4 text-green-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            )}
-          </button>
-        )}
-        <PinToSideButton noteId={frontmatter.id} variant="editor" />
-        {onShowHistory && (
-          <button
-            type="button"
-            onClick={onShowHistory}
-            title="Note history"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-          </button>
-        )}
-        {onExportPdf && (
-          <button
-            type="button"
-            onClick={onExportPdf}
-            disabled={exportingPdf}
-            aria-label="Export to PDF"
-            title="Export to PDF (⇧⌘E)"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            <Icon icon="uil:file-export" className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-        {onToggleMarkdown && (
-          <button
-            type="button"
-            onClick={onToggleMarkdown}
-            title={markdownMode ? "Switch to editor" : "Switch to Markdown"}
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            {markdownMode ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <polyline points="4 7 4 4 20 4 20 7" />
-                <line x1="9" y1="20" x2="15" y2="20" />
-                <line x1="12" y1="4" x2="12" y2="20" />
-              </svg>
-            )}
-          </button>
-        )}
-        {onArchive && (
-          <button
-            type="button"
-            onClick={onArchive}
-            title={archived ? "Unarchive note" : "Archive note"}
-            aria-label={archived ? "Unarchive note" : "Archive note"}
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-        {onDelete && (
-          <button
-            type="button"
-            onClick={onDelete}
-            title="Delete note"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100 hover:text-error"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14H6L5 6" />
-              <path d="M10 11v6M14 11v6" />
-              <path d="M9 6V4h6v2" />
-            </svg>
-          </button>
-        )}
-      </div>
-
-      {/* Compact metadata row. The Properties button stays outside the disabled
-          fieldset so a deleted note can still be inspected. */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-        <fieldset
-          disabled={readOnly}
-          className="m-0 flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 border-0 p-0"
-        >
-          {/* Workflow fields are meaningless for unmanaged notes — hidden and cleared */}
-          {!unmanaged && (
+            </>
+          ) : (
             <>
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--color-text-muted)]">State</span>
-                <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
-              </div>
-
-              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-                <input
-                  type="checkbox"
-                  checked={frontmatter.urgent}
-                  onChange={(e) => onChange({ urgent: e.target.checked })}
-                  className="rounded accent-[var(--color-accent)]"
-                />
-                Urgent
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-                <input
-                  type="checkbox"
-                  checked={frontmatter.important}
-                  onChange={(e) => onChange({ important: e.target.checked })}
-                  className="rounded accent-[var(--color-accent)]"
-                />
-                Important
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-                <input
-                  type="checkbox"
-                  checked={frontmatter.blocked}
-                  onChange={(e) => onChange({ blocked: e.target.checked })}
-                  className="rounded accent-[var(--color-accent)]"
-                />
-                Blocked
-              </label>
+              <h1 className="min-w-0 break-words text-3xl font-bold leading-tight text-[var(--color-text)]">
+                {frontmatter.title || "Untitled"}
+              </h1>
+              {canEditTitle && (
+                <button
+                  type="button"
+                  aria-label="Edit title"
+                  title="Edit title"
+                  className={iconButtonClass()}
+                  onClick={beginTitleEdit}
+                >
+                  <Icon icon="uil:pen" className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
             </>
           )}
+          {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
+        </div>
 
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={frontmatter.pinned ?? false}
-              onChange={(e) => onChange({ pinned: e.target.checked })}
-              className="rounded accent-[var(--color-accent)]"
+        <div data-testid="note-heading-actions" className="flex flex-wrap items-center gap-1">
+          {filePath && (
+            <button
+              type="button"
+              onClick={copyPath}
+              aria-label="Copy file path"
+              title="Copy file path"
+              className={iconButtonClass(copied ? "active" : "default")}
+            >
+              <Icon
+                icon={copied ? "uil:check" : "uil:copy"}
+                className="h-4 w-4"
+                aria-hidden="true"
+              />
+            </button>
+          )}
+          <PinToSideButton noteId={frontmatter.id} variant="editor" />
+          {onShowHistory && (
+            <button
+              type="button"
+              onClick={onShowHistory}
+              aria-label="Note history"
+              title="Note history"
+              className={iconButtonClass()}
+            >
+              <Icon icon="uil:history" className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          {onExportPdf && (
+            <button
+              type="button"
+              onClick={onExportPdf}
+              disabled={exportingPdf}
+              aria-label="Export to PDF"
+              title="Export to PDF (⇧⌘E)"
+              className={iconButtonClass()}
+            >
+              <Icon icon="uil:file-export" className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          {onToggleMarkdown && (
+            <SegmentedControl
+              label="Editor mode"
+              segments={[
+                {
+                  label: "Rich",
+                  pressed: markdownMode !== true,
+                  title: markdownMode ? "Switch to editor" : "Rich text",
+                  onClick: () => {
+                    if (markdownMode) onToggleMarkdown();
+                  },
+                },
+                {
+                  label: "Markdown",
+                  pressed: markdownMode === true,
+                  title: markdownMode ? "Markdown" : "Switch to Markdown",
+                  onClick: () => {
+                    if (!markdownMode) onToggleMarkdown();
+                  },
+                },
+              ]}
             />
-            Pinned
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={frontmatter.locked ?? false}
-              onChange={(e) => onChange({ locked: e.target.checked })}
-              className="rounded accent-[var(--color-accent)]"
-            />
-            Locked
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={unmanaged}
-              onChange={(e) =>
-                // Clearing rides along in the same update so it is one write, not five.
-                onChange(
-                  e.target.checked
-                    ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS }
-                    : { unmanaged: false },
-                )
-              }
-              className="rounded accent-[var(--color-accent)]"
-            />
-            Unmanaged
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={frontmatter.template ?? false}
-              onChange={(e) => onChange({ template: e.target.checked })}
-              className="rounded accent-[var(--color-accent)]"
-            />
-            Template
-          </label>
-        </fieldset>
-
-        {/* Expand toggle */}
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="btn btn-ghost btn-xs ml-auto gap-1"
-        >
-          Properties
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            aria-hidden="true"
+          )}
+          <button
+            type="button"
+            aria-label="Properties"
+            aria-expanded={expanded}
+            title="Properties"
+            className={iconButtonClass(expanded ? "active" : "default")}
+            onClick={() => setExpanded((open) => !open)}
           >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
+            <Icon icon="uil:sliders-v-alt" className="h-4 w-4" aria-hidden="true" />
+          </button>
+          {onArchive && (
+            <button
+              type="button"
+              onClick={onArchive}
+              title={archived ? "Unarchive note" : "Archive note"}
+              aria-label={archived ? "Unarchive note" : "Archive note"}
+              className={iconButtonClass()}
+            >
+              <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="Delete note"
+              title="Delete note"
+              className={iconButtonClass("danger")}
+            >
+              <Icon icon="uil:trash-alt" className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          <div className="relative">
+            <button
+              ref={infoButtonRef}
+              type="button"
+              aria-label="Note info"
+              aria-expanded={infoOpen}
+              aria-controls={infoOpen ? infoId : undefined}
+              title="Note info"
+              className={iconButtonClass(infoOpen ? "active" : "default")}
+              onClick={() => setInfoOpen((open) => !open)}
+            >
+              <Icon icon="uil:info-circle" className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {infoOpen && (
+              <section
+                ref={infoRef}
+                id={infoId}
+                aria-label="Note info"
+                className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs shadow-xl"
+              >
+                <dl className="space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-[var(--color-text-muted)]">Created</dt>
+                    <dd className="text-[var(--color-text)]" title={frontmatter.created}>
+                      {formatTimestamp(frontmatter.created)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-[var(--color-text-muted)]">Updated</dt>
+                    <dd className="text-[var(--color-text)]" title={frontmatter.updated}>
+                      {formatTimestamp(frontmatter.updated)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-[var(--color-text-muted)]">ID</dt>
+                    <dd className="truncate font-mono text-[var(--color-text)]">
+                      {frontmatter.id}
+                    </dd>
+                  </div>
+                  {filePath && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-[var(--color-text-muted)]">Path</dt>
+                      <dd className="truncate text-[var(--color-text)]" title={filePath}>
+                        {filePath}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-testid="note-heading-meta-row"
+        className="flex min-w-0 flex-wrap items-center gap-2"
+      >
+        <fieldset
+          disabled={readOnly}
+          className="m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0"
+        >
+          {!unmanaged && (
+            <>
+              <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
+              <SegmentedControl
+                label="Priority"
+                segments={[
+                  {
+                    label: "Urgent",
+                    pressed: frontmatter.urgent,
+                    onClick: () => onChange({ urgent: !frontmatter.urgent }),
+                  },
+                  {
+                    label: "Important",
+                    pressed: frontmatter.important,
+                    onClick: () => onChange({ important: !frontmatter.important }),
+                  },
+                ]}
+              />
+            </>
+          )}
+          <FlagSwitch
+            label="Pinned"
+            pressed={frontmatter.pinned ?? false}
+            icon="uil:map-pin"
+            onToggle={() => onChange({ pinned: !(frontmatter.pinned ?? false) })}
+          />
+          <FlagSwitch
+            label="Locked"
+            pressed={frontmatter.locked ?? false}
+            icon={frontmatter.locked ? "uil:lock" : "uil:lock-open-alt"}
+            onToggle={() => onChange({ locked: !(frontmatter.locked ?? false) })}
+          />
+          <HeaderTags key={frontmatter.id} value={frontmatter.tags} onChange={onChange} />
+        </fieldset>
       </div>
 
       {/* Expanded frontmatter panel */}
@@ -692,6 +821,43 @@ export function PropertyPanel({
           disabled={readOnly}
           className="m-0 min-w-0 rounded-lg border border-base-300 bg-base-200/50 px-4 py-2 text-sm"
         >
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-base-300/40 py-2">
+            {!unmanaged && (
+              <label className="flex cursor-pointer items-center gap-1.5 opacity-70 hover:opacity-100">
+                <input
+                  type="checkbox"
+                  checked={frontmatter.blocked}
+                  onChange={(e) => onChange({ blocked: e.target.checked })}
+                  className="rounded accent-[var(--color-accent)]"
+                />
+                Blocked
+              </label>
+            )}
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-70 hover:opacity-100">
+              <input
+                type="checkbox"
+                checked={unmanaged}
+                onChange={(e) =>
+                  onChange(
+                    e.target.checked
+                      ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS }
+                      : { unmanaged: false },
+                  )
+                }
+                className="rounded accent-[var(--color-accent)]"
+              />
+              Unmanaged
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-70 hover:opacity-100">
+              <input
+                type="checkbox"
+                checked={frontmatter.template ?? false}
+                onChange={(e) => onChange({ template: e.target.checked })}
+                className="rounded accent-[var(--color-accent)]"
+              />
+              Template
+            </label>
+          </div>
           <Row label="ID">
             <span className="font-mono text-xs text-[var(--color-text-muted)]">
               {frontmatter.id}

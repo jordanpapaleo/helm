@@ -133,22 +133,24 @@ function SliderRow({ label, value, min, max, step, unit, onChange }: SliderRowPr
   );
 }
 
-// ── Checkbox row ──────────────────────────────────────────────────────────────
+// ── Toggle row ────────────────────────────────────────────────────────────────
+// DaisyUI toggle is a checkbox, so the row stays a labeled, keyboard-operable
+// control wired to the same boolean settings as before.
 
-interface CheckboxRowProps {
+interface ToggleRowProps {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }
 
-function CheckboxRow({ label, checked, onChange }: CheckboxRowProps) {
+function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
   return (
     <label className="label cursor-pointer justify-start gap-3 rounded-lg px-3 py-2.5 hover:bg-base-300/50">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="rounded accent-[var(--color-accent)]"
+        className="toggle toggle-sm shrink-0"
       />
       <span className="label-text">{label}</span>
     </label>
@@ -238,37 +240,37 @@ function GeneralTab() {
 
   return (
     <div className="flex flex-col gap-1">
-      <CheckboxRow
+      <ToggleRow
         label="Autocomplete WikiLinks"
         checked={settings.autocompleteWikiLinks}
         onChange={(v) => updateSettings({ autocompleteWikiLinks: v })}
       />
-      <CheckboxRow
+      <ToggleRow
         label="Auto-save on edit"
         checked={settings.autoSaveOnEdit}
         onChange={(v) => updateSettings({ autoSaveOnEdit: v })}
       />
-      <CheckboxRow
+      <ToggleRow
         label="Pinned notes float to top"
         checked={settings.pinnedNotesFloat}
         onChange={(v) => updateSettings({ pinnedNotesFloat: v })}
       />
-      <CheckboxRow
+      <ToggleRow
         label="Show note count on tags"
         checked={settings.showNoteCountOnTags}
         onChange={(v) => updateSettings({ showNoteCountOnTags: v })}
       />
-      <CheckboxRow
+      <ToggleRow
         label="Show archived notes"
         checked={settings.showArchivedNotes}
         onChange={(v) => updateSettings({ showArchivedNotes: v })}
       />
-      <CheckboxRow
+      <ToggleRow
         label="Enable Projects"
         checked={settings.enableProjects}
         onChange={(v) => updateSettings({ enableProjects: v })}
       />
-      <CheckboxRow
+      <ToggleRow
         label="Default to Markdown view"
         checked={settings.defaultNoteView === "markdown"}
         onChange={(v) => updateSettings({ defaultNoteView: v ? "markdown" : "editor" })}

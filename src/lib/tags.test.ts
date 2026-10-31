@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractInlineTags } from "./note-parser";
 import {
+  dropRemovedInlineTags,
   isValidTagName,
   mergeTagsOnSave,
   normalizeTagName,
@@ -66,6 +67,38 @@ describe("renameTagInList", () => {
 
   it("returns the list unchanged when nothing matches", () => {
     expect(renameTagInList(["alpha", "beta"], "work", "client")).toEqual(["alpha", "beta"]);
+  });
+});
+
+describe("dropRemovedInlineTags", () => {
+  it("removes the last inline tag when the list is cleared", () => {
+    expect(dropRemovedInlineTags("Plan #work today", ["work"], [])).toBe("Plan today");
+  });
+
+  it("removes every dropped tag and leaves the body with none", () => {
+    expect(dropRemovedInlineTags("Plan #work and #home today", ["work", "home"], [])).toBe(
+      "Plan and today",
+    );
+  });
+
+  it("keeps a child tag that is still in the list", () => {
+    expect(
+      dropRemovedInlineTags(
+        "see #work and #work/project",
+        ["work", "work/project"],
+        ["work/project"],
+      ),
+    ).toBe("see and #work/project");
+  });
+
+  it("leaves the body alone when the list did not drop a tag", () => {
+    expect(dropRemovedInlineTags("Plan #work today", ["work"], ["work"])).toBe("Plan #work today");
+  });
+
+  it("does not touch a tag that merely shares a prefix", () => {
+    expect(dropRemovedInlineTags("keep #workflow drop #work", ["work"], [])).toBe(
+      "keep #workflow drop",
+    );
   });
 });
 
@@ -295,6 +328,12 @@ describe("removeInlineTag", () => {
 
   it("removes descendants too", () => {
     expect(removeInlineTag("a #work/project b #work/ops c", "work")).toBe("a b c");
+  });
+
+  it("leaves a child tag when descendants are excluded", () => {
+    expect(removeInlineTag("see #work and #work/project", "work", { descendants: false })).toBe(
+      "see and #work/project",
+    );
   });
 
   it("keeps tags that merely share a prefix", () => {

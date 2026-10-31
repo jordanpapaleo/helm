@@ -224,7 +224,9 @@ export function renameInlineTag(content: string, oldTag: string, newTag: string)
 }
 
 /**
- * Remove every inline `#target` (and `#target/descendant`) from a markdown body.
+ * Remove inline `#target` from a markdown body. Descendants (`#target/child`)
+ * are removed too unless `options.descendants` is false — the property panel
+ * needs the exact form so dropping `work` can leave `work/project` in place.
  * Fenced code blocks and inline code are left untouched.
  *
  * Whitespace rules, so removal never leaves debris:
@@ -239,7 +241,12 @@ export function renameInlineTag(content: string, oldTag: string, newTag: string)
  *   (`"- #work\n- keep"` → `"- keep"`)
  * - blank lines and empty bullets that were already there are left alone
  */
-export function removeInlineTag(content: string, target: string): string {
+export function removeInlineTag(
+  content: string,
+  target: string,
+  options?: { descendants?: boolean },
+): string {
+  const includeDescendants = options?.descendants !== false;
   const skip = codeRanges(content);
   let out = "";
   let last = 0;
@@ -253,7 +260,8 @@ export function removeInlineTag(content: string, target: string): string {
     const hashAt = m.index + prefix.length;
     const tagEnd = m.index + full.length;
 
-    if (!inRanges(skip, hashAt) && !HEX_COLOR_RE.test(tag) && tagMatches(tag, target)) {
+    const matchesTarget = includeDescendants ? tagMatches(tag, target) : tag === target;
+    if (!inRanges(skip, hashAt) && !HEX_COLOR_RE.test(tag) && matchesTarget) {
       // Swallow horizontal whitespace after the tag; the decision below is what
       // (if anything) gets emitted in place of the removed run.
       let cut = tagEnd;
@@ -286,4 +294,23 @@ export function removeInlineTag(content: string, target: string): string {
   }
 
   return dropEmptiedLines(out + content.slice(last), marks);
+}
+
+/**
+ * Drop inline `#tag` occurrences for tags an explicit list no longer contains.
+ *
+ * The properties field commits the whole list, and an empty list is a real
+ * value. Reading a note unions that list with the body, so a tag left behind
+ * as `#tag` is parsed straight back in — clearing the field used to leave the
+ * last tag in place. Matching is exact: removing `work` does not remove
+ * `work/project` when that child is still in the list.
+ */
+export function dropRemovedInlineTags(
+  content: string,
+  previousTags: string[] | undefined,
+  nextTags: string[],
+): string {
+  const next = new Set(nextTags);
+  const removed = (previousTags ?? []).filter((tag) => !next.has(tag));
+  return removed.reduce((body, tag) => removeInlineTag(body, tag, { descendants: false }), content);
 }

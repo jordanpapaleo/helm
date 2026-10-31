@@ -21,6 +21,7 @@ import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/p
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
+import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
@@ -571,8 +572,16 @@ export function MainPanel() {
       return;
     }
     if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
+    // An empty tag list is a real edit. Reading a note unions frontmatter with
+    // inline `#tag`s, so a tag left in the body would be parsed back in and the
+    // last one would look like it could not be removed. Strip only the tags
+    // the field dropped; a child the field still lists stays in the body.
+    const content = Array.isArray(updates.tags)
+      ? dropRemovedInlineTags(selectedNote.content, selectedNote.frontmatter.tags, updates.tags)
+      : selectedNote.content;
     const updated = {
       ...selectedNote,
+      content,
       frontmatter: {
         ...selectedNote.frontmatter,
         ...updates,
@@ -580,6 +589,18 @@ export function MainPanel() {
       },
     };
     updateNote(updated);
+    // A tag edit can delete body text, including a list or task line that held
+    // only that tag. Snapshot the file that is still on disk before overwriting
+    // it, the same guarantee a content save and a sidebar tag rewrite give.
+    // The snapshot is awaited so it lands first, and a failure must not block
+    // the write. Frontmatter-only edits leave the body alone and skip this.
+    if (content !== selectedNote.content && selectedVaultPath) {
+      await tauriCommands
+        .snapshotNote(selectedVaultPath, selectedNote.id, selectedNote.filePath)
+        .catch(() => {
+          /* snapshotting must never block a save */
+        });
+    }
     try {
       await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
     } catch (e) {

@@ -909,6 +909,63 @@ describe("MainPanel title rename", () => {
     expect(screen.getByRole("heading", { name: "New Title" })).toBeInTheDocument();
   });
 
+  it("keeps a checkbox change that lands while the title rename is still saving", async () => {
+    let releaseRenameWrite: () => void = () => {};
+    const renameWriteGate = new Promise<void>((resolve) => {
+      releaseRenameWrite = resolve;
+    });
+    const writes: Array<{ path: string; content: string }> = [];
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (path, content) => {
+      writes.push({ path, content });
+      if (writes.length === 1) await renameWriteGate;
+    });
+
+    const note = makeNote();
+    setup(note, true);
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+      const input = screen.getByRole("textbox", { name: "Note title" });
+      fireEvent.change(input, { target: { value: "New Title" } });
+      // Clicking another control blurs the title first, which starts the rename,
+      // and only then delivers the checkbox change.
+      fireEvent.blur(input);
+      fireEvent.click(screen.getByLabelText("Urgent"));
+
+      await waitFor(() => expect(writes).toHaveLength(1));
+      expect(writes[0]?.path).toBe("/vault/test.md");
+      expect(writes[0]?.content).toContain("New Title");
+      expect(writes[0]?.content).not.toContain("urgent: true");
+
+      releaseRenameWrite();
+
+      await waitFor(() => {
+        const saved = useNoteStore.getState().notes[0];
+        expect(saved.frontmatter.title).toBe("New Title");
+        expect(saved.frontmatter.urgent).toBe(true);
+        expect(saved.filePath).toBe("/vault/new-title.md");
+        expect(saved.id).toBe(note.id);
+      });
+
+      expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+        "/vault/test.md",
+        "/vault/new-title.md",
+      );
+      const followUp = writes[writes.length - 1];
+      expect(followUp?.path).toBe("/vault/new-title.md");
+      expect(followUp?.content).toContain("New Title");
+      expect(followUp?.content).toContain("urgent: true");
+      expect(
+        writes.some(
+          (write) =>
+            write.path === "/vault/new-title.md" && write.content.includes("title: Test Note"),
+        ),
+      ).toBe(false);
+    } finally {
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
   it("does not rename the file when the title edit is cancelled", () => {
     const note = makeNote();
     setup(note, true);

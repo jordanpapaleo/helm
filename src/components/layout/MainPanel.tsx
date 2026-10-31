@@ -384,6 +384,50 @@ export const MarkdownTextarea = forwardRef<
   );
 });
 
+/**
+ * Apply one header edit after any earlier edit for this panel has finished.
+ * renameNote keeps the note it was given until both disk steps finish, then
+ * replaces the store entry with that snapshot. A checkbox click during the
+ * rename used to write the old path and title, and the snapshot then dropped
+ * the checkbox. Waiting lets the checkbox save onto the renamed note.
+ */
+async function persistFrontmatterChange(
+  noteId: string,
+  updates: Partial<NoteFrontmatter>,
+): Promise<void> {
+  const note = useNoteStore.getState().notes.find((item) => item.id === noteId);
+  if (!note) return;
+  if (note.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) return;
+  const vaultPath = useNoteStore.getState().vaults.find((vault) => vault.id === note.vaultId)?.path;
+  if (useGitSyncStore.getState().isWriteBlocked(noteId, vaultPath ?? null)) return;
+
+  if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
+    try {
+      await useNoteStore.getState().renameNote(note, updates.title);
+    } catch (error) {
+      reportError("Failed to rename note", error);
+    }
+    return;
+  }
+
+  const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
+  if (!current) return;
+  const updated = {
+    ...current,
+    frontmatter: {
+      ...current.frontmatter,
+      ...updates,
+      updated: nowTimestamp(),
+    },
+  };
+  useNoteStore.getState().updateNote(updated);
+  try {
+    await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
+  } catch (error) {
+    reportError("Failed to save frontmatter", error);
+  }
+}
+
 /** True when the open note is a trash snapshot rather than a live file. */
 function viewingDeletedNote(): boolean {
   const id = useNoteStore.getState().selectedNoteId;
@@ -394,8 +438,7 @@ function viewingDeletedNote(): boolean {
 
 export function MainPanel() {
   const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
-  const { notes, vaults, selectedNoteId, updateNote, renameNote, removeNote, selectNote, addNote } =
-    useNoteStore();
+  const { notes, vaults, selectedNoteId, removeNote, selectNote, addNote } = useNoteStore();
   const trashItems = useTrashStore((state) => state.items);
   const { settings } = useSettingsStore();
   const enableProjects = settings.enableProjects;
@@ -415,6 +458,8 @@ export function MainPanel() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const { job: pdfJob, start: startPdfExport, handleReady: handlePdfReady } = usePdfExport();
   const markdownTextareaRef = useRef<MarkdownTextareaHandle>(null);
+  // Header edits (title rename, then a checkbox in the same click) must not overlap.
+  const frontmatterWrites = useRef(Promise.resolve());
   // Cursor and scroll position handed from the outgoing surface to the incoming
   // one across a markdown/editor toggle, tagged with the note it came from so a
   // note switch can never resurrect a stale position.
@@ -545,37 +590,14 @@ export function MainPanel() {
     }
   }
 
-  async function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
+  function handleFrontmatterChange(updates: Partial<NoteFrontmatter>) {
     if (!selectedNote || viewingDeleted) return;
-    // A locked note stays read-only except for the unlock toggle itself.
-    if (selectedNote.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) {
-      return;
-    }
-    if (useGitSyncStore.getState().isWriteBlocked(selectedNote.id, selectedVaultPath)) return;
-    // A title edit renames the file the same way the sidebar Rename action does.
-    // The note id stays put; only the title and the slugified path change.
-    if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
-      try {
-        await renameNote(selectedNote, updates.title);
-      } catch (e) {
-        reportError("Failed to rename note", e);
-      }
-      return;
-    }
-    const updated = {
-      ...selectedNote,
-      frontmatter: {
-        ...selectedNote.frontmatter,
-        ...updates,
-        updated: nowTimestamp(),
-      },
-    };
-    updateNote(updated);
-    try {
-      await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-    } catch (e) {
-      reportError("Failed to save frontmatter", e);
-    }
+    const noteId = selectedNote.id;
+    const run = frontmatterWrites.current.then(() => persistFrontmatterChange(noteId, updates));
+    frontmatterWrites.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   async function handleArchiveToggle() {

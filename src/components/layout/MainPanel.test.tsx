@@ -337,6 +337,41 @@ describe("MainPanel properties — removing the last tag", () => {
     const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
     expect(serialized).toContain("tags: []");
     expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
+  });
+
+  it("snapshots the on-disk note before a tag edit rewrites the body", async () => {
+    const order: string[] = [];
+    vi.mocked(tauriCommands.snapshotNote).mockImplementation(async () => {
+      order.push("snapshot");
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async () => {
+      order.push("write");
+    });
+
+    const note = makeNote({ content: "- [ ] #work\n- [x] keep" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+
+    expect(useNoteStore.getState().notes[0].content).toBe("- [x] keep");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(order).toEqual(["snapshot", "write"]);
+    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", note.id, note.filePath);
+  });
+
+  it("still saves the rewritten body when the snapshot fails", async () => {
+    vi.mocked(tauriCommands.snapshotNote).mockRejectedValue(new Error("history unwritable"));
+    const note = makeNote({ content: "- #work\n- keep" });
+    note.frontmatter.tags = ["work"];
+    setup(note, true);
+
+    await clearTags();
+
+    expect(useNoteStore.getState().notes[0].content).toBe("- keep");
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
+    expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
   });
 });
 

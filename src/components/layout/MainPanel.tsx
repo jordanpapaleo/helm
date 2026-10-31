@@ -587,6 +587,18 @@ export function MainPanel() {
       },
     };
     updateNote(updated);
+    // A tag edit can delete body text, including a list or task line that held
+    // only that tag. Snapshot the file that is still on disk before overwriting
+    // it, the same guarantee a content save and a sidebar tag rewrite give.
+    // The snapshot is awaited so it lands first, and a failure must not block
+    // the write. Frontmatter-only edits leave the body alone and skip this.
+    if (content !== selectedNote.content && selectedVaultPath) {
+      await tauriCommands
+        .snapshotNote(selectedVaultPath, selectedNote.id, selectedNote.filePath)
+        .catch(() => {
+          /* snapshotting must never block a save */
+        });
+    }
     try {
       await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
     } catch (e) {

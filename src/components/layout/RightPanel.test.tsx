@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { registerEditorDraft } from "../../lib/editor-draft";
+import { useExtensionsStore, validateExtensionPreferences } from "../../store/extensions";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
@@ -47,7 +48,8 @@ beforeEach(() => {
   localStorage.clear();
   usePinnedPanelStore.setState({ noteIds: [], activeId: WRITER_TAB });
   useNoteStore.setState({ notes: [todo, reference, draft], selectedNoteId: "draft" });
-  useToolsStore.setState({ writerEnabled: false });
+  useToolsStore.setState({ writerEnabled: false, settingsSection: "typography" });
+  useExtensionsStore.setState(validateExtensionPreferences(null));
   useGitSyncStore.setState({ heldDrafts: {} });
   useUIStore.setState({ activeView: "notes", selectedGrouping: { type: "all", id: null } });
 });
@@ -188,15 +190,88 @@ it("shows a preserved sync draft instead of the externally loaded note", async (
   );
 });
 
-it("keeps pinned notes available beside Writer", async () => {
-  useToolsStore.setState({ writerEnabled: true });
+function toolbarLabels() {
+  const toolbar = screen.getByRole("tablist", { name: "Right panel" }).parentElement as HTMLElement;
+  return [...toolbar.querySelectorAll<HTMLElement>('[role="tab"], button')]
+    .map((element) => element.getAttribute("aria-label") ?? element.textContent)
+    .filter((label) => !label?.startsWith("Unpin "));
+}
+
+it("shows an enabled tool's icon and hides it again when disabled", () => {
+  render(<RightPanel />);
+  expect(screen.queryByRole("tab", { name: "OpenAI Assistant" })).not.toBeInTheDocument();
+
+  act(() => useExtensionsStore.getState().setEnabled("openai-assistant", true));
+  expect(screen.getByRole("tab", { name: "OpenAI Assistant" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.getByRole("heading", { name: "OpenAI Assistant" })).toBeInTheDocument();
+  expect(screen.queryByText("No tools enabled")).not.toBeInTheDocument();
+
+  act(() => useExtensionsStore.getState().setEnabled("openai-assistant", false));
+  expect(screen.queryByRole("tab", { name: "OpenAI Assistant" })).not.toBeInTheDocument();
+  expect(screen.getByText("No tools enabled")).toBeInTheDocument();
+});
+
+it("keeps a tool's settings when it is disabled and enabled again", () => {
+  const store = useExtensionsStore.getState();
+  store.setEnabled("claude-assistant", true);
+  store.configure("claude-assistant", { mode: "api", model: "claude-test" });
+  store.setEnabled("claude-assistant", false);
+  store.setEnabled("claude-assistant", true);
+  expect(useExtensionsStore.getState().settings["claude-assistant"]).toEqual({
+    mode: "api",
+    model: "claude-test",
+  });
+});
+
+it("orders the toolbar as OpenAI, Claude, pinned note, then the pin and wrench actions", async () => {
+  useExtensionsStore.getState().setEnabled("claude-assistant", true);
+  useExtensionsStore.getState().setEnabled("openai-assistant", true);
+  usePinnedPanelStore.setState({ noteIds: ["todo"], activeId: "todo" });
+  render(<RightPanel />);
+  await screen.findByRole("article", { name: "Pinned note Todo" });
+  expect(toolbarLabels()).toEqual([
+    "OpenAI Assistant",
+    "Claude Assistant",
+    "Todo",
+    "Pin to side",
+    "Manage tools",
+  ]);
+});
+
+it("shows one tool panel at a time and keeps pinned notes beside the tools", async () => {
+  useExtensionsStore.getState().setEnabled("openai-assistant", true);
+  useExtensionsStore.getState().setEnabled("claude-assistant", true);
   usePinnedPanelStore.setState({ noteIds: ["todo"], activeId: "todo" });
   render(<RightPanel />);
   expect(await screen.findByRole("article", { name: "Pinned note Todo" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("tab", { name: "Writer" }));
-  expect(screen.getByRole("textbox", { name: "Message Writer" })).toBeInTheDocument();
+  expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+
+  const openai = screen.getByRole("tab", { name: "OpenAI Assistant" });
+  fireEvent.click(openai);
+  expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+  expect(screen.getByRole("heading", { name: "OpenAI Assistant" })).toBeInTheDocument();
   expect(screen.queryByRole("article", { name: "Pinned note Todo" })).not.toBeInTheDocument();
+
+  openai.focus();
+  fireEvent.keyDown(openai, { key: "ArrowRight" });
+  expect(screen.getByRole("tab", { name: "Claude Assistant" })).toHaveFocus();
+  expect(screen.getByRole("heading", { name: "Claude Assistant" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "OpenAI Assistant" })).not.toBeInTheDocument();
+
   fireEvent.click(screen.getByRole("tab", { name: "Todo" }));
   expect(screen.getByRole("article", { name: "Pinned note Todo" })).toHaveTextContent("Buy milk");
   expect(useNoteStore.getState().selectedNoteId).toBe("draft");
+});
+
+it("opens Tools settings from the wrench", () => {
+  useUIStore.setState({ settingsOpen: false });
+  render(<RightPanel />);
+  const [wrench, emptyStateButton] = screen.getAllByRole("button", { name: "Manage tools" });
+  expect(emptyStateButton).toHaveTextContent("Manage tools");
+  fireEvent.click(wrench);
+  expect(useUIStore.getState().settingsOpen).toBe(true);
+  expect(useToolsStore.getState().settingsSection).toBe("tools");
 });

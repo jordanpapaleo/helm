@@ -2,13 +2,16 @@ import { Icon } from "@iconify/react";
 import type { KeyboardEvent } from "react";
 import { openEditorNote } from "../../lib/open-editor-note";
 import { useNoteStore } from "../../store/notes";
-import { unpinNoteFromSide, usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
+import { unpinNoteFromSide, usePinnedPanelStore } from "../../store/pinned-panel";
 import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
-import { ToolHost } from "../tools/ToolHost";
+import { type ToolExtension, useExtensions } from "../tools/extensions";
 import { PinnedNoteView } from "./PinnedNoteView";
 import { PinToSideButton } from "./PinToSideButton";
+
+const FOCUS_RING =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]";
 
 function onTabsKeyDown(event: KeyboardEvent<HTMLDivElement>) {
   if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -20,6 +23,35 @@ function onTabsKeyDown(event: KeyboardEvent<HTMLDivElement>) {
   const next = tabs[(index + direction + tabs.length) % tabs.length];
   next.focus();
   next.click();
+}
+
+function openToolsSettings() {
+  useToolsStore.getState().showToolsSettings();
+  useUIStore.getState().setSettingsOpen(true);
+}
+
+function ToolTab({ tool, selected }: { tool: ToolExtension; selected: boolean }) {
+  const select = usePinnedPanelStore((state) => state.select);
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`right-tab-${tool.id}`}
+      aria-selected={selected}
+      aria-controls={`right-panel-${tool.id}`}
+      aria-label={tool.name}
+      title={tool.name}
+      tabIndex={selected ? 0 : -1}
+      className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center border-b-2 ${FOCUS_RING} ${
+        selected
+          ? "border-[var(--color-primary)] bg-base-200 text-[var(--color-text)]"
+          : "border-transparent text-[var(--color-text)] opacity-70 hover:opacity-100"
+      }`}
+      onClick={() => select(tool.id)}
+    >
+      <Icon icon={tool.icon} className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
 }
 
 function NoteTab({ note, selected }: { note: Note; selected: boolean }) {
@@ -39,7 +71,7 @@ function NoteTab({ note, selected }: { note: Note; selected: boolean }) {
         aria-controls={`pinned-panel-${note.id}`}
         tabIndex={selected ? 0 : -1}
         title={title}
-        className={`max-w-40 truncate px-2 py-1 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)] ${
+        className={`max-w-40 truncate px-2 py-1 text-left text-sm ${FOCUS_RING} ${
           selected
             ? "font-medium text-[var(--color-text)]"
             : "text-[var(--color-text)] opacity-70 hover:opacity-100"
@@ -50,7 +82,7 @@ function NoteTab({ note, selected }: { note: Note; selected: boolean }) {
       </button>
       <button
         type="button"
-        className="mr-1 rounded px-1 text-[var(--color-text)] opacity-60 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
+        className={`mr-1 rounded px-1 text-[var(--color-text)] opacity-60 hover:opacity-100 ${FOCUS_RING}`}
         aria-label={`Unpin ${title}`}
         title={`Unpin ${title}`}
         onClick={() => unpinNoteFromSide(note.id)}
@@ -62,73 +94,70 @@ function NoteTab({ note, selected }: { note: Note; selected: boolean }) {
 }
 
 /**
- * Right panel. With nothing pinned it is the tool host. Pinned notes become
- * tabs beside Writer and stay on screen while a different note is edited.
+ * Right panel. Enabled tools appear as icon tabs, followed by pinned notes.
+ * One tool panel or pinned note is visible at a time.
  */
 export function RightPanel() {
   const noteIds = usePinnedPanelStore((state) => state.noteIds);
   const activeId = usePinnedPanelStore((state) => state.activeId);
-  const select = usePinnedPanelStore((state) => state.select);
   const notes = useNoteStore((state) => state.notes);
   const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
   const activeView = useUIStore((state) => state.activeView);
   const selectedGrouping = useUIStore((state) => state.selectedGrouping);
   const openNoteId =
     openEditorNote(notes, selectedNoteId, activeView, selectedGrouping)?.id ?? null;
-  const writerEnabled = useToolsStore((state) => state.writerEnabled);
+  const tools = useExtensions().filter((tool) => tool.enabled);
   const pinned = noteIds
     .map((id) => notes.find((note) => note.id === id))
     .filter((note): note is Note => Boolean(note));
 
-  if (pinned.length === 0) return <ToolHost />;
-
-  const writerSelected = writerEnabled && activeId === WRITER_TAB;
-  const activeNote = writerSelected
-    ? undefined
-    : (pinned.find((note) => note.id === activeId) ?? pinned[0]);
+  const selectedTool = tools.find((tool) => tool.id === activeId);
+  const selectedNote = selectedTool ? undefined : pinned.find((note) => note.id === activeId);
+  const activeTool = selectedTool ?? (selectedNote ? undefined : tools[0]);
+  const activeNote = selectedNote ?? (activeTool ? undefined : pinned[0]);
+  const hasTabs = tools.length > 0 || pinned.length > 0;
+  const Panel = activeTool?.panel;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-base-300 px-1">
-        <div
-          role="tablist"
-          aria-label="Right panel"
-          aria-orientation="horizontal"
-          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
-          onKeyDown={onTabsKeyDown}
-        >
-          {pinned.map((note) => (
-            <NoteTab key={note.id} note={note} selected={note.id === activeNote?.id} />
-          ))}
-          {writerEnabled && (
-            <button
-              type="button"
-              role="tab"
-              id="pinned-tab-writer"
-              aria-selected={writerSelected}
-              aria-controls="pinned-panel-writer"
-              tabIndex={writerSelected ? 0 : -1}
-              className={`shrink-0 border-b-2 px-2 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)] ${
-                writerSelected
-                  ? "border-[var(--color-primary)] bg-base-200 font-medium text-[var(--color-text)]"
-                  : "border-transparent text-[var(--color-text)] opacity-70 hover:opacity-100"
-              }`}
-              onClick={() => select(WRITER_TAB)}
-            >
-              Writer
-            </button>
-          )}
-        </div>
+        {hasTabs ? (
+          <div
+            role="tablist"
+            aria-label="Right panel"
+            aria-orientation="horizontal"
+            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+            onKeyDown={onTabsKeyDown}
+          >
+            {tools.map((tool) => (
+              <ToolTab key={tool.id} tool={tool} selected={tool.id === activeTool?.id} />
+            ))}
+            {pinned.map((note) => (
+              <NoteTab key={note.id} note={note} selected={note.id === activeNote?.id} />
+            ))}
+          </div>
+        ) : (
+          <span className="flex-1" />
+        )}
         <PinToSideButton noteId={openNoteId} variant="toolbar" />
+        <button
+          type="button"
+          className="workspace-toolbar-button"
+          aria-label="Manage tools"
+          title="Manage tools"
+          onClick={openToolsSettings}
+        >
+          <Icon icon="uil:wrench" className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
-      {writerSelected ? (
+      {activeTool && Panel ? (
         <div
           role="tabpanel"
-          id="pinned-panel-writer"
-          aria-labelledby="pinned-tab-writer"
+          id={`right-panel-${activeTool.id}`}
+          aria-labelledby={`right-tab-${activeTool.id}`}
           className="min-h-0 flex-1"
         >
-          <ToolHost showPinAction={false} />
+          <Panel extension={activeTool} />
         </div>
       ) : activeNote ? (
         <div
@@ -139,7 +168,15 @@ export function RightPanel() {
         >
           <PinnedNoteView noteId={activeNote.id} />
         </div>
-      ) : null}
+      ) : (
+        <div className="p-4 text-sm">
+          <p className="font-medium">No tools enabled</p>
+          <p className="mt-1 opacity-60">Turn on a tool in Settings → Tools to use it here.</p>
+          <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={openToolsSettings}>
+            Manage tools
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -466,15 +466,11 @@ export function PropertyPanel({
   readOnly = false,
 }: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(frontmatter.title);
   const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const infoRef = useRef<HTMLDivElement>(null);
-  const infoButtonRef = useRef<HTMLButtonElement>(null);
-  const infoId = useId();
   const canEditTitle = !readOnly && !frontmatter.locked;
 
   // Drop an in-progress edit when the open note changes, even if the titles match.
@@ -483,7 +479,6 @@ export function PropertyPanel({
     editingTitleRef.current = false;
     setEditingTitle(false);
     setTitleDraft(frontmatter.title);
-    setInfoOpen(false);
   }, [frontmatter.id]);
 
   useEffect(() => {
@@ -496,26 +491,6 @@ export function PropertyPanel({
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
   }, [editingTitle]);
-
-  useEffect(() => {
-    if (!infoOpen) return;
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (infoRef.current?.contains(target) || infoButtonRef.current?.contains(target)) return;
-      setInfoOpen(false);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      setInfoOpen(false);
-      infoButtonRef.current?.focus();
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [infoOpen]);
 
   function beginTitleEdit() {
     if (!canEditTitle) return;
@@ -720,57 +695,6 @@ export function PropertyPanel({
               <Icon icon="uil:trash-alt" className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
-          <div className="relative">
-            <button
-              ref={infoButtonRef}
-              type="button"
-              aria-label="Note info"
-              aria-expanded={infoOpen}
-              aria-controls={infoOpen ? infoId : undefined}
-              title="Note info"
-              className={iconButtonClass(infoOpen ? "active" : "default")}
-              onClick={() => setInfoOpen((open) => !open)}
-            >
-              <Icon icon="uil:info-circle" className="h-4 w-4" aria-hidden="true" />
-            </button>
-            {infoOpen && (
-              <section
-                ref={infoRef}
-                id={infoId}
-                aria-label="Note info"
-                className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs shadow-xl"
-              >
-                <dl className="space-y-1.5">
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-[var(--color-text-muted)]">Created</dt>
-                    <dd className="text-[var(--color-text)]" title={frontmatter.created}>
-                      {formatTimestamp(frontmatter.created)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-[var(--color-text-muted)]">Updated</dt>
-                    <dd className="text-[var(--color-text)]" title={frontmatter.updated}>
-                      {formatTimestamp(frontmatter.updated)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-[var(--color-text-muted)]">ID</dt>
-                    <dd className="truncate font-mono text-[var(--color-text)]">
-                      {frontmatter.id}
-                    </dd>
-                  </div>
-                  {filePath && (
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-[var(--color-text-muted)]">Path</dt>
-                      <dd className="truncate text-[var(--color-text)]" title={filePath}>
-                        {filePath}
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              </section>
-            )}
-          </div>
         </div>
       </div>
 

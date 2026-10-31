@@ -392,7 +392,6 @@ const TITLE_ROW_ACTIONS = [
   "Properties",
   "Archive note",
   "Delete note",
-  "Note info",
 ] as const;
 
 describe("PropertyPanel header layout", () => {
@@ -446,6 +445,7 @@ describe("PropertyPanel header layout", () => {
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
     );
     expect(labels).toEqual([...TITLE_ROW_ACTIONS]);
+    expect(screen.queryByRole("button", { name: "Note info" })).not.toBeInTheDocument();
 
     const state = screen.getByRole("button", { name: "State" });
     expect(metaRow).toContainElement(state);
@@ -510,19 +510,6 @@ describe("PropertyPanel header layout", () => {
     expect(onToggleMarkdown).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Rich" }));
     expect(onToggleMarkdown).toHaveBeenCalledTimes(2);
-  });
-
-  it("shows the existing note identity from the info icon", () => {
-    renderHeader();
-
-    expect(screen.queryByRole("region", { name: "Note info" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Note info" }));
-    const info = screen.getByRole("region", { name: "Note info" });
-    expect(info).toHaveTextContent("01JPMXYZ123");
-    expect(info).toHaveTextContent("/vault/command.md");
-
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "Note info" })).not.toBeInTheDocument();
   });
 
   it("keeps every action keyboard accessible with its existing label", async () => {

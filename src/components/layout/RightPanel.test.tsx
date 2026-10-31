@@ -226,16 +226,16 @@ it("keeps a tool's settings when it is disabled and enabled again", () => {
   });
 });
 
-it("orders the toolbar as OpenAI, Claude, pinned note, then the pin and wrench actions", async () => {
+it("keeps note tabs on the left and tool icons on the right before the pin and wrench", async () => {
   useExtensionsStore.getState().setEnabled("claude-assistant", true);
   useExtensionsStore.getState().setEnabled("openai-assistant", true);
   usePinnedPanelStore.setState({ noteIds: ["todo"], activeId: "todo" });
   render(<RightPanel />);
   await screen.findByRole("article", { name: "Pinned note Todo" });
   expect(toolbarLabels()).toEqual([
+    "Todo",
     "OpenAI Assistant",
     "Claude Assistant",
-    "Todo",
     "Pin to side",
     "Manage tools",
   ]);

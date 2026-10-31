@@ -94,8 +94,8 @@ function NoteTab({ note, selected }: { note: Note; selected: boolean }) {
 }
 
 /**
- * Right panel. Enabled tools appear as icon tabs, followed by pinned notes.
- * One tool panel or pinned note is visible at a time.
+ * Right panel. Pinned notes are tabs on the left; enabled tools are icon tabs
+ * on the right, before the pin and wrench actions. One tab is visible at a time.
  */
 export function RightPanel() {
   const noteIds = usePinnedPanelStore((state) => state.noteIds);
@@ -126,14 +126,16 @@ export function RightPanel() {
             role="tablist"
             aria-label="Right panel"
             aria-orientation="horizontal"
-            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+            className="flex min-w-0 flex-1 items-center gap-1"
             onKeyDown={onTabsKeyDown}
           >
+            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+              {pinned.map((note) => (
+                <NoteTab key={note.id} note={note} selected={note.id === activeNote?.id} />
+              ))}
+            </div>
             {tools.map((tool) => (
               <ToolTab key={tool.id} tool={tool} selected={tool.id === activeTool?.id} />
-            ))}
-            {pinned.map((note) => (
-              <NoteTab key={note.id} note={note} selected={note.id === activeNote?.id} />
             ))}
           </div>
         ) : (

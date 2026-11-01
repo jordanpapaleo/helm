@@ -5,6 +5,7 @@ import { unpinNoteFromSide, usePinnedPanelStore } from "../../store/pinned-panel
 import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
+import { ExtensionPanelHeader } from "../tools/ExtensionPanelHeader";
 import { type ToolExtension, useExtensions } from "../tools/extensions";
 import { PinnedNoteView } from "./PinnedNoteView";
 
@@ -149,9 +150,12 @@ export function RightPanel() {
           role="tabpanel"
           id={`right-panel-${activeTool.id}`}
           aria-labelledby={`right-tab-${activeTool.id}`}
-          className="min-h-0 flex-1"
+          className="flex min-h-0 flex-1 flex-col"
         >
-          <Panel extension={activeTool} />
+          <ExtensionPanelHeader extension={activeTool} />
+          <div className="min-h-0 flex-1">
+            <Panel extension={activeTool} />
+          </div>
         </div>
       ) : activeNote ? (
         <div

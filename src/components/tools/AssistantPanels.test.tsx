@@ -7,6 +7,8 @@ import {
   validateExtensionPreferences,
 } from "../../store/extensions";
 import { useNoteStore } from "../../store/notes";
+import { usePinnedPanelStore } from "../../store/pinned-panel";
+import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
 import { RightPanel } from "../layout/RightPanel";
@@ -39,8 +41,22 @@ beforeEach(() => {
     activeVaultId: null,
     vaults: [{ id: "v", name: "helm-notes", path: "/vault" }],
   });
-  useUIStore.setState({ activeView: "notes", selectedGrouping: { type: "all", id: null } });
+  useUIStore.setState({
+    settingsOpen: false,
+    activeView: "notes",
+    selectedGrouping: { type: "all", id: null },
+  });
+  useToolsStore.setState({ settingsSection: "typography", settingsTool: null });
+  usePinnedPanelStore.setState({ noteIds: [], activeId: "openai-assistant" });
 });
+
+function panelHeader(name: string): HTMLElement {
+  return screen.getByRole("heading", { name }).closest(".border-b") as HTMLElement;
+}
+
+function statusLine(name: string): HTMLElement {
+  return screen.getByRole("heading", { name }).nextElementSibling as HTMLElement;
+}
 
 function expectNoModelCall() {
   expect(fetchSpy).not.toHaveBeenCalled();
@@ -59,9 +75,9 @@ it("shows the connected OpenAI Assistant and records a message without calling a
   render(<RightPanel />);
   const panel = screen.getByRole("tabpanel");
   expect(within(panel).getByRole("heading", { name: "OpenAI Assistant" })).toBeInTheDocument();
-  expect(
-    within(panel).getByText("Connected · Subscription · client default model"),
-  ).toBeInTheDocument();
+  expect(statusLine("OpenAI Assistant")).toHaveTextContent(
+    "Connected · Subscription · client default model",
+  );
   expect(within(panel).getByText("Think through helm-notes")).toBeInTheDocument();
   const composer = within(panel).getByRole("textbox", { name: "Message OpenAI Assistant" });
   expect(composer).toHaveAttribute("placeholder", "Message OpenAI Assistant…");
@@ -96,7 +112,10 @@ it("shows Claude's setup form until Connect, without touching the network", () =
   const panel = screen.getByRole("tabpanel");
   expect(within(panel).getByRole("heading", { name: "Claude Assistant" })).toBeInTheDocument();
   expect(within(panel).getByText("Think through notes with Claude.")).toBeInTheDocument();
-  expect(within(panel).getByText("Not connected")).toBeInTheDocument();
+  expect(statusLine("Claude Assistant")).toHaveTextContent(
+    "Not connected · Subscription · client default model",
+  );
+  expect(panel.querySelector(".badge")).toBeNull();
   const connection = within(panel).getByRole("combobox", { name: "Connection" });
   expect(connection).toHaveValue("subscription");
   expect(
@@ -122,10 +141,83 @@ it("shows Claude's setup form until Connect, without touching the network", () =
   fireEvent.change(model, { target: { value: "claude-test" } });
 
   fireEvent.click(within(panel).getByRole("button", { name: "Connect" }));
-  expect(within(panel).queryByText("Not connected")).not.toBeInTheDocument();
-  expect(within(panel).getByText("Connected · Subscription · claude-test")).toBeInTheDocument();
+  expect(statusLine("Claude Assistant")).toHaveTextContent(
+    "Connected · Subscription · claude-test",
+  );
+  expect(statusLine("Claude Assistant").querySelector(".status")).toHaveClass("status-success");
   expect(
     within(panel).getByRole("textbox", { name: "Message Claude Assistant" }),
   ).toBeInTheDocument();
   expectNoModelCall();
+});
+
+it("gives OpenAI and Claude the same header chrome with a DaisyUI status dot", () => {
+  const store = useExtensionsStore.getState();
+  store.setEnabled("openai-assistant", true);
+  store.setEnabled("claude-assistant", true);
+  render(<RightPanel />);
+
+  const openai = panelHeader("OpenAI Assistant");
+  const openaiShape = {
+    header: openai.className,
+    title: screen.getByRole("heading", { name: "OpenAI Assistant" }).className,
+    status: statusLine("OpenAI Assistant").className,
+  };
+  expect(statusLine("OpenAI Assistant").querySelector(".status")).toHaveClass(
+    "status",
+    "status-success",
+  );
+  expect(
+    within(openai).getByRole("button", { name: "OpenAI Assistant options" }),
+  ).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("tab", { name: "Claude Assistant" }));
+  const claude = panelHeader("Claude Assistant");
+  expect({
+    header: claude.className,
+    title: screen.getByRole("heading", { name: "Claude Assistant" }).className,
+    status: statusLine("Claude Assistant").className,
+  }).toEqual(openaiShape);
+  expect(statusLine("Claude Assistant").querySelector(".status")).toHaveClass(
+    "status",
+    "status-neutral",
+  );
+  expect(
+    within(claude).getByRole("button", { name: "Claude Assistant options" }),
+  ).toBeInTheDocument();
+  expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
+});
+
+it("opens a tool's settings or hides it from the header menu", () => {
+  useExtensionsStore.getState().setEnabled("claude-assistant", true);
+  render(<RightPanel />);
+  const options = screen.getByRole("button", { name: "Claude Assistant options" });
+  expect(options).toHaveAttribute("aria-haspopup", "menu");
+
+  fireEvent.click(options);
+  expect(options).toHaveAttribute("aria-expanded", "true");
+  const menu = screen.getByRole("menu");
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Tool settings", "Hide from toolbar"]);
+  expect(within(menu).getByRole("menuitem", { name: "Tool settings" })).toHaveFocus();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(options).toHaveFocus();
+
+  fireEvent.click(options);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Tool settings" }));
+  expect(useUIStore.getState().settingsOpen).toBe(true);
+  expect(useToolsStore.getState()).toMatchObject({
+    settingsSection: "tools",
+    settingsTool: "claude-assistant",
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Claude Assistant options" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Hide from toolbar" }));
+  expect(useExtensionsStore.getState().enabled).toEqual([]);
+  expect(screen.queryByRole("tab", { name: "Claude Assistant" })).not.toBeInTheDocument();
+  expect(screen.getByText("No tools enabled")).toBeInTheDocument();
 });

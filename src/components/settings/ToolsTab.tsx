@@ -10,6 +10,7 @@ import {
 import { useToolsStore } from "../../store/tools";
 import { useWriterStore } from "../../store/writer";
 import type { WriterConnection } from "../../tools/writer";
+import { ConnectionStatus } from "../tools/ConnectionStatus";
 import { ApiConnection } from "./ApiConnection";
 
 interface BuiltInTool {
@@ -179,13 +180,8 @@ function ToolDetail({ id, onBack }: { id: ExtensionId; onBack: () => void }) {
       </div>
       <section className="flex flex-col gap-3 rounded-xl border border-base-300 bg-base-100 p-4">
         <h4 className="font-medium">Connection</h4>
-        <p className="flex items-center gap-2 text-sm">
-          <span
-            className="inline-block h-2 w-2 rounded-full"
-            style={{ background: connected ? "var(--color-success)" : "var(--color-text-muted)" }}
-            aria-hidden="true"
-          />
-          {connected ? "Connected" : "Not connected"}
+        <p className="text-sm">
+          <ConnectionStatus connected={connected} />
         </p>
         <ConnectionMode id={id} />
         <p className="text-sm opacity-70">
@@ -421,7 +417,9 @@ function ToolList({ onOpen }: { onOpen: (id: ExtensionId) => void }) {
 }
 
 export function ToolsTab() {
-  const [openId, setOpenId] = useState<ExtensionId | null>(null);
+  const [openId, setOpenId] = useState<ExtensionId | null>(
+    () => useToolsStore.getState().settingsTool,
+  );
   if (openId) return <ToolDetail key={openId} id={openId} onBack={() => setOpenId(null)} />;
   return <ToolList onOpen={setOpenId} />;
 }

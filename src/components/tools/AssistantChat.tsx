@@ -14,10 +14,9 @@ function useVaultName(noteVaultId: string | undefined): string {
   return vault?.name ?? "your notes";
 }
 
-/** Chat surface for a connected assistant. Sending records the message; no model is called. */
+/** Chat body for a connected assistant. Sending records the message; no model is called. */
 export function AssistantChat({ extension }: { extension: ToolExtension }) {
   const { id, name } = extension;
-  const settings = useExtensionsStore((state) => state.settings[id]);
   const chat = useExtensionsStore((state) => state.chats[id]);
   const patchChat = useExtensionsStore((state) => state.patchChat);
   const send = useExtensionsStore((state) => state.send);
@@ -37,13 +36,6 @@ export function AssistantChat({ extension }: { extension: ToolExtension }) {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col text-sm">
-      <div className="shrink-0 border-b border-base-300 px-3 py-2">
-        <h2 className="font-medium">{name}</h2>
-        <p className="mt-0.5 break-words text-xs opacity-60">
-          Connected · {settings.mode === "api" ? "API key" : "Subscription"} ·{" "}
-          {settings.model || "client default model"}
-        </p>
-      </div>
       <div
         className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3"
         role="log"

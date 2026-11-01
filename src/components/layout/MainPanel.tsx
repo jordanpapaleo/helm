@@ -495,12 +495,19 @@ function viewingDeletedNote(): boolean {
 
 export function MainPanel() {
   const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
-  const { notes, vaults, selectedNoteId, removeNote, selectNote, addNote } = useNoteStore();
+  const notes = useNoteStore((state) => state.notes);
+  const vaults = useNoteStore((state) => state.vaults);
+  const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
+  const removeNote = useNoteStore((state) => state.removeNote);
+  const selectNote = useNoteStore((state) => state.selectNote);
+  const addNote = useNoteStore((state) => state.addNote);
+  const liveNote = useNoteStore((state) =>
+    state.selectedNoteId ? state.notes.find((note) => note.id === state.selectedNoteId) : undefined,
+  );
   const trashItems = useTrashStore((state) => state.items);
   const { settings } = useSettingsStore();
   const enableProjects = settings.enableProjects;
   const projects = useProjectStore((state) => state.projects);
-  const liveNote = notes.find((n) => n.id === selectedNoteId);
   const deletedItem = liveNote
     ? undefined
     : trashItems.find((item) => item.note.id === selectedNoteId);

@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import { isArchived } from "../../lib/archive";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { resolveOutgoingLinks } from "../../lib/note-links";
@@ -151,6 +151,19 @@ function TagsInput({
   );
 }
 
+/** Stable icon ids. Iconify otherwise mints new ids and replaces the svg on every render. */
+const HeadingIcon = memo(function HeadingIcon({
+  icon,
+  id,
+  className = "h-4 w-4",
+}: {
+  icon: string;
+  id: string;
+  className?: string;
+}) {
+  return <Icon id={id} icon={icon} className={className} aria-hidden="true" />;
+});
+
 function iconButtonClass(tone: "default" | "active" | "danger" = "default"): string {
   const color =
     tone === "active"
@@ -236,38 +249,45 @@ function PriorityFilter({
   );
 }
 
-function FlagSwitch({
-  label,
-  pressed,
-  icon,
-  onToggle,
-  indicator = "switch",
-}: {
-  label: string;
-  pressed: boolean;
-  icon: string;
-  onToggle: () => void;
-  /** Pin and lock stay switches. Template and Unmanaged report aria-pressed. */
-  indicator?: "switch" | "pressed";
-}) {
-  const pressedProps =
-    indicator === "switch"
-      ? ({ role: "switch", "aria-checked": pressed } as const)
-      : ({ "aria-pressed": pressed } as const);
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      data-icon={icon}
-      className={iconButtonClass(pressed ? "active" : "default")}
-      onClick={onToggle}
-      {...pressedProps}
-    >
-      <Icon icon={icon} className="h-4 w-4" aria-hidden="true" />
-    </button>
-  );
-}
+const FlagSwitch = memo(
+  function FlagSwitch({
+    label,
+    pressed,
+    icon,
+    onToggle,
+    indicator = "switch",
+  }: {
+    label: string;
+    pressed: boolean;
+    icon: string;
+    onToggle: () => void;
+    /** Pin and lock stay switches. Template and Unmanaged report aria-pressed. */
+    indicator?: "switch" | "pressed";
+  }) {
+    const pressedProps =
+      indicator === "switch"
+        ? ({ role: "switch", "aria-checked": pressed } as const)
+        : ({ "aria-pressed": pressed } as const);
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        data-icon={icon}
+        className={iconButtonClass(pressed ? "active" : "default")}
+        onClick={onToggle}
+        {...pressedProps}
+      >
+        <HeadingIcon icon={icon} id={`note-heading-${label}`} />
+      </button>
+    );
+  },
+  (prev, next) =>
+    prev.label === next.label &&
+    prev.pressed === next.pressed &&
+    prev.icon === next.icon &&
+    (prev.indicator ?? "switch") === (next.indicator ?? "switch"),
+);
 
 function HeaderTags({
   value,
@@ -306,7 +326,7 @@ function HeaderTags({
             className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
             onClick={() => onChange({ tags: value.filter((item) => item !== tag) })}
           >
-            <Icon icon="uil:times" className="h-3 w-3" aria-hidden="true" />
+            <HeadingIcon icon="uil:times" id={`note-heading-tag-${tag}`} className="h-3 w-3" />
           </button>
         </span>
       ))}
@@ -347,7 +367,7 @@ function HeaderTags({
             setAdding(true);
           }}
         >
-          <Icon icon="uil:plus" className="h-3 w-3" aria-hidden="true" />
+          <HeadingIcon icon="uil:plus" id="note-heading-add-tag" className="h-3 w-3" />
           Tag
         </button>
       )}
@@ -355,7 +375,22 @@ function HeaderTags({
   );
 }
 
-export function PropertyPanel({
+function sameHeadingProps(prev: PropertyPanelProps, next: PropertyPanelProps): boolean {
+  return (
+    prev.frontmatter === next.frontmatter &&
+    prev.filePath === next.filePath &&
+    prev.readOnly === next.readOnly &&
+    prev.markdownMode === next.markdownMode &&
+    prev.exportingPdf === next.exportingPdf &&
+    (prev.onDelete === undefined) === (next.onDelete === undefined) &&
+    (prev.onArchive === undefined) === (next.onArchive === undefined) &&
+    (prev.onToggleMarkdown === undefined) === (next.onToggleMarkdown === undefined) &&
+    (prev.onShowHistory === undefined) === (next.onShowHistory === undefined) &&
+    (prev.onExportPdf === undefined) === (next.onExportPdf === undefined)
+  );
+}
+
+export const PropertyPanel = memo(function PropertyPanel({
   frontmatter,
   content,
   filePath,
@@ -455,12 +490,24 @@ export function PropertyPanel({
       setTimeout(() => setCopied(false), 1500);
     });
   }
-  const { notes } = useNoteStore();
-  const linkBody = content ?? notes.find((n) => n.id === frontmatter.id)?.content ?? "";
-  const outgoingLinks = resolveOutgoingLinks(
-    { id: frontmatter.id, content: linkBody, frontmatter },
-    notes,
-  );
+  // A string selector so an unrelated note reload does not redraw the header
+  // when the resolved titles stay the same. Resolution matches the graph and
+  // the footer: saved ids plus [[wiki links]] in the body.
+  const linkSummary = useNoteStore((state) => {
+    const linkBody = content ?? state.notes.find((n) => n.id === frontmatter.id)?.content ?? "";
+    return resolveOutgoingLinks({ id: frontmatter.id, content: linkBody, frontmatter }, state.notes)
+      .map((link) => {
+        const title = state.notes.find((note) => note.id === link.id)?.frontmatter.title ?? link.id;
+        return `${link.id}\t${title}`;
+      })
+      .join("\n");
+  });
+  const outgoingLinks = linkSummary
+    ? linkSummary.split("\n").map((row) => {
+        const tab = row.indexOf("\t");
+        return { id: row.slice(0, tab), title: row.slice(tab + 1) };
+      })
+    : [];
 
   const unmanaged = frontmatter.unmanaged ?? false;
   const archived = isArchived(frontmatter);
@@ -505,7 +552,7 @@ export function PropertyPanel({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => commitTitle(titleDraft)}
               >
-                <Icon icon="uil:check" className="h-4 w-4" aria-hidden="true" />
+                <HeadingIcon icon="uil:check" id="note-heading-save-title" />
               </button>
             </>
           ) : (
@@ -521,7 +568,7 @@ export function PropertyPanel({
                   className="btn btn-ghost btn-xs btn-square shrink-0 text-[var(--color-text-muted)]"
                   onClick={beginTitleEdit}
                 >
-                  <Icon icon="uil:pen" className="h-4 w-4" aria-hidden="true" />
+                  <HeadingIcon icon="uil:pen" id="note-heading-edit-title" />
                 </button>
               )}
             </>
@@ -541,11 +588,7 @@ export function PropertyPanel({
               title="Copy file path"
               className={iconButtonClass(copied ? "active" : "default")}
             >
-              <Icon
-                icon={copied ? "uil:check" : "uil:copy"}
-                className="h-4 w-4"
-                aria-hidden="true"
-              />
+              <HeadingIcon icon={copied ? "uil:check" : "uil:copy"} id="note-heading-copy" />
             </button>
           )}
           <PinToSideButton noteId={frontmatter.id} variant="editor" />
@@ -557,7 +600,7 @@ export function PropertyPanel({
               title="Note history"
               className={iconButtonClass()}
             >
-              <Icon icon="uil:history" className="h-4 w-4" aria-hidden="true" />
+              <HeadingIcon icon="uil:history" id="note-heading-history" />
             </button>
           )}
           {onExportPdf && (
@@ -569,7 +612,7 @@ export function PropertyPanel({
               title="Export to PDF (⇧⌘E)"
               className={iconButtonClass()}
             >
-              <Icon icon="uil:file-export" className="h-4 w-4" aria-hidden="true" />
+              <HeadingIcon icon="uil:file-export" id="note-heading-export" />
             </button>
           )}
           {onToggleMarkdown && (
@@ -607,7 +650,7 @@ export function PropertyPanel({
               aria-label={archived ? "Unarchive note" : "Archive note"}
               className={iconButtonClass()}
             >
-              <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
+              <HeadingIcon icon="uil:archive" id="note-heading-archive" />
             </button>
           )}
           {onDelete && (
@@ -618,7 +661,7 @@ export function PropertyPanel({
               title="Delete note"
               className={iconButtonClass("danger")}
             >
-              <Icon icon="uil:trash-alt" className="h-4 w-4" aria-hidden="true" />
+              <HeadingIcon icon="uil:trash-alt" id="note-heading-delete" />
             </button>
           )}
           <HeadingDivider />
@@ -636,7 +679,7 @@ export function PropertyPanel({
               className={iconButtonClass(infoOpen ? "active" : "default")}
               onClick={() => setInfoOpen((open) => !open)}
             >
-              <Icon icon="uil:info-circle" className="h-4 w-4" aria-hidden="true" />
+              <HeadingIcon icon="uil:info-circle" id="note-heading-info" />
             </button>
             {infoOpen && (
               <ul
@@ -740,10 +783,10 @@ export function PropertyPanel({
           className="btn btn-ghost btn-xs ml-auto gap-1 self-center"
         >
           Properties
-          <Icon
+          <HeadingIcon
             icon="uil:angle-down"
+            id="note-heading-properties"
             className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-            aria-hidden="true"
           />
         </button>
       </div>
@@ -826,14 +869,11 @@ export function PropertyPanel({
           <Row label="Links">
             {outgoingLinks.length > 0 ? (
               <div className="flex flex-wrap gap-1">
-                {outgoingLinks.map((link) => {
-                  const title = notes.find((n) => n.id === link.id)?.frontmatter.title ?? link.id;
-                  return (
-                    <span key={link.id} className="badge badge-ghost badge-sm">
-                      {title}
-                    </span>
-                  );
-                })}
+                {outgoingLinks.map((link) => (
+                  <span key={link.id} className="badge badge-ghost badge-sm">
+                    {link.title}
+                  </span>
+                ))}
               </div>
             ) : (
               <em className="text-xs text-[var(--color-text-muted)]/50">
@@ -857,4 +897,4 @@ export function PropertyPanel({
       )}
     </div>
   );
-}
+}, sameHeadingProps);

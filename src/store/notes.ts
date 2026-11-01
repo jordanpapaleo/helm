@@ -19,7 +19,7 @@ import {
 } from "../lib/tags";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
-import type { Note, VaultConfig } from "../types/note";
+import type { Note, NoteFrontmatter, VaultConfig } from "../types/note";
 import { useProjectStore } from "./projects";
 import { reportError } from "./toast";
 import { useTrashStore } from "./trash";
@@ -218,6 +218,31 @@ async function writeRewrittenNotes(
   return written;
 }
 
+function sameFrontmatter(left: NoteFrontmatter, right: NoteFrontmatter): boolean {
+  const keys = new Set<keyof NoteFrontmatter>([
+    ...(Object.keys(left) as (keyof NoteFrontmatter)[]),
+    ...(Object.keys(right) as (keyof NoteFrontmatter)[]),
+  ]);
+  for (const key of keys) {
+    if (JSON.stringify(left[key]) !== JSON.stringify(right[key])) return false;
+  }
+  return true;
+}
+
+/**
+ * A reload equals the current note when the body, frontmatter, and path match.
+ * Path is included so a move that keeps the body still updates the store.
+ */
+function sameNoteSnapshot(current: Note, incoming: Note): boolean {
+  return (
+    current.content === incoming.content &&
+    current.filePath === incoming.filePath &&
+    current.fileName === incoming.fileName &&
+    current.vaultId === incoming.vaultId &&
+    sameFrontmatter(current.frontmatter, incoming.frontmatter)
+  );
+}
+
 /**
  * Every path a loaded note file occupies, including duplicate copies that are
  * not in `notes`. Use it for any "is this path free?" check.
@@ -294,6 +319,9 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       if (index < 0) index = files.findIndex((n) => n.id === updated.id);
       if (index < 0) return state;
       const previous = files[index];
+      // Watcher echoes often carry the file already on screen. Replacing the
+      // object notifies every subscriber and rebuilds the header icons.
+      if (sameNoteSnapshot(previous, updated)) return state;
       const nextFiles = files.map((n, i) => (i === index ? updated : n));
       // A duplicate copy lives outside `notes`, and a path or id change can
       // move which file is the keeper. Both go through partition. A field edit

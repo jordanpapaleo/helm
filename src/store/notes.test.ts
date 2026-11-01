@@ -78,6 +78,31 @@ describe("useNoteStore", () => {
     expect(result.current.notes[0].content).toBe("Updated content");
   });
 
+  it("does not replace a note or notify when frontmatter and content are unchanged", () => {
+    const note = makeNote();
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([note]));
+    let notifications = 0;
+    const stop = useNoteStore.subscribe(() => {
+      notifications += 1;
+    });
+    act(() => {
+      result.current.updateNote({
+        ...note,
+        frontmatter: { ...note.frontmatter, tags: ["Code"] },
+      });
+    });
+    expect(result.current.notes[0]).toBe(note);
+    expect(notifications).toBe(0);
+    act(() => {
+      result.current.updateNote({ ...note, filePath: "/notes/moved.md", fileName: "moved.md" });
+    });
+    expect(result.current.notes[0]).not.toBe(note);
+    expect(result.current.notes[0].filePath).toBe("/notes/moved.md");
+    expect(notifications).toBe(1);
+    stop();
+  });
+
   it("removes a note by id", () => {
     const { result } = renderHook(() => useNoteStore());
     act(() => {

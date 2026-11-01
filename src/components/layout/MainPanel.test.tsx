@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, Profiler } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useVault } from "../../hooks/useVault";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
-import { parseNote } from "../../lib/note-parser";
+import { parseNote, serializeNote } from "../../lib/note-parser";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { todayDate } from "../../lib/timestamps";
@@ -26,6 +27,11 @@ vi.mock("../../lib/tauri-commands", () => ({
     readNote: vi.fn().mockResolvedValue(""),
     renameNote: vi.fn().mockResolvedValue(undefined),
     savePdfDialog: vi.fn().mockResolvedValue(null),
+    getVaults: vi.fn().mockResolvedValue([]),
+    listNotes: vi.fn().mockResolvedValue([]),
+    listFolders: vi.fn().mockResolvedValue([]),
+    listProjectFiles: vi.fn().mockResolvedValue([]),
+    watchVault: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -83,6 +89,20 @@ function setup(note: Note, markdownMode: boolean) {
   });
   useUIStore.setState({ activeView: "notes", markdownMode });
   return render(<MainPanel />);
+}
+
+function HeaderEchoHarness({ onUpdate }: { onUpdate: () => void }) {
+  useVault();
+  return (
+    <Profiler
+      id="header"
+      onRender={(_id, phase) => {
+        if (phase === "update" || phase === "nested-update") onUpdate();
+      }}
+    >
+      <MainPanel />
+    </Profiler>
+  );
 }
 
 describe("MainPanel.handleSave — no-op when content is unchanged", () => {
@@ -227,6 +247,74 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
         .getState()
         .toasts.some((toast) => toast.message.includes("Failed to save frontmatter")),
     ).toBe(true);
+  });
+
+  it("does not commit the header when the watcher reloads identical content", async () => {
+    const base = makeNote();
+    const raw = serializeNote(base);
+    const parsed = parseNote(raw, base.filePath);
+    const echoed: Note = {
+      ...parsed,
+      id: base.id,
+      vaultId: VAULT.id,
+      frontmatter: { ...parsed.frontmatter, id: base.id },
+    };
+    const handlers = new Map<string, Array<(event: { payload: unknown }) => Promise<void>>>();
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      const key = String(event);
+      const list = handlers.get(key) ?? [];
+      list.push(handler as (event: { payload: unknown }) => Promise<void>);
+      handlers.set(key, list);
+      return () => {};
+    });
+    vi.mocked(tauriCommands.getVaults).mockResolvedValue([VAULT]);
+    vi.mocked(tauriCommands.readNote).mockResolvedValue(raw);
+
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, defaultNoteView: "markdown" },
+    });
+    useNoteStore.setState({
+      notes: [echoed],
+      selectedNoteId: echoed.id,
+      vaults: [VAULT],
+      activeVaultId: VAULT.id,
+    });
+    useUIStore.setState({ activeView: "notes", markdownMode: true });
+
+    let commits = 0;
+    const view = render(
+      <HeaderEchoHarness
+        onUpdate={() => {
+          commits += 1;
+        }}
+      />,
+    );
+    try {
+      await waitFor(() => expect(handlers.get("vault-changed")?.length).toBeGreaterThan(0));
+      const icons = [...document.querySelectorAll('[data-testid="note-heading"] svg')];
+      expect(icons.length).toBeGreaterThan(0);
+      commits = 0;
+
+      const reload = handlers.get("vault-changed") ?? [];
+      for (let i = 0; i < 50; i++) {
+        await act(async () => {
+          await Promise.all(reload.map((handler) => handler({ payload: [echoed.filePath] })));
+        });
+      }
+
+      expect(commits).toBe(0);
+      expect(useNoteStore.getState().notes[0]).toBe(echoed);
+      const after = [...document.querySelectorAll('[data-testid="note-heading"] svg')];
+      expect(after).toHaveLength(icons.length);
+      expect(after.every((node, index) => node === icons[index])).toBe(true);
+    } finally {
+      view.unmount();
+      vi.mocked(listen).mockReset();
+      vi.mocked(listen).mockResolvedValue(() => {});
+      vi.mocked(tauriCommands.readNote).mockReset();
+      vi.mocked(tauriCommands.readNote).mockResolvedValue("");
+      vi.mocked(tauriCommands.getVaults).mockResolvedValue([]);
+    }
   });
 });
 

@@ -811,6 +811,58 @@ describe("PropertyPanel frontmatter values", () => {
     expect(onChange).toHaveBeenCalledWith({ deadline: "2026-05-02" });
   });
 
+  it("shows YYYY-MM-DD on an empty deadline text field", () => {
+    const { panel } = openPanel({ deadline: "" });
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+
+    expect(deadline).toHaveAttribute("type", "text");
+    expect(deadline).toHaveAttribute("placeholder", "YYYY-MM-DD");
+    expect(deadline).toHaveValue("");
+  });
+
+  it("rejects a deadline that is not a real YYYY-MM-DD date", () => {
+    useToastStore.setState({ toasts: [] });
+    const { onChange, panel } = openPanel({ deadline: "" });
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+
+    fireEvent.change(deadline, { target: { value: "04/01/2026" } });
+    fireEvent.blur(deadline);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(deadline).toHaveValue("");
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("Could not save deadline")),
+    ).toBe(true);
+  });
+
+  it("shows the stored timestamp format on other date fields", () => {
+    useToastStore.setState({ toasts: [] });
+    const { onChange, panel } = openPanel({
+      deadline: "2026-04-01",
+      reviewed: "2026-07-31T18:23:05Z",
+    });
+
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+    expect(deadline).toHaveAttribute("type", "text");
+    expect(deadline).toHaveAttribute("placeholder", "YYYY-MM-DD");
+
+    const reviewed = within(panel).getByRole("textbox", { name: "reviewed" });
+    expect(reviewed).toHaveAttribute("type", "text");
+    expect(reviewed).toHaveAttribute("placeholder", "YYYY-MM-DDTHH:mm:ssZ");
+    expect(reviewed).toHaveValue("2026-07-31T18:23:05Z");
+
+    fireEvent.change(reviewed, { target: { value: "tomorrow" } });
+    fireEvent.blur(reviewed);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(reviewed).toHaveValue("2026-07-31T18:23:05Z");
+
+    fireEvent.change(reviewed, { target: { value: "2026-08-01T09:00:00Z" } });
+    fireEvent.blur(reviewed);
+    expect(onChange).toHaveBeenCalledWith({ reviewed: "2026-08-01T09:00:00Z" });
+  });
+
   it("leaves id, created, updated, and path as text", () => {
     const { panel } = openPanel();
 

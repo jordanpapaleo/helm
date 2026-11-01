@@ -54,6 +54,10 @@ const KNOWN_ORDER = [
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+/** Helm stores timestamps as UTC seconds with a trailing Z. */
+const STORED_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const DATE_PLACEHOLDER = "YYYY-MM-DD";
+const DATETIME_PLACEHOLDER = "YYYY-MM-DDTHH:mm:ssZ";
 
 type ValueKind =
   | "boolean"
@@ -67,6 +71,9 @@ type ValueKind =
 
 function valueKind(key: string, value: unknown): ValueKind {
   if (key === "state") return "state";
+  // deadline stays a calendar date even when the value is blank, so the
+  // empty field can show YYYY-MM-DD instead of a generic text box.
+  if (key === "deadline") return "date";
   if (typeof value === "boolean") return "boolean";
   if (typeof value === "number") return "number";
   if (Array.isArray(value)) return "array";
@@ -74,6 +81,15 @@ function valueKind(key: string, value: unknown): ValueKind {
   if (typeof value === "string" && DATE_ONLY.test(value)) return "date";
   if (typeof value === "string" && DATE_TIME.test(value)) return "datetime";
   return "string";
+}
+
+function isCalendarDate(value: string): boolean {
+  if (!DATE_ONLY.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
 }
 
 function editableKeys(frontmatter: NoteFrontmatter): string[] {
@@ -112,12 +128,24 @@ function parseNumber(text: string): number {
   return Number(trimmed);
 }
 
+function commitDate(draft: string): string {
+  const trimmed = draft.trim();
+  if (trimmed === "") return "";
+  if (!isCalendarDate(trimmed)) throw new Error(`Enter a date as ${DATE_PLACEHOLDER}`);
+  return trimmed;
+}
+
 function commitDatetime(draft: string, current: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(draft)) {
-    throw new Error("Enter a date and time");
+  const trimmed = draft.trim();
+  if (trimmed === "" || trimmed === current) return trimmed === "" ? "" : current;
+  if (!STORED_DATETIME.test(trimmed) || !isCalendarDate(trimmed.slice(0, 10))) {
+    throw new Error(`Enter a time as ${DATETIME_PLACEHOLDER}`);
   }
-  if (draft === current.slice(0, 16)) return current;
-  return current.length > 16 ? draft + current.slice(16) : draft;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Enter a time as ${DATETIME_PLACEHOLDER}`);
+  }
+  return trimmed;
 }
 
 function parseObject(text: string): Record<string, unknown> {
@@ -143,7 +171,7 @@ function parseObject(text: string): Record<string, unknown> {
 function displayText(kind: ValueKind, value: unknown): string {
   if (kind === "array" && Array.isArray(value)) return listText(value);
   if (kind === "object") return JSON.stringify(value);
-  if (kind === "datetime" && typeof value === "string") return value.slice(0, 16);
+  if (kind === "datetime" && typeof value === "string") return value;
   if (kind === "number") return String(value ?? "");
   return typeof value === "string" ? value : value == null ? "" : String(value);
 }
@@ -199,14 +227,14 @@ function FieldText({ value }: { value: string }) {
 function DraftInput({
   label,
   text,
-  type,
+  placeholder,
   disabled,
   mono = false,
   onCommit,
 }: {
   label: string;
   text: string;
-  type: "text" | "date" | "datetime-local";
+  placeholder?: string;
   disabled: boolean;
   mono?: boolean;
   /** Return false to reject the draft and restore the stored value. */
@@ -225,10 +253,13 @@ function DraftInput({
   return (
     <input
       aria-label={label}
-      type={type}
+      type="text"
+      inputMode={placeholder ? "numeric" : undefined}
+      spellCheck={placeholder ? false : undefined}
+      placeholder={placeholder}
       disabled={disabled}
       value={draft}
-      className={`input input-sm w-full max-w-md ${mono ? "font-mono text-xs" : ""}`}
+      className={`input input-sm w-full max-w-md placeholder:text-[var(--color-text-muted)] ${mono ? "font-mono text-xs" : ""}`}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -263,10 +294,7 @@ function FrontmatterValue({
   function commitText(draft: string): boolean {
     try {
       if (kind === "number") return commitParsed(parseNumber(draft));
-      if (kind === "date") {
-        if (!DATE_ONLY.test(draft)) throw new Error("Enter a date");
-        return commitParsed(draft);
-      }
+      if (kind === "date") return commitParsed(commitDate(draft));
       if (kind === "datetime") {
         return commitParsed(commitDatetime(draft, typeof value === "string" ? value : ""));
       }
@@ -310,8 +338,10 @@ function FrontmatterValue({
     <DraftInput
       label={fieldKey}
       text={text}
-      mono={kind === "object"}
-      type={kind === "date" ? "date" : kind === "datetime" ? "datetime-local" : "text"}
+      mono={kind === "object" || kind === "datetime"}
+      placeholder={
+        kind === "date" ? DATE_PLACEHOLDER : kind === "datetime" ? DATETIME_PLACEHOLDER : undefined
+      }
       disabled={disabled}
       onCommit={commitText}
     />

@@ -15,6 +15,12 @@ import { excludeArchivedUnless, isArchived } from "./archive";
 import { buildBriefing } from "./briefing";
 import { listNoteHistory, snapshotNoteFile } from "./history";
 import {
+  extractWikiLinks,
+  notesToRewrite,
+  replaceWikiLinkTitle,
+  resolveOutgoingLinks,
+} from "./links";
+import {
   captureThinkingNote,
   createProjectDir,
   membersOf,
@@ -135,6 +141,45 @@ function writeNote(filePath: string, frontmatter: NoteData, content: string): vo
   fs.writeFileSync(filePath, matter.stringify(content, data));
 }
 
+/**
+ * After a title change, point [[Old Title]] at the new title only when that
+ * wiki link resolved to the renamed note. Locked notes are skipped entirely:
+ * no snapshot and no write. Saved link ids stay as they are.
+ */
+function rewriteWikiTitles(catalog: Note[], renamedId: string, oldTitle: string, newTitle: string) {
+  const selected = new Set(
+    notesToRewrite(
+      catalog.map((item) => ({
+        id: item.frontmatter.id,
+        content: item.content,
+        frontmatter: {
+          title: item.frontmatter.title ?? "",
+          links: item.frontmatter.links,
+          locked: item.frontmatter.locked,
+        },
+      })),
+      renamedId,
+      oldTitle,
+    ).map((item) => item.id),
+  );
+  for (const other of catalog) {
+    if (!selected.has(other.frontmatter.id)) continue;
+    const nextContent = replaceWikiLinkTitle(other.content, oldTitle, newTitle);
+    if (nextContent === other.content) continue;
+    const frontmatter: NoteData = { ...other.frontmatter, updated: nowTimestamp() };
+    try {
+      snapshotNoteFile(vaultPathFor(other), other.frontmatter.id, other.filePath);
+    } catch {
+      /* snapshotting must never block the rewrite */
+    }
+    try {
+      writeNote(other.filePath, frontmatter, nextContent);
+    } catch {
+      /* the saved id still links if this body rewrite fails */
+    }
+  }
+}
+
 function slugify(title: string): string {
   return title
     .toLowerCase()
@@ -185,19 +230,6 @@ function mergeTagsOnSave(
   return [...new Set(merged)];
 }
 
-// The unescape is a backward-compatibility shim: the app no longer writes
-// `\[\[…\]\]` (the TipTap serializer's bracket escaping is undone on save — see
-// unescapeWikiLinks in src/components/editor/extensions.ts), but notes written
-// before that fix keep their escaped brackets until they are next resaved.
-function extractWikiLinks(content: string): string[] {
-  const seen = new Set<string>();
-  const unescaped = content.replace(/\\\[/g, "[").replace(/\\\]/g, "]");
-  for (const match of unescaped.matchAll(/\[\[([^\]]+)\]\]/g)) {
-    seen.add(match[1].trim());
-  }
-  return [...seen];
-}
-
 function isOverdue(deadline: string | undefined): boolean {
   if (!deadline) return false;
   // `deadline` is a calendar date, not a timestamp — compared date-to-date.
@@ -220,8 +252,17 @@ function getQuadrant(fm: NoteData): Quadrant {
 /** Projects discovered for the current tool call. */
 let loadedProjects: Project[] = [];
 
-function noteSummary(n: Note) {
+function asLinkNote(n: Note) {
+  return {
+    id: n.frontmatter.id,
+    content: n.content,
+    frontmatter: { title: n.frontmatter.title ?? "", links: n.frontmatter.links },
+  };
+}
+
+function noteSummary(n: Note, catalog: Note[]) {
   const projectId = projectIdForPath(n.filePath, loadedProjects);
+  const links = resolveOutgoingLinks(asLinkNote(n), catalog.map(asLinkNote)).map((link) => link.id);
   return {
     id: n.frontmatter.id,
     title: n.frontmatter.title,
@@ -234,7 +275,7 @@ function noteSummary(n: Note) {
     locked: n.frontmatter.locked,
     deadline: n.frontmatter.deadline,
     team: n.frontmatter.team,
-    links: n.frontmatter.links ?? [],
+    links,
     archived: isArchived(n.frontmatter),
     unmanaged: n.frontmatter.unmanaged === true,
     ...(n.frontmatter.template === true ? { template: true } : {}),
@@ -299,7 +340,7 @@ FRONTMATTER FIELDS
   unmanaged). Those come from where the note was created, never from the template.
 • deadline: YYYY-MM-DD (a calendar date, not a timestamp)
 • team: string[] — team member names (freeform strings)
-• links: string[] — ULIDs of linked notes (outbound graph edges)
+• links: string[] — saved ULIDs. The links Helm shows are this list plus matching [[wiki links]]. See LINKS AND THE LINK CANVAS.
 • kanbanOrder / eisenhowerOrder: number — drag order inside a column or quadrant. Leave them alone unless you are reordering that board.
 • Do not invent other fields. A project main page may also store purpose, plan, nextAction, leftOff, and blockers (strings).
 
@@ -310,10 +351,14 @@ TAGS
 • To APPEND tags without losing existing ones, use append_tags in update_note. Don't replace the full array.
 
 LINKS AND THE LINK CANVAS
-• The 'links' frontmatter field stores ULIDs of related notes (outbound edges). The graph draws those, plus any [[Note Title]] in the body whose title matches a note.
+• A note's links are the union of (1) saved frontmatter 'links' ids that still match a loaded note and (2) [[wiki links]] in the body whose text matches another loaded note's title, case-insensitive. The note itself is excluded. Dangling ids and titles that match no loaded note are not links. Opening or loading a note does not rewrite the file.
+• The graph, the note footer (Links to / Backlinks), and the properties Links field all use that same union.
+• The on-disk 'links' array is only the saved ids. A note written outside Helm can have [[wiki links]] and no 'links' key; those still show up.
+• Renaming a note replaces [[Old Title]] with [[New Title]] in other notes only when that wiki link resolved to the renamed note (case-insensitive, including the older \\[\\[Old Title\\]\\] form). If two notes share a title, links that resolved to the other note are left as they are. A locked note is not snapshotted or rewritten. Frontmatter link ids are kept either way.
 • Dragging one node onto another on the link canvas appends the target ULID to 'links'. It does not write a wiki link. Clicking an edge that came from 'links' removes that ULID. An edge that exists only as a [[wiki link]] is not removed by that click.
 • The Helm editor, on a body save, rebuilds 'links' from [[Note Title]] only. A canvas-only edge disappears on that save unless the body also contains [[Exact Title]] (case-insensitive).
-• update_note does not rebuild 'links' from the body. To add an edge, use append_links with a ULID from resolve_note, and put [[Exact Title]] in the body if the edge should survive an editor save.
+• update_note does not rebuild 'links' from the body. To add an edge, use append_links with a ULID from resolve_note, and put [[Exact Title]] in the body if the edge should survive an editor save. Changing frontmatter.title follows the same rename rule: rewrite [[Old Title]] only where it resolved to that note, skip locked notes, and keep every note's link ids.
+• list_notes, search_notes, get_eisenhower, and get_kanban report 'links' as this resolved id list. read_note returns the saved frontmatter (including the on-disk 'links' array) plus derived.links (the resolved ids) and derived.wikiLinks (the raw titles).
 • Always resolve titles to ULIDs with resolve_note before adding to 'links'. Never store filenames or titles in 'links'.
 
 DATES
@@ -502,7 +547,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "get_backlinks",
       description:
-        "Find all notes that link TO a given note (inbound references). Essential for zettelkasten graph navigation. Archived sources are excluded unless include_archived is true. The target itself is returned even when archived.",
+        "Find all notes that link TO a given note. A source counts when its resolved links include this id: a saved link id that still exists, or a [[wiki link]] whose text matches this note's title (case-insensitive). Archived sources are excluded unless include_archived is true. The target itself is returned even when archived.",
       inputSchema: {
         type: "object",
         properties: {
@@ -591,6 +636,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 IMPORTANT — shallow merge: passing frontmatter.tags replaces the ENTIRE tags array.
 Use append_tags and append_links to safely add values without overwriting existing ones.
+Changing frontmatter.title rewrites [[Old Title]] only where that wiki link resolved to this note, skips locked notes, and keeps link ids.
 Read get_rules for full merge semantics.`,
       inputSchema: {
         type: "object",
@@ -829,7 +875,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(filtered.map(noteSummary), null, 2),
+          text: JSON.stringify(
+            filtered.map((n) => noteSummary(n, notes)),
+            null,
+            2,
+          ),
         },
       ],
     };
@@ -843,6 +893,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const wikiLinks = extractWikiLinks(note.content);
     const inlineTags = extractInlineTags(note.content);
+    const links = resolveOutgoingLinks(asLinkNote(note), notes.map(asLinkNote)).map(
+      (link) => link.id,
+    );
 
     return {
       content: [
@@ -855,6 +908,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               vault: note.vaultName,
               derived: {
                 wikiLinks,
+                links,
                 inlineTags,
                 quadrant: getQuadrant(note.frontmatter),
                 overdue: isOverdue(note.frontmatter.deadline),
@@ -922,7 +976,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const results = scored
       .filter((s) => s.score > 0)
       .sort((a, b) => b.score - a.score)
-      .map((s) => noteSummary(s.note));
+      .map((s) => noteSummary(s.note, notes));
 
     return {
       content: [
@@ -953,7 +1007,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       eliminate: [],
     };
     for (const n of active) {
-      quadrants[getQuadrant(n.frontmatter)].push(noteSummary(n));
+      quadrants[getQuadrant(n.frontmatter)].push(noteSummary(n, notes));
     }
     return {
       content: [
@@ -984,7 +1038,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // the `state in columns` guard below intentionally leaves it off the board.
       // Do not "fix" this into `||`: that would bucket unmanaged notes into Prepare.
       const state = n.frontmatter.state ?? "Prepare";
-      if (state in columns) columns[state].push(noteSummary(n));
+      if (state in columns) columns[state].push(noteSummary(n, notes));
     }
     return {
       content: [
@@ -1002,26 +1056,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const target = notes.find((n) => n.frontmatter.id === id);
     if (!target) return { content: [{ type: "text", text: `Note not found: ${id}` }] };
 
-    // Check both frontmatter links (ULID refs) and wiki links (title refs)
-    const targetTitle = target.frontmatter.title?.toLowerCase() ?? "";
-
+    const catalog = notes.map(asLinkNote);
     const backlinks = excludeArchivedUnless(notes, args?.include_archived)
       .filter((n) => n.frontmatter.id !== id)
-      .filter((n) => {
-        const linksToId = (n.frontmatter.links ?? []).includes(id);
-        const wikiLinksToTitle = extractWikiLinks(n.content).some(
-          (link) => link.toLowerCase() === targetTitle,
-        );
-        return linksToId || wikiLinksToTitle;
-      })
-      .map((n) => ({
-        id: n.frontmatter.id,
-        title: n.frontmatter.title,
-        tags: n.frontmatter.tags,
-        vault: n.vaultName,
-        linkType: (n.frontmatter.links ?? []).includes(id) ? "frontmatter" : "wiki",
-        preview: n.content.slice(0, 200).trim(),
-      }));
+      .flatMap((n) => {
+        const link = resolveOutgoingLinks(asLinkNote(n), catalog).find((item) => item.id === id);
+        if (!link) return [];
+        return [
+          {
+            id: n.frontmatter.id,
+            title: n.frontmatter.title,
+            tags: n.frontmatter.tags,
+            vault: n.vaultName,
+            linkType: link.fromFrontmatter ? "frontmatter" : "wiki",
+            preview: n.content.slice(0, 200).trim(),
+          },
+        ];
+      });
 
     return {
       content: [
@@ -1213,6 +1264,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     writeNote(note.filePath, updatedFrontmatter, content);
 
+    const previousTitle = note.frontmatter.title ?? "";
+    const nextTitle =
+      typeof updatedFrontmatter.title === "string" ? updatedFrontmatter.title : previousTitle;
+    if (nextTitle !== previousTitle) {
+      rewriteWikiTitles(notes, id, previousTitle, nextTitle);
+    }
+
     return {
       content: [
         {
@@ -1362,11 +1420,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: JSON.stringify(
             {
               date: today,
-              overdue: b.overdue.map(noteSummary),
-              due_soon: b.dueSoon.map(noteSummary),
-              blocked: b.blocked.map(noteSummary),
-              doing: b.doing.map(noteSummary),
-              stale_doing: b.staleDoing.map(noteSummary),
+              overdue: b.overdue.map((n) => noteSummary(n, notes)),
+              due_soon: b.dueSoon.map((n) => noteSummary(n, notes)),
+              blocked: b.blocked.map((n) => noteSummary(n, notes)),
+              doing: b.doing.map((n) => noteSummary(n, notes)),
+              stale_doing: b.staleDoing.map((n) => noteSummary(n, notes)),
             },
             null,
             2,

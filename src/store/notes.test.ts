@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveOutgoingLinks } from "../lib/note-links";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { tauriCommands } from "../lib/tauri-commands";
 import { todayDate } from "../lib/timestamps";
@@ -620,6 +621,211 @@ describe("renameNote", () => {
 
     expect(result.current.notes[0].filePath).toBe("/vault/old-title.md");
     expect(result.current.notes[0].frontmatter.title).toBe("Test Note");
+  });
+
+  it("rewrites [[Old Title]] in other notes and keeps their link ids", async () => {
+    const renamed = makeNote({
+      id: "alpha",
+      filePath: "/vault/alpha.md",
+      fileName: "alpha.md",
+      content: "Own [[Alpha]]",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "alpha",
+        title: "Alpha",
+      },
+    });
+    const withId = makeNote({
+      id: "with-id",
+      filePath: "/vault/with-id.md",
+      fileName: "with-id.md",
+      content: "See [[alpha]]",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "with-id",
+        title: "With Id",
+        links: ["alpha"],
+      },
+    });
+    const wikiOnly = makeNote({
+      id: "wiki-only",
+      filePath: "/vault/wiki-only.md",
+      fileName: "wiki-only.md",
+      content: "Also [[ALPHA]]",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "wiki-only",
+        title: "Wiki Only",
+        links: undefined,
+      },
+    });
+    const untouched = makeNote({
+      id: "untouched",
+      filePath: "/vault/untouched.md",
+      fileName: "untouched.md",
+      content: "No link here",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "untouched",
+        title: "Untouched",
+        links: ["alpha"],
+      },
+    });
+
+    const { result } = renderHook(() => useNoteStore());
+    act(() => {
+      result.current.setVaults([{ id: "vault-1", name: "Vault", path: "/vault" }]);
+      result.current.setNotes([renamed, withId, wikiOnly, untouched]);
+    });
+
+    await act(async () => {
+      await result.current.renameNote(result.current.notes[0], "Beta");
+    });
+
+    const notes = result.current.notes;
+    const renamedAfter = notes.find((item) => item.id === "alpha");
+    const withIdAfter = notes.find((item) => item.id === "with-id");
+    const wikiOnlyAfter = notes.find((item) => item.id === "wiki-only");
+    const untouchedAfter = notes.find((item) => item.id === "untouched");
+
+    expect(renamedAfter?.frontmatter.title).toBe("Beta");
+    expect(renamedAfter?.content).toBe("Own [[Alpha]]");
+    expect(withIdAfter?.content).toBe("See [[Beta]]");
+    expect(withIdAfter?.frontmatter.links).toEqual(["alpha"]);
+    expect(wikiOnlyAfter?.content).toBe("Also [[Beta]]");
+    expect(wikiOnlyAfter?.frontmatter.links).toBeUndefined();
+    expect(untouchedAfter?.content).toBe("No link here");
+    expect(untouchedAfter?.frontmatter.links).toEqual(["alpha"]);
+
+    expect(resolveOutgoingLinks(withIdAfter ?? withId, notes).map((link) => link.id)).toEqual([
+      "alpha",
+    ]);
+    expect(resolveOutgoingLinks(wikiOnlyAfter ?? wikiOnly, notes).map((link) => link.id)).toEqual([
+      "alpha",
+    ]);
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/with-id.md",
+      expect.stringContaining("[[Beta]]"),
+    );
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/wiki-only.md",
+      expect.stringContaining("[[Beta]]"),
+    );
+    expect(tauriCommands.writeNote).not.toHaveBeenCalledWith(
+      "/vault/untouched.md",
+      expect.anything(),
+    );
+  });
+
+  it("does not snapshot or write a locked note when another note is renamed", async () => {
+    const renamed = makeNote({
+      id: "alpha",
+      filePath: "/vault/alpha.md",
+      fileName: "alpha.md",
+      content: "",
+      frontmatter: { ...makeNote().frontmatter, id: "alpha", title: "Alpha" },
+    });
+    const locked = makeNote({
+      id: "locked",
+      filePath: "/vault/locked.md",
+      fileName: "locked.md",
+      content: "See [[Alpha]]",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "locked",
+        title: "Locked",
+        locked: true,
+        links: ["alpha"],
+      },
+    });
+    const open = makeNote({
+      id: "open",
+      filePath: "/vault/open.md",
+      fileName: "open.md",
+      content: "See [[Alpha]]",
+      frontmatter: { ...makeNote().frontmatter, id: "open", title: "Open" },
+    });
+
+    const { result } = renderHook(() => useNoteStore());
+    act(() => {
+      result.current.setVaults([{ id: "vault-1", name: "Vault", path: "/vault" }]);
+      result.current.setNotes([renamed, locked, open]);
+    });
+
+    await act(async () => {
+      await result.current.renameNote(result.current.notes[0], "Beta");
+    });
+
+    const lockedAfter = result.current.notes.find((item) => item.id === "locked");
+    const openAfter = result.current.notes.find((item) => item.id === "open");
+    expect(lockedAfter?.content).toBe("See [[Alpha]]");
+    expect(lockedAfter?.frontmatter.links).toEqual(["alpha"]);
+    expect(openAfter?.content).toBe("See [[Beta]]");
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalledWith(
+      "/vault",
+      "locked",
+      "/vault/locked.md",
+    );
+    expect(tauriCommands.writeNote).not.toHaveBeenCalledWith("/vault/locked.md", expect.anything());
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/open.md",
+      expect.stringContaining("[[Beta]]"),
+    );
+  });
+
+  it("does not retarget a wiki link that resolved to the other note with the same title", async () => {
+    const early = makeNote({
+      id: "early",
+      filePath: "/vault/early.md",
+      fileName: "early.md",
+      content: "",
+      frontmatter: { ...makeNote().frontmatter, id: "early", title: "Alpha" },
+    });
+    const linker = makeNote({
+      id: "linker",
+      filePath: "/vault/linker.md",
+      fileName: "linker.md",
+      content: "See [[Alpha]]",
+      frontmatter: {
+        ...makeNote().frontmatter,
+        id: "linker",
+        title: "Linker",
+        links: ["early"],
+      },
+    });
+    const late = makeNote({
+      id: "late",
+      filePath: "/vault/late.md",
+      fileName: "late.md",
+      content: "",
+      frontmatter: { ...makeNote().frontmatter, id: "late", title: "Alpha" },
+    });
+
+    const { result } = renderHook(() => useNoteStore());
+    act(() => {
+      result.current.setVaults([{ id: "vault-1", name: "Vault", path: "/vault" }]);
+      result.current.setNotes([early, linker, late]);
+    });
+
+    await act(async () => {
+      await result.current.renameNote(
+        result.current.notes.find((item) => item.id === "early") ?? early,
+        "Beta",
+      );
+    });
+
+    const linkerAfter = result.current.notes.find((item) => item.id === "linker");
+    expect(linkerAfter?.content).toBe("See [[Alpha]]");
+    expect(linkerAfter?.frontmatter.links).toEqual(["early"]);
+    expect(
+      resolveOutgoingLinks(linkerAfter ?? linker, result.current.notes).map((link) => link.id),
+    ).toEqual(["early", "late"]);
+    expect(tauriCommands.writeNote).not.toHaveBeenCalledWith("/vault/linker.md", expect.anything());
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalledWith(
+      "/vault",
+      "linker",
+      "/vault/linker.md",
+    );
   });
 });
 

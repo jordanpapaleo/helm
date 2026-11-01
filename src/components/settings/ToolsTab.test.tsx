@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -7,6 +7,7 @@ import {
   useExtensionsStore,
   validateExtensionPreferences,
 } from "../../store/extensions";
+import { useToolsStore } from "../../store/tools";
 import { ToolsTab } from "./ToolsTab";
 
 vi.mock("../../lib/tauri-commands", () => ({
@@ -20,7 +21,9 @@ vi.mock("../../lib/tauri-commands", () => ({
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  vi.mocked(tauriCommands.writerConnections).mockResolvedValue([]);
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no network"));
+  useToolsStore.setState({ writerEnabled: false, provider: "codex", mode: "subscription" });
   useExtensionsStore.setState({
     ...validateExtensionPreferences(null),
     connected: { "openai-assistant": true, "claude-assistant": false },
@@ -28,8 +31,9 @@ beforeEach(() => {
   });
 });
 
-it("lists the built-in assistants and leaves install disabled", () => {
+it("lists the built-in assistants and leaves install disabled", async () => {
   render(<ToolsTab />);
+  await screen.findByText("Check your subscription connection below.");
   expect(screen.getByRole("heading", { name: "Tools" })).toBeInTheDocument();
   expect(
     screen.getByText(
@@ -54,9 +58,10 @@ it("lists the built-in assistants and leaves install disabled", () => {
   expect(screen.getByText("Build and install your own tools")).toBeInTheDocument();
 });
 
-it("turns a tool on with setEnabled and keeps its settings when turned off", () => {
+it("turns a tool on with setEnabled and keeps its settings when turned off", async () => {
   useExtensionsStore.getState().configure("openai-assistant", { model: "gpt-test", mode: "api" });
   render(<ToolsTab />);
+  await screen.findByText("Check your subscription connection below.");
   const toggle = screen.getByRole("checkbox", { name: "Show OpenAI Assistant in toolbar" });
   fireEvent.click(toggle);
   expect(screen.getByText("Showing in toolbar")).toBeInTheDocument();
@@ -76,6 +81,7 @@ it("turns a tool on with setEnabled and keeps its settings when turned off", () 
 it("opens a tool page from the card or the gear", async () => {
   const user = userEvent.setup();
   render(<ToolsTab />);
+  await screen.findByText("Check your subscription connection below.");
   await user.click(screen.getByRole("button", { name: "OpenAI Assistant settings" }));
   expect(screen.getByRole("button", { name: "‹ All tools" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "OpenAI Assistant" })).toBeInTheDocument();
@@ -91,6 +97,7 @@ it("opens a tool page from the card or the gear", async () => {
   expect(screen.getByPlaceholderText("Use client default")).toHaveValue("");
   expect(screen.getByText(/Every installed tool gets this page/)).toBeInTheDocument();
 
+  vi.mocked(tauriCommands.writerConnections).mockClear();
   fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
   expect(screen.getByRole("status")).toHaveTextContent("Connected");
   expect(tauriCommands.writerConnections).not.toHaveBeenCalled();
@@ -101,6 +108,7 @@ it("opens a tool page from the card or the gear", async () => {
   expect(useExtensionsStore.getState().enabled).toEqual(["openai-assistant"]);
 
   await user.click(screen.getByRole("button", { name: "‹ All tools" }));
+  await screen.findByText("Check your subscription connection below.");
   await user.click(screen.getByRole("button", { name: "Claude Assistant, built-in" }));
   expect(screen.getByRole("heading", { name: "Claude Assistant" })).toBeInTheDocument();
   expect(screen.getByText("Not connected")).toBeInTheDocument();
@@ -113,9 +121,11 @@ it("opens a tool page from the card or the gear", async () => {
   expect(useExtensionsStore.getState().settings["claude-assistant"].mode).toBe("api");
   expect(screen.getByText(/does not collect or store a key/)).toBeInTheDocument();
 
+  vi.mocked(tauriCommands.writerConnections).mockClear();
   fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
   expect(screen.getByRole("status")).toHaveTextContent("Not connected");
   expect(tauriCommands.writerConnections).not.toHaveBeenCalled();
+  expect(tauriCommands.writerLogin).not.toHaveBeenCalled();
   expect(globalThis.fetch).not.toHaveBeenCalled();
 
   fireEvent.change(screen.getByPlaceholderText("Use client default"), {
@@ -129,4 +139,21 @@ it("opens a tool page from the card or the gear", async () => {
     mode: "api",
     model: "claude-sonnet",
   });
+});
+
+it("launches provider sign-in explicitly and validates availability separately", async () => {
+  useToolsStore.setState({ writerEnabled: false, provider: "codex" });
+  vi.mocked(tauriCommands.writerConnections).mockResolvedValue([
+    { provider: "codex", installed: true, connected: false, detail: "Sign in first" },
+  ]);
+  vi.mocked(tauriCommands.writerLogin).mockResolvedValue();
+  render(<ToolsTab />);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Sign in with ChatGPT" })).toBeEnabled(),
+  );
+  expect(tauriCommands.writerLogin).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Writer" }));
+  expect(useToolsStore.getState().writerEnabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Sign in with ChatGPT" }));
+  await waitFor(() => expect(tauriCommands.writerLogin).toHaveBeenCalledWith("codex"));
 });

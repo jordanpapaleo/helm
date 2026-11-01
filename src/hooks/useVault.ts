@@ -138,7 +138,9 @@ export async function removeVault(id: string): Promise<void> {
     .getState()
     .setProjects(useProjectStore.getState().projects.filter((project) => project.vaultId !== id));
   await tauriCommands.setVaults(updatedVaults);
-  if (removed && !updatedVaults.some((v) => v.path === removed.path)) {
+  // After setVaults: Rust keeps the watcher if a remaining vault is the same
+  // directory under another spelling or symlink.
+  if (removed) {
     await tauriCommands.unwatchVault(removed.path);
   }
 }

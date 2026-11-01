@@ -792,6 +792,42 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn remove_keeps_watcher_while_another_vault_resolves_to_same_dir() {
+        let dir = temp_dir("watch-shared");
+        let path = dir.to_str().unwrap().to_string();
+        let link = std::env::temp_dir().join("helm-vault-test-watch-shared-link");
+        let _ = fs::remove_file(&link);
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        let link_path = link.to_str().unwrap().to_string();
+        let spelled = format!("{}/.", path);
+
+        let watchers = VaultWatchers::default();
+        assert!(watchers
+            .ensure(&path, || start_watcher(&path, |_| {}))
+            .unwrap());
+        assert!(!watchers
+            .ensure(&link_path, || start_watcher(&link_path, |_| {}))
+            .unwrap());
+
+        // Removing one spelling while the symlink or another spelling remains keeps it.
+        assert!(!watchers
+            .remove_unless_shared(&path, [link_path.as_str()])
+            .unwrap());
+        assert!(!watchers
+            .remove_unless_shared(&link_path, [spelled.as_str()])
+            .unwrap());
+        assert_eq!(watchers.len(), 1);
+
+        // Unrelated or invalid remaining paths do not pin it.
+        assert!(watchers
+            .remove_unless_shared(&link_path, ["/definitely/not/this/vault", "relative"])
+            .unwrap());
+        assert_eq!(watchers.len(), 0);
+        let _ = fs::remove_file(&link);
+    }
+
+    #[test]
     fn remove_watcher_allows_a_fresh_one() {
         let dir = temp_dir("watch-remove");
         let path = dir.to_str().unwrap().to_string();
@@ -799,9 +835,9 @@ mod tests {
         assert!(watchers
             .ensure(&path, || start_watcher(&path, |_| {}))
             .unwrap());
-        assert!(watchers.remove(&path).unwrap());
+        assert!(watchers.remove_unless_shared(&path, []).unwrap());
         assert_eq!(watchers.len(), 0);
-        assert!(!watchers.remove(&path).unwrap());
+        assert!(!watchers.remove_unless_shared(&path, []).unwrap());
         assert!(watchers
             .ensure(&path, || start_watcher(&path, |_| {}))
             .unwrap());
@@ -832,9 +868,24 @@ impl VaultWatchers {
         Ok(true)
     }
 
-    /// Drops the watcher for `vault_path`, stopping its events.
-    fn remove(&self, vault_path: &str) -> Result<bool, String> {
+    /// Drops the watcher for `vault_path` unless a still-configured vault
+    /// resolves to the same canonical directory. Returns `true` when removed.
+    fn remove_unless_shared<'a, I>(
+        &self,
+        vault_path: &str,
+        still_configured: I,
+    ) -> Result<bool, String>
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
         let key = canonical_key(vault_path)?;
+        let shared = still_configured
+            .into_iter()
+            .filter_map(|p| canonical_key(p).ok())
+            .any(|other| other == key);
+        if shared {
+            return Ok(false);
+        }
         let mut map = self.inner.lock().map_err(|e| e.to_string())?;
         Ok(map.remove(&key).is_some())
     }
@@ -934,11 +985,15 @@ pub async fn watch_vault(
     Ok(())
 }
 
+/// Call after the vault has been dropped from the saved config: any vault still
+/// configured for the same directory (another spelling, a symlink) keeps the watcher.
 #[tauri::command]
 pub async fn unwatch_vault(
+    app: AppHandle,
     watchers: State<'_, VaultWatchers>,
     vault_path: String,
 ) -> Result<(), String> {
-    watchers.remove(&vault_path)?;
+    let remaining = get_vaults(app).await?;
+    watchers.remove_unless_shared(&vault_path, remaining.iter().map(|v| v.path.as_str()))?;
     Ok(())
 }

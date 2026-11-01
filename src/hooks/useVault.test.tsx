@@ -24,6 +24,13 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const watchVault = vi.fn().mockResolvedValue(undefined);
+const calls: string[] = [];
+const setVaults = vi.fn(async (_vaults: unknown) => {
+  calls.push("setVaults");
+});
+const unwatchVault = vi.fn(async (path: string) => {
+  calls.push(`unwatchVault:${path}`);
+});
 vi.mock("../lib/tauri-commands", () => ({
   tauriCommands: {
     getVaults: vi.fn().mockResolvedValue([{ id: "v1", name: "vault", path: "/vault" }]),
@@ -32,6 +39,8 @@ vi.mock("../lib/tauri-commands", () => ({
     listFolders: vi.fn().mockResolvedValue([]),
     listProjectFiles: vi.fn().mockResolvedValue([]),
     watchVault: (...a: unknown[]) => watchVault(...a),
+    setVaults: (vaults: unknown) => setVaults(vaults),
+    unwatchVault: (path: string) => unwatchVault(path),
   },
 }));
 
@@ -41,7 +50,8 @@ vi.mock("../lib/git-sync-runtime", () => ({
 }));
 
 import { listen } from "@tauri-apps/api/event";
-import { useVault } from "./useVault";
+import { useNoteStore } from "../store/notes";
+import { removeVault, useVault } from "./useVault";
 
 function changedListeners(): number {
   return [...active.values()].filter((event) => event === "vault-changed").length;
@@ -95,5 +105,51 @@ describe("useVault listeners", () => {
     await act(async () => {});
 
     expect(active.size).toBe(0);
+  });
+});
+
+describe("removeVault", () => {
+  beforeEach(() => {
+    calls.length = 0;
+    setVaults.mockClear();
+    unwatchVault.mockClear();
+  });
+
+  it("hands the unwatch decision to Rust after saving the remaining vaults", async () => {
+    // Same directory, different spelling: Rust compares canonically, so the
+    // frontend must not skip or pre-filter the call on raw strings.
+    useNoteStore.setState({
+      vaults: [
+        { id: "a", name: "a", path: "/vault" },
+        { id: "b", name: "b", path: "/vault/." },
+      ],
+    });
+
+    await removeVault("a");
+
+    expect(calls).toEqual(["setVaults", "unwatchVault:/vault"]);
+    expect(setVaults).toHaveBeenCalledWith([{ id: "b", name: "b", path: "/vault/." }]);
+    expect(useNoteStore.getState().vaults.map((v) => v.id)).toEqual(["b"]);
+  });
+
+  it("still defers to Rust when a remaining vault has the identical path", async () => {
+    useNoteStore.setState({
+      vaults: [
+        { id: "a", name: "a", path: "/vault" },
+        { id: "b", name: "b", path: "/vault" },
+      ],
+    });
+
+    await removeVault("a");
+
+    expect(calls).toEqual(["setVaults", "unwatchVault:/vault"]);
+  });
+
+  it("does not unwatch anything for an unknown vault id", async () => {
+    useNoteStore.setState({ vaults: [{ id: "a", name: "a", path: "/vault" }] });
+
+    await removeVault("missing");
+
+    expect(unwatchVault).not.toHaveBeenCalled();
   });
 });

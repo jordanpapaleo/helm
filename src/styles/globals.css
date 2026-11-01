@@ -442,20 +442,6 @@ ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
   transform: rotate(45deg) translate(-1px, -1px);
 }
 
-/* Daisy's filter hides every unchecked choice once one is on. Urgent and
-   Important are independent, so both stay visible and both can be checked. */
-.note-heading-filter.filter input[type="checkbox"] {
-  opacity: 1;
-  width: auto;
-  scale: 1;
-  border-width: var(--border);
-  margin-inline-end: 0.25rem;
-  padding-inline: 0.75rem;
-}
-.note-heading-filter.filter input[type="checkbox"]:last-of-type {
-  margin-inline-end: 0;
-}
-
 /* The stock select is clamp()'d to 20rem. Size it to the state name. */
 .note-heading-state.select {
   width: auto;

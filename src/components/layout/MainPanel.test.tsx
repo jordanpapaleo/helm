@@ -207,24 +207,24 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     vi.mocked(tauriCommands.writeNote).mockImplementation(() => writeGate);
 
     setup(makeNote(), true);
-    const urgent = screen.getByRole("checkbox", { name: "Urgent" });
-    const important = screen.getByRole("checkbox", { name: "Important" });
-    expect(urgent).not.toBeChecked();
+    const urgent = screen.getByRole("button", { name: "Urgent" });
+    const important = screen.getByRole("button", { name: "Important" });
+    expect(urgent).toHaveAttribute("aria-pressed", "false");
 
     try {
       fireEvent.click(urgent);
 
-      expect(urgent).toBeChecked();
+      expect(urgent).toHaveAttribute("aria-pressed", "true");
       expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
 
       fireEvent.click(important);
-      expect(important).toBeChecked();
+      expect(important).toHaveAttribute("aria-pressed", "true");
       expect(useNoteStore.getState().notes[0].frontmatter.important).toBe(true);
 
       releaseWrite();
       await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
-      expect(urgent).toBeChecked();
-      expect(important).toBeChecked();
+      expect(urgent).toHaveAttribute("aria-pressed", "true");
+      expect(important).toHaveAttribute("aria-pressed", "true");
     } finally {
       releaseWrite();
       vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
@@ -235,11 +235,14 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     vi.mocked(tauriCommands.writeNote).mockRejectedValueOnce(new Error("disk full"));
     setup(makeNote(), true);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Urgent" }));
-    expect(screen.getByRole("checkbox", { name: "Urgent" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute("aria-pressed", "true");
 
     await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "Urgent" })).not.toBeChecked();
+      expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
     });
     expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(false);
     expect(
@@ -399,14 +402,10 @@ describe("MainPanel properties — removing the last tag", () => {
     vi.clearAllMocks();
   });
 
-  async function clearTags() {
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    fireEvent.change(input, { target: { value: "" } });
+  async function removeTag(name: string) {
     await act(async () => {
-      fireEvent.blur(input);
+      fireEvent.click(screen.getByRole("button", { name: `Remove tag ${name}` }));
     });
-    return input;
   }
 
   it("saves an empty tag list when the last tag is cleared", async () => {
@@ -414,9 +413,9 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    const input = await clearTags();
+    await removeTag("work");
 
-    expect(input).toHaveValue("");
+    expect(screen.queryByText("#work")).not.toBeInTheDocument();
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
     expect(useNoteStore.getState().notes[0].content).toBe("Plan today");
     expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
@@ -433,7 +432,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
     vi.mocked(tauriCommands.writeNote).mockClear();
 
     const body = screen.getByDisplayValue("Plan today");
@@ -452,14 +451,9 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work", "home"];
     setup(note, true);
 
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    fireEvent.change(input, { target: { value: "home" } });
-    await act(async () => {
-      fireEvent.blur(input);
-    });
+    await removeTag("work");
 
-    expect(input).toHaveValue("home");
+    expect(screen.getByText("#home")).toBeInTheDocument();
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual(["home"]);
     expect(useNoteStore.getState().notes[0].content).toBe("Plan and #home today");
     const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
@@ -471,7 +465,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
 
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
     expect(useNoteStore.getState().notes[0].content).toBe("No inline tag here");
@@ -494,7 +488,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
 
     expect(useNoteStore.getState().notes[0].content).toBe("- [x] keep");
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
@@ -508,7 +502,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
 
     expect(useNoteStore.getState().notes[0].content).toBe("- keep");
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);

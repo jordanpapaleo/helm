@@ -59,40 +59,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function TeamInput({
-  value,
-  onChange,
-}: {
-  value: string[] | undefined;
-  onChange: (u: Partial<NoteFrontmatter>) => void;
-}) {
-  const [draft, setDraft] = useState(value?.join(", ") ?? "");
-  useEffect(() => {
-    setDraft(value?.join(", ") ?? "");
-  }, [value]);
-  return (
-    <Row label="Team">
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() =>
-          onChange({
-            team: draft.trim()
-              ? draft
-                  .split(",")
-                  .map((t) => t.trim())
-                  .filter(Boolean)
-              : undefined,
-          })
-        }
-        placeholder="CE, RL, …"
-        className="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]/50"
-      />
-    </Row>
-  );
-}
-
 function StateSelect({
   value,
   onChange,
@@ -117,38 +83,24 @@ function StateSelect({
   );
 }
 
-function TagsInput({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (u: Partial<NoteFrontmatter>) => void;
-}) {
-  const [draft, setDraft] = useState(value.join(", "));
-  useEffect(() => {
-    setDraft(value.join(", "));
-  }, [value]);
-  return (
-    <Row label="Tags">
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() =>
-          onChange({
-            tags: draft.trim()
-              ? draft
-                  .split(",")
-                  .map((t) => t.trim().replace(/^#/, ""))
-                  .filter(Boolean)
-              : [],
-          })
-        }
-        placeholder="work, work/project"
-        className="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]/50 text-sm"
-      />
-    </Row>
+function FieldText({ value }: { value: string }) {
+  return value ? (
+    <span className="text-[var(--color-text)]">{value}</span>
+  ) : (
+    <span className="text-[var(--color-text-muted)]">—</span>
   );
+}
+
+function yesNo(value: boolean | undefined): string {
+  return value ? "Yes" : "No";
+}
+
+function formatExtra(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
 }
 
 /** Stable icon ids. Iconify otherwise mints new ids and replaces the svg on every render. */
@@ -217,38 +169,6 @@ function JoinToggle({
   );
 }
 
-function PriorityFilter({
-  urgent,
-  important,
-  onChange,
-}: {
-  urgent: boolean;
-  important: boolean;
-  onChange: (updates: Partial<NoteFrontmatter>) => void;
-}) {
-  return (
-    <fieldset className="filter note-heading-filter m-0 inline-flex items-center border-0 p-0 [min-inline-size:0]">
-      <legend className="sr-only">Priority</legend>
-      <input
-        className="btn btn-sm"
-        type="checkbox"
-        aria-label="Urgent"
-        title="Urgent"
-        checked={urgent}
-        onChange={() => onChange({ urgent: !urgent })}
-      />
-      <input
-        className="btn btn-sm"
-        type="checkbox"
-        aria-label="Important"
-        title="Important"
-        checked={important}
-        onChange={() => onChange({ important: !important })}
-      />
-    </fieldset>
-  );
-}
-
 const FlagSwitch = memo(
   function FlagSwitch({
     label,
@@ -256,13 +176,16 @@ const FlagSwitch = memo(
     icon,
     onToggle,
     indicator = "switch",
+    controls,
   }: {
     label: string;
     pressed: boolean;
     icon: string;
     onToggle: () => void;
-    /** Pin and lock stay switches. Template and Unmanaged report aria-pressed. */
+    /** Pin and lock stay switches. The other heading toggles report aria-pressed. */
     indicator?: "switch" | "pressed";
+    /** When set, the button also exposes aria-expanded for the controlled panel. */
+    controls?: string;
   }) {
     const pressedProps =
       indicator === "switch"
@@ -274,6 +197,8 @@ const FlagSwitch = memo(
         aria-label={label}
         title={label}
         data-icon={icon}
+        aria-expanded={controls ? pressed : undefined}
+        aria-controls={controls}
         className={iconButtonClass(pressed ? "active" : "default")}
         onClick={onToggle}
         {...pressedProps}
@@ -286,6 +211,7 @@ const FlagSwitch = memo(
     prev.label === next.label &&
     prev.pressed === next.pressed &&
     prev.icon === next.icon &&
+    prev.controls === next.controls &&
     (prev.indicator ?? "switch") === (next.indicator ?? "switch"),
 );
 
@@ -405,15 +331,12 @@ export const PropertyPanel = memo(function PropertyPanel({
   readOnly = false,
 }: PropertyPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(frontmatter.title);
   const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const infoRef = useRef<HTMLUListElement>(null);
-  const infoButtonRef = useRef<HTMLButtonElement>(null);
-  const infoId = useId();
+  const propertiesId = useId();
   const canEditTitle = !readOnly && !frontmatter.locked;
 
   // Drop an in-progress edit when the open note changes, even if the titles match.
@@ -422,7 +345,6 @@ export const PropertyPanel = memo(function PropertyPanel({
     editingTitleRef.current = false;
     setEditingTitle(false);
     setTitleDraft(frontmatter.title);
-    setInfoOpen(false);
   }, [frontmatter.id]);
 
   useEffect(() => {
@@ -435,26 +357,6 @@ export const PropertyPanel = memo(function PropertyPanel({
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
   }, [editingTitle]);
-
-  useEffect(() => {
-    if (!infoOpen) return;
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (infoRef.current?.contains(target) || infoButtonRef.current?.contains(target)) return;
-      setInfoOpen(false);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      setInfoOpen(false);
-      infoButtonRef.current?.focus();
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [infoOpen]);
 
   function beginTitleEdit() {
     if (!canEditTitle) return;
@@ -665,66 +567,14 @@ export const PropertyPanel = memo(function PropertyPanel({
             </button>
           )}
           <HeadingDivider />
-          <div
-            className={`dropdown dropdown-end dropdown-bottom ${infoOpen ? "dropdown-open" : ""}`}
-          >
-            <button
-              ref={infoButtonRef}
-              type="button"
-              aria-label="Note info"
-              aria-haspopup="menu"
-              aria-expanded={infoOpen}
-              aria-controls={infoOpen ? infoId : undefined}
-              title="Note info"
-              className={iconButtonClass(infoOpen ? "active" : "default")}
-              onClick={() => setInfoOpen((open) => !open)}
-            >
-              <HeadingIcon icon="uil:info-circle" id="note-heading-info" />
-            </button>
-            {infoOpen && (
-              <ul
-                ref={infoRef}
-                id={infoId}
-                aria-label="Note info"
-                className="dropdown-content menu menu-sm z-50 mt-1 w-72 rounded-box border border-base-300 bg-base-100 p-2 text-xs shadow-xl"
-              >
-                <li>
-                  <span className="flex justify-between gap-3">
-                    <span className="text-[var(--color-text-muted)]">Created</span>
-                    <span className="text-[var(--color-text)]" title={frontmatter.created}>
-                      {formatTimestamp(frontmatter.created)}
-                    </span>
-                  </span>
-                </li>
-                <li>
-                  <span className="flex justify-between gap-3">
-                    <span className="text-[var(--color-text-muted)]">Updated</span>
-                    <span className="text-[var(--color-text)]" title={frontmatter.updated}>
-                      {formatTimestamp(frontmatter.updated)}
-                    </span>
-                  </span>
-                </li>
-                <li>
-                  <span className="flex justify-between gap-3">
-                    <span className="text-[var(--color-text-muted)]">ID</span>
-                    <span className="truncate font-mono text-[var(--color-text)]">
-                      {frontmatter.id}
-                    </span>
-                  </span>
-                </li>
-                {filePath && (
-                  <li>
-                    <span className="flex justify-between gap-3">
-                      <span className="text-[var(--color-text-muted)]">Path</span>
-                      <span className="truncate text-[var(--color-text)]" title={filePath}>
-                        {filePath}
-                      </span>
-                    </span>
-                  </li>
-                )}
-              </ul>
-            )}
-          </div>
+          <FlagSwitch
+            label="Properties"
+            pressed={expanded}
+            icon="uil:info-circle"
+            indicator="pressed"
+            controls={propertiesId}
+            onToggle={() => setExpanded((open) => !open)}
+          />
         </div>
       </div>
 
@@ -737,10 +587,19 @@ export const PropertyPanel = memo(function PropertyPanel({
           className="m-0 flex min-w-0 flex-wrap items-center justify-start gap-2 border-0 p-0"
         >
           <StateSelect value={frontmatter.state} onChange={(state) => onChange({ state })} />
-          <PriorityFilter
-            urgent={frontmatter.urgent}
-            important={frontmatter.important}
-            onChange={onChange}
+          <FlagSwitch
+            label="Urgent"
+            pressed={frontmatter.urgent}
+            icon="uil:clock"
+            indicator="pressed"
+            onToggle={() => onChange({ urgent: !frontmatter.urgent })}
+          />
+          <FlagSwitch
+            label="Important"
+            pressed={frontmatter.important}
+            icon="uil:star"
+            indicator="pressed"
+            onToggle={() => onChange({ important: !frontmatter.important })}
           />
           <HeadingDivider />
           <FlagSwitch
@@ -776,96 +635,51 @@ export const PropertyPanel = memo(function PropertyPanel({
           <HeadingDivider />
           <HeaderTags key={frontmatter.id} value={frontmatter.tags} onChange={onChange} />
         </fieldset>
-        <button
-          type="button"
-          onClick={() => setExpanded((open) => !open)}
-          aria-expanded={expanded}
-          className="btn btn-ghost btn-xs ml-auto gap-1 self-center"
-        >
-          Properties
-          <HeadingIcon
-            icon="uil:angle-down"
-            id="note-heading-properties"
-            className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-          />
-        </button>
       </div>
 
-      {/* Expanded frontmatter panel */}
       {expanded && (
-        <fieldset
-          disabled={readOnly}
-          className="m-0 min-w-0 rounded-lg border border-base-300 bg-base-200/50 px-4 py-2 text-sm"
+        <section
+          id={propertiesId}
+          data-testid="note-properties"
+          aria-label="Properties"
+          className="min-w-0 rounded-lg border border-base-300 bg-base-200/50 px-4 py-2 text-sm"
         >
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-base-300/40 py-2">
-            {!unmanaged && (
-              <label className="flex cursor-pointer items-center gap-1.5 opacity-70 hover:opacity-100">
-                <input
-                  type="checkbox"
-                  checked={frontmatter.blocked}
-                  onChange={(e) => onChange({ blocked: e.target.checked })}
-                  className="rounded accent-[var(--color-accent)]"
-                />
-                Blocked
-              </label>
-            )}
-            <label className="flex cursor-pointer items-center gap-1.5 opacity-70 hover:opacity-100">
-              <input
-                type="checkbox"
-                checked={unmanaged}
-                onChange={(e) =>
-                  onChange(
-                    e.target.checked
-                      ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS }
-                      : { unmanaged: false },
-                  )
-                }
-                className="rounded accent-[var(--color-accent)]"
-              />
-              Unmanaged
-            </label>
-            <label className="flex cursor-pointer items-center gap-1.5 opacity-70 hover:opacity-100">
-              <input
-                type="checkbox"
-                checked={frontmatter.template ?? false}
-                onChange={(e) => onChange({ template: e.target.checked })}
-                className="rounded accent-[var(--color-accent)]"
-              />
-              Template
-            </label>
-          </div>
+          <Row label="Path">
+            <FieldText value={filePath ?? ""} />
+          </Row>
           <Row label="ID">
             <span className="font-mono text-xs text-[var(--color-text-muted)]">
               {frontmatter.id}
             </span>
           </Row>
-
-          {/* Stored as UTC; shown in the reader's local time. A legacy
-              date-only value renders as just a date — no invented midnight. */}
           <Row label="Created">
             <span className="text-[var(--color-text-muted)]" title={frontmatter.created}>
               {formatTimestamp(frontmatter.created)}
             </span>
           </Row>
-
           <Row label="Updated">
             <span className="text-[var(--color-text-muted)]" title={frontmatter.updated}>
               {formatTimestamp(frontmatter.updated)}
             </span>
           </Row>
-
           <Row label="Deadline">
-            <input
-              type="date"
-              value={frontmatter.deadline ?? ""}
-              onChange={(e) => onChange({ deadline: e.target.value || undefined })}
-              className="bg-transparent text-[var(--color-text)] outline-none [color-scheme:dark]"
-            />
+            <FieldText value={frontmatter.deadline ?? ""} />
           </Row>
-
-          <TeamInput value={frontmatter.team} onChange={onChange} />
-          <TagsInput value={frontmatter.tags} onChange={onChange} />
-
+          <Row label="Team">
+            <FieldText value={frontmatter.team?.join(", ") ?? ""} />
+          </Row>
+          <Row label="Tags">
+            <FieldText value={frontmatter.tags.join(", ")} />
+          </Row>
+          <Row label="Blocked">
+            <FieldText value={yesNo(frontmatter.blocked)} />
+          </Row>
+          <Row label="Unmanaged">
+            <FieldText value={yesNo(unmanaged)} />
+          </Row>
+          <Row label="Template">
+            <FieldText value={yesNo(frontmatter.template)} />
+          </Row>
           <Row label="Links">
             {outgoingLinks.length > 0 ? (
               <div className="flex flex-wrap gap-1">
@@ -876,24 +690,15 @@ export const PropertyPanel = memo(function PropertyPanel({
                 ))}
               </div>
             ) : (
-              <em className="text-xs text-[var(--color-text-muted)]/50">
-                use [[Note Title]] in body
-              </em>
+              <span className="text-[var(--color-text-muted)]">—</span>
             )}
           </Row>
-
-          {/* Extra / custom fields */}
           {extraFields.map(([key, value]) => (
             <Row key={key} label={key}>
-              <input
-                type="text"
-                value={String(value ?? "")}
-                onChange={(e) => onChange({ [key]: e.target.value })}
-                className="w-full bg-transparent text-[var(--color-text)] outline-none"
-              />
+              <FieldText value={formatExtra(value)} />
             </Row>
           ))}
-        </fieldset>
+        </section>
       )}
     </div>
   );

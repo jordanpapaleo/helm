@@ -113,7 +113,7 @@ describe("PropertyPanel title", () => {
 });
 
 describe("PropertyPanel header tags", () => {
-  it("renders tag chips on the header and keeps the properties field", () => {
+  it("renders tag chips on the header and the same tags as read-only text", () => {
     render(
       <PropertyPanel
         frontmatter={makeFrontmatter({ tags: ["ai-skills/skill", "work"] })}
@@ -125,8 +125,12 @@ describe("PropertyPanel header tags", () => {
     expect(screen.getByText("#work")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add tag" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    expect(screen.getByDisplayValue("ai-skills/skill, work")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getByText("Tags").parentElement).toHaveTextContent(
+      "ai-skills/skill, work",
+    );
+    expect(panel.querySelector("input, textarea")).toBeNull();
   });
 });
 
@@ -135,10 +139,18 @@ describe("PropertyPanel unmanaged notes", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} />);
 
     expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("Prepare");
-    expect(screen.getByRole("checkbox", { name: "Urgent" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Important" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+      "data-icon",
+      "uil:clock",
+    );
+    expect(screen.getByRole("button", { name: "Important" })).toHaveAttribute(
+      "data-icon",
+      "uil:star",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
-    expect(screen.getByLabelText("Blocked")).toBeInTheDocument();
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getByText("Blocked").parentElement).toHaveTextContent("No");
+    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
   it("keeps state and urgency on the heading when the note is unmanaged", () => {
@@ -152,8 +164,8 @@ describe("PropertyPanel unmanaged notes", () => {
     const metaRow = screen.getByTestId("note-heading-meta-row");
     expect(metaRow).toContainElement(screen.getByRole("combobox", { name: "State" }));
     expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("");
-    expect(metaRow).toContainElement(screen.getByRole("checkbox", { name: "Urgent" }));
-    expect(metaRow).toContainElement(screen.getByRole("checkbox", { name: "Important" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
 
     expect(screen.getByRole("switch", { name: "Pinned" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Locked" })).toBeInTheDocument();
@@ -162,8 +174,9 @@ describe("PropertyPanel unmanaged notes", () => {
       "true",
     );
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
-    expect(screen.queryByRole("checkbox", { name: "Blocked" })).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Unmanaged" })).toBeInTheDocument();
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(panel).getByText("Unmanaged").parentElement).toHaveTextContent("Yes");
   });
 
   it("clears the workflow fields in a single onChange when Unmanaged is switched on", () => {
@@ -180,8 +193,7 @@ describe("PropertyPanel unmanaged notes", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Unmanaged" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({
@@ -202,8 +214,7 @@ describe("PropertyPanel unmanaged notes", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Unmanaged" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ unmanaged: false });
@@ -222,8 +233,8 @@ describe("PropertyPanel unmanaged notes", () => {
     expect(metaRow).toContainElement(state);
     expect(state).toHaveValue("");
     expect(state).toHaveDisplayValue("State");
-    expect(metaRow).toContainElement(screen.getByRole("checkbox", { name: "Urgent" }));
-    expect(metaRow).toContainElement(screen.getByRole("checkbox", { name: "Important" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
     expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));
     expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Locked" }));
     expect(metaRow).toContainElement(screen.getByRole("button", { name: "Template" }));
@@ -298,14 +309,13 @@ describe("PropertyPanel template flag", () => {
       <PropertyPanel frontmatter={makeFrontmatter()} onChange={onChange} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Template" }));
+    fireEvent.click(screen.getByRole("button", { name: "Template" }));
     expect(onChange).toHaveBeenCalledWith({ template: true });
 
     rerender(
       <PropertyPanel frontmatter={makeFrontmatter({ template: true })} onChange={onChange} />,
     );
-    fireEvent.click(screen.getByRole("checkbox", { name: "Template" }));
+    fireEvent.click(screen.getByRole("button", { name: "Template" }));
     expect(onChange).toHaveBeenLastCalledWith({ template: false });
   });
 
@@ -424,7 +434,7 @@ const TITLE_ROW_ACTIONS = [
   "Markdown",
   "Archive note",
   "Delete note",
-  "Note info",
+  "Properties",
 ] as const;
 
 describe("PropertyPanel header layout", () => {
@@ -480,8 +490,12 @@ describe("PropertyPanel header layout", () => {
     expect(labels).toEqual([...TITLE_ROW_ACTIONS]);
     expect(screen.getByRole("button", { name: "Copy file path" }).className).toContain("btn-ghost");
     expect(screen.getByRole("button", { name: "Edit title" }).className).toContain("btn-ghost");
-    expect(titleRow).not.toContainElement(screen.getByRole("button", { name: "Properties" }));
-    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Properties" }));
+    const properties = screen.getByRole("button", { name: "Properties" });
+    expect(titleRow).toContainElement(properties);
+    expect(metaRow).not.toContainElement(properties);
+    expect(properties).toHaveAttribute("aria-pressed", "false");
+    expect(properties).toHaveAttribute("data-icon", "uil:info-circle");
+    expect(properties).toHaveAttribute("title", "Properties");
     expect(titleRow.className).toContain("justify-between");
     expect(titleRow.className).toContain("items-center");
     expect(metaRow.className).toContain("justify-start");
@@ -497,15 +511,16 @@ describe("PropertyPanel header layout", () => {
     expect(state.className).toContain("select");
     expect(state.className).not.toContain("rounded-full");
 
-    const urgent = screen.getByRole("checkbox", { name: "Urgent" });
-    const important = screen.getByRole("checkbox", { name: "Important" });
+    const urgent = screen.getByRole("button", { name: "Urgent" });
+    const important = screen.getByRole("button", { name: "Important" });
     expect(metaRow).toContainElement(urgent);
     expect(metaRow).toContainElement(important);
-    expect(urgent.parentElement?.className).toContain("filter");
-    expect(urgent.parentElement?.className).toContain("note-heading-filter");
-    expect(urgent.parentElement?.querySelector(".filter-reset")).toBeNull();
-    expect(urgent).not.toBeChecked();
-    expect(important).toBeChecked();
+    expect(urgent).toHaveAttribute("title", "Urgent");
+    expect(urgent).toHaveAttribute("aria-pressed", "false");
+    expect(urgent).toHaveAttribute("data-icon", "uil:clock");
+    expect(important).toHaveAttribute("title", "Important");
+    expect(important).toHaveAttribute("aria-pressed", "true");
+    expect(important).toHaveAttribute("data-icon", "uil:star");
     const rich = screen.getByRole("button", { name: "Rich" });
     expect(rich.className).toContain("join-item");
     expect(rich.parentElement?.className).toContain("note-heading-mode");
@@ -513,7 +528,7 @@ describe("PropertyPanel header layout", () => {
 
     const archive = screen.getByRole("button", { name: "Archive note" });
     const deleteNote = screen.getByRole("button", { name: "Delete note" });
-    const info = screen.getByRole("button", { name: "Note info" });
+    const info = screen.getByRole("button", { name: "Properties" });
     expect(
       archive.compareDocumentPosition(deleteNote) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -556,20 +571,23 @@ describe("PropertyPanel header layout", () => {
     expect(titleRow).not.toContainElement(state);
   });
 
-  it("toggles urgent and important independently from the filter", () => {
+  it("toggles urgent and important independently from the heading icons", () => {
     const onChange = vi.fn();
     renderHeader({}, { onChange });
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Urgent" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Important" }));
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Important" }));
 
     expect(onChange).toHaveBeenNthCalledWith(1, { urgent: true });
     expect(onChange).toHaveBeenNthCalledWith(2, { important: false });
-    expect(screen.getByRole("checkbox", { name: "Urgent" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Important" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Important" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
-  it("toggles template and unmanaged from the heading and keeps the properties checks", () => {
+  it("toggles template and unmanaged from the heading and shows them as text", () => {
     const onChange = vi.fn();
     renderHeader({ state: "Doing", urgent: true, important: true, blocked: true }, { onChange });
 
@@ -586,23 +604,34 @@ describe("PropertyPanel header layout", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
-    expect(screen.getByRole("checkbox", { name: "Template" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Unmanaged" })).toBeInTheDocument();
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(panel).getByText("Template").parentElement).toHaveTextContent("No");
+    expect(within(panel).getByText("Unmanaged").parentElement).toHaveTextContent("No");
   });
 
-  it("opens note info as a DaisyUI menu", () => {
-    renderHeader();
+  it("opens the read-only properties panel from the info icon", () => {
+    renderHeader({ deadline: "2026-04-01", team: ["Ada"] });
 
+    expect(screen.queryByRole("region", { name: "Properties" })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Note info" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Note info" }));
-    const menu = screen.getByRole("list", { name: "Note info" });
-    expect(menu.className).toContain("menu");
-    expect(menu.className).toContain("dropdown-content");
-    expect(menu.parentElement?.className).toContain("dropdown");
-    expect(within(menu).getByText("Created")).toBeInTheDocument();
-    expect(within(menu).getByText("Updated")).toBeInTheDocument();
-    expect(within(menu).getByText("01JPMXYZ123")).toBeInTheDocument();
-    expect(within(menu).getByText("/vault/command.md")).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Properties" });
+    fireEvent.click(toggle);
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(panel.querySelector("input, select, textarea")).toBeNull();
+    expect(within(panel).getByText("Path").parentElement).toHaveTextContent("/vault/command.md");
+    expect(within(panel).getByText("Created")).toBeInTheDocument();
+    expect(within(panel).getByText("Updated")).toBeInTheDocument();
+    expect(within(panel).getByText("01JPMXYZ123")).toBeInTheDocument();
+    expect(within(panel).getByText("Deadline").parentElement).toHaveTextContent("2026-04-01");
+    expect(within(panel).getByText("Team").parentElement).toHaveTextContent("Ada");
+    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("region", { name: "Properties" })).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 
   it("switches editor mode from the unselected Rich or Markdown segment", () => {
@@ -654,48 +683,6 @@ describe("PropertyPanel header layout", () => {
 });
 
 describe("PropertyPanel tags", () => {
-  function openTags(frontmatter = makeFrontmatter({ tags: ["work"] })) {
-    const onChange = vi.fn();
-    render(<PropertyPanel frontmatter={frontmatter} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    return { input, onChange };
-  }
-
-  it("commits an empty list when the last tag is cleared", () => {
-    const { input, onChange } = openTags();
-    expect(input).toHaveValue("work");
-
-    fireEvent.change(input, { target: { value: "" } });
-    fireEvent.blur(input);
-
-    expect(onChange).toHaveBeenCalledWith({ tags: [] });
-  });
-
-  it("stays empty after the empty list is saved", async () => {
-    const user = userEvent.setup();
-    function Harness() {
-      const [tags, setTags] = useState(["work"]);
-      return (
-        <PropertyPanel
-          frontmatter={makeFrontmatter({ tags })}
-          onChange={(updates) => {
-            if (Array.isArray(updates.tags)) setTags(updates.tags);
-          }}
-        />
-      );
-    }
-    render(<Harness />);
-    await user.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    await user.clear(input);
-    await user.tab();
-
-    expect(input).toHaveValue("");
-    await user.click(screen.getByRole("button", { name: /Properties/ }));
-    expect(screen.queryByText("#work")).not.toBeInTheDocument();
-  });
-
   it("removes the last tag from its chip", () => {
     const onChange = vi.fn();
     render(<PropertyPanel frontmatter={makeFrontmatter({ tags: ["work"] })} onChange={onChange} />);

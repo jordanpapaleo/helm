@@ -51,7 +51,7 @@ src/
 src-tauri/
   src/
     lib.rs          # Tauri entry, menus, global shortcut, command registration
-    vault.rs        # commands: list/read/write/delete/rename notes+folders, assets, snapshot_note, list_note_history, watch_vault (+ #[cfg(test)] unit tests)
+    vault.rs        # commands: list/read/write/delete/rename notes+folders, assets, snapshot_note, list_note_history, watch_vault/unwatch_vault (one watcher per vault, held in Rust state) (+ #[cfg(test)] unit tests)
   capabilities/default.json  # window permission list — new windows MUST be added here
 mcp-server/
   index.ts          # MCP server for Claude Desktop — 22 tools incl. note history, briefing, projects

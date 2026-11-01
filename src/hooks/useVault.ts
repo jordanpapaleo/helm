@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { type EventCallback, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { ulid } from "ulid";
 import { noteVaultMutated, startupVault } from "../lib/git-sync-runtime";
@@ -9,11 +9,6 @@ import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
 import { useProjectStore } from "../store/projects";
 import type { Note, VaultConfig } from "../types/note";
-
-// Track which vault paths already have a Rust watcher running.
-// Module-level so it survives React StrictMode double-invocation and prevents
-// duplicate watcher threads from accumulating across dev hot-reloads.
-const watchedVaultPaths = new Set<string>();
 
 /**
  * Repair missing required frontmatter fields in all notes in a vault.
@@ -76,12 +71,8 @@ async function loadVault(vault: VaultConfig): Promise<void> {
     };
   });
   useNoteStore.getState().appendNotes(notes);
-  // Only start one Rust watcher thread per vault path to prevent duplicate
-  // vault-changed events from accumulating across StrictMode runs or HMR.
-  if (!watchedVaultPaths.has(vault.path)) {
-    watchedVaultPaths.add(vault.path);
-    await tauriCommands.watchVault(vault.path);
-  }
+  // Idempotent on the Rust side: one watcher per vault path, even across reloads.
+  await tauriCommands.watchVault(vault.path);
 }
 
 /**
@@ -131,6 +122,7 @@ export async function addVault(path: string): Promise<void> {
  */
 export async function removeVault(id: string): Promise<void> {
   const store = useNoteStore.getState();
+  const removed = store.vaults.find((v) => v.id === id);
   const updatedVaults = store.vaults.filter((v) => v.id !== id);
 
   store.removeVaultConfig(id);
@@ -146,6 +138,9 @@ export async function removeVault(id: string): Promise<void> {
     .getState()
     .setProjects(useProjectStore.getState().projects.filter((project) => project.vaultId !== id));
   await tauriCommands.setVaults(updatedVaults);
+  if (removed && !updatedVaults.some((v) => v.path === removed.path)) {
+    await tauriCommands.unwatchVault(removed.path);
+  }
 }
 
 /**
@@ -158,10 +153,13 @@ export function useVault() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let unlistenChanged: (() => void) | undefined;
-    let unlistenDeleted: (() => void) | undefined;
-    let unlistenDirs: (() => void) | undefined;
-    let unlistenMutated: (() => void) | undefined;
+    let disposed = false;
+    // Promises, not resolved functions: cleanup can run before listen() resolves
+    // (StrictMode double-mount), and the late unlisten must still be called.
+    const subscriptions: Promise<UnlistenFn>[] = [];
+    function subscribe<T>(event: string, handler: EventCallback<T>): void {
+      subscriptions.push(listen<T>(event, handler));
+    }
 
     async function init() {
       try {
@@ -189,9 +187,10 @@ export function useVault() {
           await refreshFolders(vaults);
           await refreshProjects(vaults);
         }
+        if (disposed) return;
 
         // Listen for file creates/modifications
-        unlistenChanged = await listen<string[]>("vault-changed", async (event) => {
+        subscribe<string[]>("vault-changed", async (event) => {
           const changedPaths = event.payload;
           const store = useNoteStore.getState();
 
@@ -238,21 +237,21 @@ export function useVault() {
 
         // Working-tree edits, including assets and MCP writes. Git metadata is
         // filtered out on the Rust side so a checkpoint cannot sync itself.
-        unlistenMutated = await listen<string>("vault-mutated", (event) => {
+        subscribe<string>("vault-mutated", (event) => {
           noteVaultMutated(event.payload);
           const { vaults: currentVaults } = useNoteStore.getState();
           void refreshProjects(currentVaults);
         });
 
         // Listen for directory create/remove events — refresh the folder list
-        unlistenDirs = await listen<string>("vault-dirs-changed", () => {
+        subscribe<string>("vault-dirs-changed", () => {
           const { vaults: currentVaults } = useNoteStore.getState();
           void refreshFolders(currentVaults);
           void refreshProjects(currentVaults);
         });
 
         // Listen for confirmed file deletions
-        unlistenDeleted = await listen<string[]>("vault-note-deleted", (event) => {
+        subscribe<string[]>("vault-note-deleted", (event) => {
           const deletedPaths = event.payload;
           const store = useNoteStore.getState();
           for (const filePath of deletedPaths) {
@@ -272,10 +271,10 @@ export function useVault() {
     init();
 
     return () => {
-      unlistenChanged?.();
-      unlistenDeleted?.();
-      unlistenDirs?.();
-      unlistenMutated?.();
+      disposed = true;
+      for (const subscription of subscriptions) {
+        subscription.then((unlisten) => unlisten()).catch(() => {});
+      }
     };
   }, []);
 

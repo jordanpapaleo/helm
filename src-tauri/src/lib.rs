@@ -140,6 +140,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(writer::WriterRequests::default())
+        .manage(vault::VaultWatchers::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -462,6 +463,7 @@ pub fn run() {
             delete_note,
             rename_note,
             watch_vault,
+            unwatch_vault,
             write_asset,
             delete_asset,
             snapshot_note,

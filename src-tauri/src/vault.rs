@@ -1,9 +1,10 @@
-use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
+use notify::{recommended_watcher, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::thread;
-use tauri::{AppHandle, Emitter};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_store::StoreExt;
 
 fn validate_path(file_path: &str) -> Result<PathBuf, String> {
@@ -764,82 +765,180 @@ mod tests {
         delete_asset_impl(img.to_str().unwrap()).unwrap();
         assert!(!img.exists());
     }
+
+    #[test]
+    fn ensure_watcher_twice_for_same_path_keeps_one_watcher() {
+        let dir = temp_dir("watch-twice");
+        let path = dir.to_str().unwrap().to_string();
+        let watchers = VaultWatchers::default();
+        let mut created = 0;
+        let mut ensure = || {
+            watchers.ensure(&path, || {
+                created += 1;
+                start_watcher(&path, |_| {})
+            })
+        };
+
+        assert!(ensure().unwrap());
+        assert!(!ensure().unwrap());
+        // Same vault via a non-canonical spelling must also reuse it.
+        let alias = format!("{}/.", path);
+        assert!(!watchers
+            .ensure(&alias, || start_watcher(&alias, |_| {}))
+            .unwrap());
+
+        assert_eq!(created, 1);
+        assert_eq!(watchers.len(), 1);
+    }
+
+    #[test]
+    fn remove_watcher_allows_a_fresh_one() {
+        let dir = temp_dir("watch-remove");
+        let path = dir.to_str().unwrap().to_string();
+        let watchers = VaultWatchers::default();
+        assert!(watchers
+            .ensure(&path, || start_watcher(&path, |_| {}))
+            .unwrap());
+        assert!(watchers.remove(&path).unwrap());
+        assert_eq!(watchers.len(), 0);
+        assert!(!watchers.remove(&path).unwrap());
+        assert!(watchers
+            .ensure(&path, || start_watcher(&path, |_| {}))
+            .unwrap());
+        assert_eq!(watchers.len(), 1);
+    }
+}
+
+/// One live watcher per canonical vault path. Owned by Rust so a webview
+/// reload (which wipes all JS state) cannot start a second watcher.
+#[derive(Default)]
+pub struct VaultWatchers {
+    inner: Mutex<HashMap<PathBuf, RecommendedWatcher>>,
+}
+
+impl VaultWatchers {
+    /// Starts a watcher for `vault_path` unless one already exists.
+    /// Returns `true` when a new watcher was created.
+    fn ensure<F>(&self, vault_path: &str, make: F) -> Result<bool, String>
+    where
+        F: FnOnce() -> Result<RecommendedWatcher, String>,
+    {
+        let key = canonical_key(vault_path)?;
+        let mut map = self.inner.lock().map_err(|e| e.to_string())?;
+        if map.contains_key(&key) {
+            return Ok(false);
+        }
+        map.insert(key, make()?);
+        Ok(true)
+    }
+
+    /// Drops the watcher for `vault_path`, stopping its events.
+    fn remove(&self, vault_path: &str) -> Result<bool, String> {
+        let key = canonical_key(vault_path)?;
+        let mut map = self.inner.lock().map_err(|e| e.to_string())?;
+        Ok(map.remove(&key).is_some())
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.inner.lock().unwrap().len()
+    }
+}
+
+fn canonical_key(vault_path: &str) -> Result<PathBuf, String> {
+    let path = validate_path(vault_path)?;
+    Ok(fs::canonicalize(&path).unwrap_or(path))
+}
+
+fn start_watcher<F>(vault_path: &str, on_event: F) -> Result<RecommendedWatcher, String>
+where
+    F: Fn(Event) + Send + 'static,
+{
+    let mut watcher = recommended_watcher(move |result: Result<Event, notify::Error>| {
+        if let Ok(event) = result {
+            on_event(event);
+        }
+    })
+    .map_err(|e| format!("Failed to create watcher: {}", e))?;
+    watcher
+        .watch(std::path::Path::new(vault_path), RecursiveMode::Recursive)
+        .map_err(|e| format!("Failed to watch vault: {}", e))?;
+    Ok(watcher)
+}
+
+fn emit_vault_event(app: &AppHandle, vault_path: &str, event: &Event) {
+    let md_paths: Vec<String> = event
+        .paths
+        .iter()
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
+        // Ignore .md files under hidden dirs (history snapshots, .git, …)
+        .filter(|p| {
+            !p.strip_prefix(vault_path)
+                .map(is_hidden_path)
+                .unwrap_or(false)
+        })
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    if !md_paths.is_empty() {
+        // Treat Remove and Rename-from as deletions. On macOS, a
+        // file rename emits Modify(Name(From)) for the old path and
+        // Modify(Name(To)) for the new path — neither is EventKind::Remove.
+        let is_deletion = matches!(event.kind, notify::EventKind::Remove(_))
+            || matches!(
+                event.kind,
+                notify::EventKind::Modify(notify::event::ModifyKind::Name(
+                    notify::event::RenameMode::From
+                ))
+            );
+        if is_deletion {
+            let _ = app.emit("vault-note-deleted", &md_paths);
+        } else {
+            let _ = app.emit("vault-changed", &md_paths);
+        }
+    }
+
+    // Emit for directory create/remove so the frontend refreshes its folder list
+    let has_dir_event = event.paths.iter().any(|p| p.is_dir())
+        || matches!(
+            event.kind,
+            notify::EventKind::Create(notify::event::CreateKind::Folder)
+                | notify::EventKind::Remove(notify::event::RemoveKind::Folder)
+        );
+    if has_dir_event {
+        let _ = app.emit("vault-dirs-changed", vault_path);
+    }
+
+    // Notes, assets, and external/MCP edits. Hidden paths (.git,
+    // .helm-history) are ignored so a checkpoint cannot loop on
+    // its own metadata.
+    let vault = std::path::Path::new(vault_path);
+    let mutated = event.paths.iter().any(|p| is_user_vault_change(vault, p));
+    if mutated {
+        let _ = app.emit("vault-mutated", vault_path);
+    }
+}
+
+/// Idempotent: a second call for the same vault reuses the running watcher.
+#[tauri::command]
+pub async fn watch_vault(
+    app: AppHandle,
+    watchers: State<'_, VaultWatchers>,
+    vault_path: String,
+) -> Result<(), String> {
+    watchers.ensure(&vault_path, || {
+        let path = vault_path.clone();
+        start_watcher(&vault_path, move |event| {
+            emit_vault_event(&app, &path, &event)
+        })
+    })?;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn watch_vault(app: AppHandle, vault_path: String) -> Result<(), String> {
-    let app_clone = app.clone();
-
-    thread::spawn(move || {
-        let (tx, rx) = std::sync::mpsc::channel::<Result<Event, notify::Error>>();
-
-        let mut watcher = match recommended_watcher(tx) {
-            Ok(w) => w,
-            Err(e) => {
-                eprintln!("Failed to create watcher: {}", e);
-                return;
-            }
-        };
-
-        if let Err(e) = watcher.watch(std::path::Path::new(&vault_path), RecursiveMode::Recursive) {
-            eprintln!("Failed to watch vault: {}", e);
-            return;
-        }
-
-        for result in rx {
-            if let Ok(event) = result {
-                let md_paths: Vec<String> = event
-                    .paths
-                    .iter()
-                    .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
-                    // Ignore .md files under hidden dirs (history snapshots, .git, …)
-                    .filter(|p| {
-                        !p.strip_prefix(&vault_path)
-                            .map(is_hidden_path)
-                            .unwrap_or(false)
-                    })
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect();
-                if !md_paths.is_empty() {
-                    // Treat Remove and Rename-from as deletions. On macOS, a
-                    // file rename emits Modify(Name(From)) for the old path and
-                    // Modify(Name(To)) for the new path — neither is EventKind::Remove.
-                    let is_deletion = matches!(event.kind, notify::EventKind::Remove(_))
-                        || matches!(
-                            event.kind,
-                            notify::EventKind::Modify(notify::event::ModifyKind::Name(
-                                notify::event::RenameMode::From
-                            ))
-                        );
-                    if is_deletion {
-                        let _ = app_clone.emit("vault-note-deleted", &md_paths);
-                    } else {
-                        let _ = app_clone.emit("vault-changed", &md_paths);
-                    }
-                }
-
-                // Emit for directory create/remove so the frontend refreshes its folder list
-                let has_dir_event = event.paths.iter().any(|p| p.is_dir())
-                    || matches!(
-                        event.kind,
-                        notify::EventKind::Create(notify::event::CreateKind::Folder)
-                            | notify::EventKind::Remove(notify::event::RemoveKind::Folder)
-                    );
-                if has_dir_event {
-                    let _ = app_clone.emit("vault-dirs-changed", &vault_path);
-                }
-
-                // Notes, assets, and external/MCP edits. Hidden paths (.git,
-                // .helm-history) are ignored so a checkpoint cannot loop on
-                // its own metadata.
-                let vault = std::path::Path::new(&vault_path);
-                let mutated = event.paths.iter().any(|p| is_user_vault_change(vault, p));
-                if mutated {
-                    let _ = app_clone.emit("vault-mutated", &vault_path);
-                }
-            }
-        }
-    });
-
+pub async fn unwatch_vault(
+    watchers: State<'_, VaultWatchers>,
+    vault_path: String,
+) -> Result<(), String> {
+    watchers.remove(&vault_path)?;
     Ok(())
 }

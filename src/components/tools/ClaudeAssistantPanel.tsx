@@ -10,7 +10,7 @@ const MODES: { value: ExtensionConnectionMode; label: string }[] = [
 
 /** Setup form until Claude is connected. Neither Check connection nor Connect touches the network. */
 function ClaudeConnect({ extension }: { extension: ToolExtension }) {
-  const { id, name, description } = extension;
+  const { id, description } = extension;
   const settings = useExtensionsStore((state) => state.settings[id]);
   const configure = useExtensionsStore((state) => state.configure);
   const connect = useExtensionsStore((state) => state.connect);
@@ -20,11 +20,7 @@ function ClaudeConnect({ extension }: { extension: ToolExtension }) {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto p-3 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-medium">{name}</h2>
-        <span className="badge badge-ghost badge-sm shrink-0">Not connected</span>
-      </div>
-      <p className="mt-1 opacity-60">{description}</p>
+      <p className="opacity-60">{description}</p>
 
       <label htmlFor={modeId} className="mt-4 text-xs font-medium">
         Connection

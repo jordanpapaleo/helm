@@ -425,6 +425,8 @@ At narrow widths Helm reduces panels to their minimum widths, then temporarily h
 
 Built-in extensions are **OpenAI Assistant** and **Claude Assistant**. Each has an id, name, description, icon, enabled state, and panel. Enabling one adds its icon to the right-panel toolbar; disabling hides the icon and keeps its connection settings. Pinned notes are tabs on the left. On the right are OpenAI (chat) and Claude (asterisk), then the wrench, which opens **Settings → Tools**. To pin or unpin a note, use **Add to Right panel** or **Unpin from Right panel** in the note list's context menu. Tools and pinned notes are tabs, and one is visible at a time. Left/Right arrows move between tabs. With no tool enabled and nothing pinned, the panel says **No tools enabled**.
 
+Every tool panel starts with the same header: the tool's icon and name, one status line (a status dot, Connected or Not connected, the connection mode, and the model), and an options menu with **Tool settings** and **Hide from toolbar**. Settings → Tools uses the same status dot. The panel body below the header belongs to the tool.
+
 OpenAI Assistant opens connected, with a composer, a **Use open note** toggle, and Send. Claude Assistant shows a connection form until **Connect**. The form has Subscription / API key, Check connection, and an optional model. In this preview, Send only records the message in memory and Connect only changes the panel. Neither calls a model or the network. Writer is no longer shown in the right panel.
 
 ## Writer tool (subscription prototype)

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { WriterMode, WriterProvider } from "../tools/writer";
+import type { ExtensionId } from "./extensions";
 
 const KEY = "helm-tools";
 interface Preferences {
@@ -40,12 +41,15 @@ export const useToolsStore = create<
   Preferences & {
     configure: (patch: Partial<Preferences>) => void;
     settingsSection: "typography" | "tools";
-    showToolsSettings: () => void;
+    /** Tool whose detail page Settings → Tools opens on, if any. */
+    settingsTool: ExtensionId | null;
+    showToolsSettings: (tool?: ExtensionId) => void;
     resetSettingsSection: () => void;
   }
 >((set, get) => ({
   ...load(),
   settingsSection: "typography",
+  settingsTool: null,
   configure: (patch) => {
     const next = validateToolPreferences({ ...get(), ...patch });
     try {
@@ -55,6 +59,6 @@ export const useToolsStore = create<
     }
     set(next);
   },
-  showToolsSettings: () => set({ settingsSection: "tools" }),
-  resetSettingsSection: () => set({ settingsSection: "typography" }),
+  showToolsSettings: (tool) => set({ settingsSection: "tools", settingsTool: tool ?? null }),
+  resetSettingsSection: () => set({ settingsSection: "typography", settingsTool: null }),
 }));

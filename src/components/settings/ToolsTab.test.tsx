@@ -23,7 +23,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(tauriCommands.writerConnections).mockResolvedValue([]);
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no network"));
-  useToolsStore.setState({ writerEnabled: false, provider: "codex", mode: "subscription" });
+  useToolsStore.setState({
+    writerEnabled: false,
+    provider: "codex",
+    mode: "subscription",
+    settingsTool: null,
+  });
   useExtensionsStore.setState({
     ...validateExtensionPreferences(null),
     connected: { "openai-assistant": true, "claude-assistant": false },
@@ -156,4 +161,17 @@ it("launches provider sign-in explicitly and validates availability separately",
   expect(useToolsStore.getState().writerEnabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Sign in with ChatGPT" }));
   await waitFor(() => expect(tauriCommands.writerLogin).toHaveBeenCalledWith("codex"));
+});
+
+it("opens on the tool chosen from its panel menu and shows the shared status dot", () => {
+  useToolsStore.setState({ settingsTool: "claude-assistant" });
+  render(<ToolsTab />);
+  expect(screen.getByRole("heading", { name: "Claude Assistant" })).toBeInTheDocument();
+  const status = screen.getByText("Not connected");
+  expect(status.querySelector(".status")).toHaveClass("status", "status-neutral");
+  expect(status.closest(".badge")).toBeNull();
+
+  useToolsStore.setState({ settingsTool: "openai-assistant" });
+  render(<ToolsTab />);
+  expect(screen.getByText("Connected").querySelector(".status")).toHaveClass("status-success");
 });

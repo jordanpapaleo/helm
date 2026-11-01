@@ -187,24 +187,24 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     vi.mocked(tauriCommands.writeNote).mockImplementation(() => writeGate);
 
     setup(makeNote(), true);
-    const urgent = screen.getByRole("button", { name: "Urgent" });
-    const important = screen.getByRole("button", { name: "Important" });
-    expect(urgent).toHaveAttribute("aria-pressed", "false");
+    const urgent = screen.getByRole("checkbox", { name: "Urgent" });
+    const important = screen.getByRole("checkbox", { name: "Important" });
+    expect(urgent).not.toBeChecked();
 
     try {
       fireEvent.click(urgent);
 
-      expect(urgent).toHaveAttribute("aria-pressed", "true");
+      expect(urgent).toBeChecked();
       expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
 
       fireEvent.click(important);
-      expect(important).toHaveAttribute("aria-pressed", "true");
+      expect(important).toBeChecked();
       expect(useNoteStore.getState().notes[0].frontmatter.important).toBe(true);
 
       releaseWrite();
       await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
-      expect(urgent).toHaveAttribute("aria-pressed", "true");
-      expect(important).toHaveAttribute("aria-pressed", "true");
+      expect(urgent).toBeChecked();
+      expect(important).toBeChecked();
     } finally {
       releaseWrite();
       vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
@@ -215,14 +215,11 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     vi.mocked(tauriCommands.writeNote).mockRejectedValueOnce(new Error("disk full"));
     setup(makeNote(), true);
 
-    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
-    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Urgent" }));
+    expect(screen.getByRole("checkbox", { name: "Urgent" })).toBeChecked();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
-        "aria-pressed",
-        "false",
-      );
+      expect(screen.getByRole("checkbox", { name: "Urgent" })).not.toBeChecked();
     });
     expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(false);
     expect(

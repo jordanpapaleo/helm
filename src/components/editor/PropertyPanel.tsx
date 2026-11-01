@@ -1,11 +1,5 @@
 import { Icon } from "@iconify/react";
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { isArchived } from "../../lib/archive";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { resolveOutgoingLinks } from "../../lib/note-links";
@@ -99,138 +93,27 @@ function TeamInput({
   );
 }
 
-const STATE_CHOICES: Array<{ value: NoteState; label: string }> = [
-  { value: "", label: "None" },
-  ...NOTE_STATES.map((state) => ({ value: state as NoteState, label: state })),
-];
-
-/**
- * Workflow state as a DaisyUI dropdown. A daisyUI `<select class="select">` opts into
- * `appearance: base-select`, and that picker anchors to the wrong box — it paints
- * over the note title instead of opening under the control.
- */
-function StateMenu({
+function StateSelect({
   value,
   onChange,
 }: {
   value: NoteState;
   onChange: (state: NoteState) => void;
 }) {
-  const menuId = useId();
-  const [open, setOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const selected = menuRef.current?.querySelector<HTMLElement>('[aria-checked="true"]');
-    const first = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"]');
-    (selected ?? first)?.focus();
-
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
-      setOpen(false);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-      buttonRef.current?.focus();
-    }
-    function onScroll() {
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onScroll);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onScroll);
-      window.removeEventListener("scroll", onScroll, true);
-    };
-  }, [open]);
-
-  function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    const items = [
-      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
-    ];
-    if (items.length === 0) return;
-    const index = items.indexOf(document.activeElement as HTMLButtonElement);
-    if (
-      event.key !== "ArrowDown" &&
-      event.key !== "ArrowUp" &&
-      event.key !== "Home" &&
-      event.key !== "End"
-    ) {
-      return;
-    }
-    event.preventDefault();
-    const current = index === -1 ? (event.key === "ArrowUp" ? 0 : -1) : index;
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? items.length - 1
-          : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-    items[next]?.focus();
-  }
-
-  function choose(state: NoteState) {
-    onChange(state);
-    setOpen(false);
-    buttonRef.current?.focus();
-  }
-
   return (
-    <div className={`dropdown dropdown-bottom ${open ? "dropdown-open" : ""}`}>
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-label="State"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        className="note-heading-state btn btn-sm h-8 min-h-8 gap-2 rounded-full px-3 font-medium"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span
-          data-testid="state-dot"
-          aria-hidden="true"
-          className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-success)]"
-        />
-        <span>{value || "None"}</span>
-        <Icon icon="uil:angle-down" className="h-4 w-4 opacity-70" aria-hidden="true" />
-      </button>
-      {open && (
-        <div
-          ref={menuRef}
-          id={menuId}
-          role="menu"
-          aria-label="Note state"
-          className="dropdown-content z-50 mt-1 min-w-[10rem]"
-          onKeyDown={onMenuKeyDown}
-        >
-          <ul className="menu w-full rounded-box border border-base-300 bg-base-100 p-1 shadow-xl">
-            {STATE_CHOICES.map((choice) => (
-              <li key={choice.label}>
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={value === choice.value}
-                  className={value === choice.value ? "bg-base-200" : undefined}
-                  onClick={() => choose(choice.value)}
-                >
-                  {choice.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
+    <select
+      aria-label="State"
+      className="select select-sm note-heading-state"
+      value={value}
+      onChange={(event) => onChange(event.target.value as NoteState)}
+    >
+      <option value="">State</option>
+      {NOTE_STATES.map((state) => (
+        <option key={state} value={state}>
+          {state}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -290,11 +173,9 @@ function HeadingDivider() {
 
 function JoinToggle({
   label,
-  tone,
   segments,
 }: {
   label: string;
-  tone: "mode" | "priority";
   segments: Array<{
     label: string;
     pressed: boolean;
@@ -303,13 +184,7 @@ function JoinToggle({
   }>;
 }) {
   return (
-    <fieldset
-      className={
-        tone === "mode"
-          ? "join note-heading-mode m-0 inline-flex h-8 items-center rounded-full border-0 bg-base-200 p-0.5 [min-inline-size:0]"
-          : "join note-heading-priority m-0 inline-flex h-8 items-center overflow-hidden rounded-full border border-base-300 bg-base-100 p-0 [min-inline-size:0]"
-      }
-    >
+    <fieldset className="join note-heading-mode m-0 inline-flex h-8 items-center rounded-full border-0 bg-base-200 p-0.5 [min-inline-size:0]">
       <legend className="sr-only">{label}</legend>
       {segments.map((segment) => (
         <button
@@ -319,7 +194,7 @@ function JoinToggle({
           aria-pressed={segment.pressed}
           title={segment.title ?? segment.label}
           data-selected={segment.pressed ? "true" : "false"}
-          className={`btn btn-sm join-item h-7 min-h-0 px-3 font-medium ${tone === "mode" ? "rounded-full" : ""}`}
+          className="btn btn-sm join-item h-7 min-h-0 rounded-full px-3 font-medium"
           onClick={segment.onClick}
         >
           {segment.label}
@@ -329,26 +204,65 @@ function JoinToggle({
   );
 }
 
+function PriorityFilter({
+  urgent,
+  important,
+  onChange,
+}: {
+  urgent: boolean;
+  important: boolean;
+  onChange: (updates: Partial<NoteFrontmatter>) => void;
+}) {
+  return (
+    <fieldset className="filter note-heading-filter m-0 inline-flex items-center border-0 p-0 [min-inline-size:0]">
+      <legend className="sr-only">Priority</legend>
+      <input
+        className="btn btn-sm"
+        type="checkbox"
+        aria-label="Urgent"
+        title="Urgent"
+        checked={urgent}
+        onChange={() => onChange({ urgent: !urgent })}
+      />
+      <input
+        className="btn btn-sm"
+        type="checkbox"
+        aria-label="Important"
+        title="Important"
+        checked={important}
+        onChange={() => onChange({ important: !important })}
+      />
+    </fieldset>
+  );
+}
+
 function FlagSwitch({
   label,
   pressed,
   icon,
   onToggle,
+  indicator = "switch",
 }: {
   label: string;
   pressed: boolean;
   icon: string;
   onToggle: () => void;
+  /** Pin and lock stay switches. Template and Unmanaged report aria-pressed. */
+  indicator?: "switch" | "pressed";
 }) {
+  const pressedProps =
+    indicator === "switch"
+      ? ({ role: "switch", "aria-checked": pressed } as const)
+      : ({ "aria-pressed": pressed } as const);
   return (
     <button
       type="button"
-      role="switch"
-      aria-checked={pressed}
       aria-label={label}
       title={label}
+      data-icon={icon}
       className={iconButtonClass(pressed ? "active" : "default")}
       onClick={onToggle}
+      {...pressedProps}
     >
       <Icon icon={icon} className="h-4 w-4" aria-hidden="true" />
     </button>
@@ -462,7 +376,7 @@ export function PropertyPanel({
   const [titleDraft, setTitleDraft] = useState(frontmatter.title);
   const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const infoRef = useRef<HTMLDivElement>(null);
+  const infoRef = useRef<HTMLUListElement>(null);
   const infoButtonRef = useRef<HTMLButtonElement>(null);
   const infoId = useId();
   const canEditTitle = !readOnly && !frontmatter.locked;
@@ -663,7 +577,6 @@ export function PropertyPanel({
               <HeadingDivider />
               <JoinToggle
                 label="Editor mode"
-                tone="mode"
                 segments={[
                   {
                     label: "Rich",
@@ -709,11 +622,14 @@ export function PropertyPanel({
             </button>
           )}
           <HeadingDivider />
-          <div className="relative">
+          <div
+            className={`dropdown dropdown-end dropdown-bottom ${infoOpen ? "dropdown-open" : ""}`}
+          >
             <button
               ref={infoButtonRef}
               type="button"
               aria-label="Note info"
+              aria-haspopup="menu"
               aria-expanded={infoOpen}
               aria-controls={infoOpen ? infoId : undefined}
               title="Note info"
@@ -723,41 +639,47 @@ export function PropertyPanel({
               <Icon icon="uil:info-circle" className="h-4 w-4" aria-hidden="true" />
             </button>
             {infoOpen && (
-              <section
+              <ul
                 ref={infoRef}
                 id={infoId}
                 aria-label="Note info"
-                className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-base-300 bg-base-100 p-3 text-xs shadow-xl"
+                className="dropdown-content menu menu-sm z-50 mt-1 w-72 rounded-box border border-base-300 bg-base-100 p-2 text-xs shadow-xl"
               >
-                <dl className="space-y-1.5">
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-[var(--color-text-muted)]">Created</dt>
-                    <dd className="text-[var(--color-text)]" title={frontmatter.created}>
+                <li>
+                  <span className="flex justify-between gap-3">
+                    <span className="text-[var(--color-text-muted)]">Created</span>
+                    <span className="text-[var(--color-text)]" title={frontmatter.created}>
                       {formatTimestamp(frontmatter.created)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-[var(--color-text-muted)]">Updated</dt>
-                    <dd className="text-[var(--color-text)]" title={frontmatter.updated}>
+                    </span>
+                  </span>
+                </li>
+                <li>
+                  <span className="flex justify-between gap-3">
+                    <span className="text-[var(--color-text-muted)]">Updated</span>
+                    <span className="text-[var(--color-text)]" title={frontmatter.updated}>
                       {formatTimestamp(frontmatter.updated)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-[var(--color-text-muted)]">ID</dt>
-                    <dd className="truncate font-mono text-[var(--color-text)]">
+                    </span>
+                  </span>
+                </li>
+                <li>
+                  <span className="flex justify-between gap-3">
+                    <span className="text-[var(--color-text-muted)]">ID</span>
+                    <span className="truncate font-mono text-[var(--color-text)]">
                       {frontmatter.id}
-                    </dd>
-                  </div>
-                  {filePath && (
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-[var(--color-text-muted)]">Path</dt>
-                      <dd className="truncate text-[var(--color-text)]" title={filePath}>
+                    </span>
+                  </span>
+                </li>
+                {filePath && (
+                  <li>
+                    <span className="flex justify-between gap-3">
+                      <span className="text-[var(--color-text-muted)]">Path</span>
+                      <span className="truncate text-[var(--color-text)]" title={filePath}>
                         {filePath}
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              </section>
+                      </span>
+                    </span>
+                  </li>
+                )}
+              </ul>
             )}
           </div>
         </div>
@@ -771,22 +693,11 @@ export function PropertyPanel({
           disabled={readOnly}
           className="m-0 flex min-w-0 flex-wrap items-center justify-start gap-2 border-0 p-0"
         >
-          <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
-          <JoinToggle
-            label="Priority"
-            tone="priority"
-            segments={[
-              {
-                label: "Urgent",
-                pressed: frontmatter.urgent,
-                onClick: () => onChange({ urgent: !frontmatter.urgent }),
-              },
-              {
-                label: "Important",
-                pressed: frontmatter.important,
-                onClick: () => onChange({ important: !frontmatter.important }),
-              },
-            ]}
+          <StateSelect value={frontmatter.state} onChange={(state) => onChange({ state })} />
+          <PriorityFilter
+            urgent={frontmatter.urgent}
+            important={frontmatter.important}
+            onChange={onChange}
           />
           <HeadingDivider />
           <FlagSwitch
@@ -798,8 +709,26 @@ export function PropertyPanel({
           <FlagSwitch
             label="Locked"
             pressed={frontmatter.locked ?? false}
-            icon={frontmatter.locked ? "uil:lock" : "uil:lock-open-alt"}
+            icon={frontmatter.locked ? "uil:lock" : "uil:unlock"}
             onToggle={() => onChange({ locked: !(frontmatter.locked ?? false) })}
+          />
+          <FlagSwitch
+            label="Template"
+            pressed={frontmatter.template ?? false}
+            icon="uil:clipboard-notes"
+            indicator="pressed"
+            onToggle={() => onChange({ template: !(frontmatter.template ?? false) })}
+          />
+          <FlagSwitch
+            label="Unmanaged"
+            pressed={unmanaged}
+            icon="uil:eye-slash"
+            indicator="pressed"
+            onToggle={() =>
+              onChange(
+                unmanaged ? { unmanaged: false } : { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS },
+              )
+            }
           />
           <HeadingDivider />
           <HeaderTags key={frontmatter.id} value={frontmatter.tags} onChange={onChange} />

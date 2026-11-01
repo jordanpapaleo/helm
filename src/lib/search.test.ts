@@ -64,6 +64,18 @@ describe("buildIndex + searchNotes", () => {
     const results = searchNotes(index, notes, "");
     expect(results).toHaveLength(0);
   });
+
+  it("does not throw when two notes share an id, and indexes the first", () => {
+    const first = makeNote("01KX1AKET8KRS5HVRJSJRWC8RZ", "Original", "alpha body");
+    const copy = {
+      ...makeNote("01KX1AKET8KRS5HVRJSJRWC8RZ", "Copy", "omega body"),
+      filePath: "/notes/copy.md",
+    };
+    const both = [first, copy];
+    const index = buildIndex(both);
+    expect(searchNotes(index, both, "alpha")).toEqual([first]);
+    expect(searchNotes(index, both, "omega")).toEqual([]);
+  });
 });
 
 describe("noteMatchesQuery", () => {

@@ -255,6 +255,20 @@ An existing note joins a project from the note list **Move to…** menu. The pro
 - **Trash** lists deleted notes. Click a row to read it. Right-click the Trash icon for **Restore all** and **Delete all**. Restore all writes at most one snapshot per path and leaves the others in Trash when that path is already used, so a second snapshot is not discarded. Delete all asks before permanently removing every note in Trash. A deleted note open on the note screen can be searched, but Find does not offer Replace and other editing commands are ignored until it is restored.
 - Existing links stay valid. A visible note can still open an archived note it links to.
 
+### Duplicate note IDs
+
+Copying a note file outside Helm (a Finder duplicate, a sync-conflict copy) gives two files the same frontmatter `id`. Helm still loads the vault.
+
+- One copy keeps the id: the earliest `created`, then the shortest path, then path order. Search, selection, tabs, links, and the graph use that copy. The other copies are set aside, so a duplicate never crashes the search index.
+- While any id is shared, a warning banner sits under the toolbar. It does not block the app and stays until every duplicate is resolved. **Review duplicates** opens the **Duplicate note IDs** window.
+- The window lists each shared id with every file that carries it: title, file path, last updated time, a content preview, and whether the content matches the kept copy.
+- **Give this copy a new ID** mints a new ULID and writes it atomically. The body and every other field stay the same. Re-ID the copy marked "Keeps this ID" to hand the id to another copy.
+- **Move to Trash** deletes the file into Helm's Trash. The trashed entry gets its own id, so restoring it later does not bring the conflict back. Locked copies must be unlocked first.
+- **Open** opens the kept copy in the editor. **Show in folder** reveals any other copy in Finder.
+- Frontmatter `links` in other notes store ids, so they keep pointing at whichever copy keeps the id.
+- A file that appears with an id already in use counts as a rename only when the old file is gone. Otherwise it is flagged as a duplicate.
+- The MCP server picks the same copy and leaves the others out of every tool.
+
 ### Zettelkasten / Wiki Links
 
 Helm supports Zettelkasten-style note linking with bidirectional reference support:

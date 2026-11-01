@@ -13,6 +13,7 @@ import {
 import matter from "gray-matter";
 import { excludeArchivedUnless, isArchived } from "./archive";
 import { buildBriefing } from "./briefing";
+import { partitionDuplicateIds } from "./duplicates";
 import { listNoteHistory, snapshotNoteFile } from "./history";
 import {
   extractWikiLinks,
@@ -108,6 +109,10 @@ function normalizeNoteData(data: Record<string, unknown>): NoteData {
   return next;
 }
 
+/**
+ * Every note in every vault, one per id. When files share an id, the same copy
+ * the app keeps is returned and the rest are left out (see duplicates.ts).
+ */
 function listAllNotes(): Note[] {
   const notes: Note[] = [];
   for (const vault of VAULTS) {
@@ -128,7 +133,11 @@ function listAllNotes(): Note[] {
       }
     }
   }
-  return notes;
+  return partitionDuplicateIds(notes, (n) => ({
+    id: typeof n.frontmatter.id === "string" ? n.frontmatter.id : "",
+    filePath: n.filePath,
+    created: n.frontmatter.created ?? "",
+  })).unique;
 }
 
 /** Vault root for a loaded note (used to locate its .helm-history dir). */
@@ -308,6 +317,7 @@ HELM VAULT RULES — read these before creating or updating any note:
 IDENTIFIERS
 • Every note has a stable ULID in the 'id' field. Always use IDs, never filenames — notes can be renamed.
 • Use resolve_note to turn a title into a ULID before adding it to a 'links' array.
+• If two files carry the same id (a copied file, a sync conflict), only one copy is visible: the earliest created, then the shortest path. Every tool reads and writes that copy, the same one the Helm app shows. The other copies are not listed. Ask the user to resolve them in Helm's "Duplicate note IDs" window. Never copy a note file by hand.
 
 LOCKED NOTES
 • Never modify a note where locked: true. Return an error explaining the note must be unlocked in Helm first.

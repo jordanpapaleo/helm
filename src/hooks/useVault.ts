@@ -54,6 +54,35 @@ async function repairVaultFrontmatter(vaultPath: string): Promise<void> {
 }
 
 /**
+ * Fold a created or modified file into the store. A file at a new path whose
+ * id is already loaded is an external rename only if the old file is gone;
+ * if it is still on disk the new file is a duplicate copy (Finder duplicate,
+ * sync conflict) and is added so the store can flag it.
+ */
+export async function applyChangedFile(note: Note): Promise<void> {
+  const store = useNoteStore.getState();
+  const loaded = [...store.notes, ...store.duplicateGroups.flatMap((group) => group.copies)];
+  if (loaded.some((n) => n.filePath === note.filePath)) {
+    store.updateNote(note);
+    return;
+  }
+  const existingById = note.id ? store.notes.find((n) => n.id === note.id) : undefined;
+  if (!existingById) {
+    store.addNote(note);
+    return;
+  }
+  const oldFileStillThere = await tauriCommands.readNote(existingById.filePath).then(
+    () => true,
+    () => false,
+  );
+  if (oldFileStillThere) {
+    useNoteStore.getState().addNote(note);
+  } else {
+    useNoteStore.getState().updateNote({ ...note, vaultId: existingById.vaultId });
+  }
+}
+
+/**
  * Load all notes from a single vault and add them to the store.
  */
 async function loadVault(vault: VaultConfig): Promise<void> {
@@ -126,10 +155,12 @@ export async function removeVault(id: string): Promise<void> {
   const updatedVaults = store.vaults.filter((v) => v.id !== id);
 
   store.removeVaultConfig(id);
-  // Remove all notes belonging to this vault
-  const toRemove = store.notes.filter((n) => n.vaultId === id);
+  const toRemove = [
+    ...store.notes,
+    ...store.duplicateGroups.flatMap((group) => group.copies),
+  ].filter((n) => n.vaultId === id);
   for (const note of toRemove) {
-    store.removeNote(note.id);
+    store.removeNoteAtPath(note.filePath);
   }
   if (store.activeVaultId === id) {
     store.setActiveVaultId(null);
@@ -218,19 +249,7 @@ export function useVault() {
                 tauriCommands.writeNote(filePath, serializeNote(note)).catch(() => {});
               }
 
-              const existingByPath = store.notes.find((n) => n.filePath === filePath);
-              if (existingByPath) {
-                store.updateNote(note);
-              } else {
-                // Check if this is an external rename: same ULID, different path.
-                // In that case update in-place rather than adding a duplicate.
-                const existingById = note.id ? store.notes.find((n) => n.id === note.id) : null;
-                if (existingById) {
-                  store.updateNote({ ...note, vaultId: existingById.vaultId });
-                } else {
-                  store.addNote(note);
-                }
-              }
+              await applyChangedFile(note);
             } catch {
               // Transient read error (race with write) — ignore
             }
@@ -254,13 +273,8 @@ export function useVault() {
 
         // Listen for confirmed file deletions
         subscribe<string[]>("vault-note-deleted", (event) => {
-          const deletedPaths = event.payload;
-          const store = useNoteStore.getState();
-          for (const filePath of deletedPaths) {
-            const existing = store.notes.find((n) => n.filePath === filePath);
-            if (existing) {
-              store.removeNote(existing.id);
-            }
+          for (const filePath of event.payload) {
+            useNoteStore.getState().removeNoteAtPath(filePath);
           }
         });
       } catch (e) {

@@ -44,7 +44,13 @@ function makeNote(overrides: Partial<Note> = {}): Note {
 
 describe("useNoteStore", () => {
   beforeEach(() => {
-    useNoteStore.setState({ notes: [], selectedNoteId: null, vaults: [], activeVaultId: null });
+    useNoteStore.setState({
+      notes: [],
+      duplicateGroups: [],
+      selectedNoteId: null,
+      vaults: [],
+      activeVaultId: null,
+    });
   });
 
   it("loads notes into the store", () => {
@@ -1347,5 +1353,61 @@ describe("nested tag tree", () => {
     act(() => result.current.setNotes([poison, ordinary]));
     expect(result.current.notes).toHaveLength(2);
     expect(result.current.tagTree.work.notes.map((n) => n.id)).toEqual(["n2"]);
+  });
+});
+
+describe("useNoteStore with duplicate ids", () => {
+  const keeper = makeNote({ filePath: "/notes/plan.md", content: "keeper body" });
+  const copy = makeNote({ filePath: "/notes/plan copy.md", content: "copy body" });
+
+  beforeEach(() => {
+    useNoteStore.setState({ notes: [], duplicateGroups: [], selectedNoteId: null });
+    useNoteStore.getState().setNotes([copy, keeper]);
+  });
+
+  it("keeps one note per id and records the group", () => {
+    const { notes, duplicateGroups } = useNoteStore.getState();
+    expect(notes).toEqual([keeper]);
+    expect(duplicateGroups).toEqual([{ id: keeper.id, keeper, copies: [copy] }]);
+  });
+
+  it("updates a copy by path without touching the keeper", () => {
+    const edited = { ...copy, content: "copy edited on disk" };
+    useNoteStore.getState().updateNote(edited);
+    const { notes, duplicateGroups } = useNoteStore.getState();
+    expect(notes).toEqual([keeper]);
+    expect(duplicateGroups[0].copies).toEqual([edited]);
+  });
+
+  it("ignores an added file whose path is already loaded as a copy", () => {
+    useNoteStore.getState().addNote({ ...copy, content: "again" });
+    expect(useNoteStore.getState().duplicateGroups[0].copies).toEqual([copy]);
+  });
+
+  it("promotes the copy when the keeper's file is removed", () => {
+    useNoteStore.getState().selectNote(keeper.id);
+    useNoteStore.getState().removeNoteAtPath(keeper.filePath);
+    const { notes, duplicateGroups, selectedNoteId } = useNoteStore.getState();
+    expect(notes).toEqual([copy]);
+    expect(duplicateGroups).toEqual([]);
+    expect(selectedNoteId).toBe(keeper.id);
+  });
+
+  it("removing a copy's file leaves the keeper alone", () => {
+    useNoteStore.getState().removeNoteAtPath(copy.filePath);
+    const { notes, duplicateGroups } = useNoteStore.getState();
+    expect(notes).toEqual([keeper]);
+    expect(duplicateGroups).toEqual([]);
+  });
+
+  it("appending another vault with the same id regroups deterministically", () => {
+    const other = makeNote({ filePath: "/other/plan.md", vaultId: "vault-2" });
+    useNoteStore.getState().appendNotes([other]);
+    const { notes, duplicateGroups } = useNoteStore.getState();
+    expect(notes.map((n) => n.filePath)).toEqual(["/notes/plan.md"]);
+    expect(duplicateGroups[0].copies.map((n) => n.filePath)).toEqual([
+      "/other/plan.md",
+      "/notes/plan copy.md",
+    ]);
   });
 });

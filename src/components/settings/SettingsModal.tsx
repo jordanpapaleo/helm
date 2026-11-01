@@ -87,7 +87,7 @@ const TABS: TabDef[] = [
   {
     id: "tools",
     label: "Tools",
-    icon: <Icon icon="uil:apps" className="h-4 w-4" aria-hidden="true" />,
+    icon: <Icon icon="uil:wrench" className="h-4 w-4" aria-hidden="true" />,
   },
   { id: "typography", label: "Typography", icon: <TypographyIcon /> },
   { id: "themes", label: "Themes", icon: <PaletteIcon /> },

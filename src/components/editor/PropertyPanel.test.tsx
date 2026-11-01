@@ -811,6 +811,31 @@ describe("PropertyPanel frontmatter values", () => {
     expect(onChange).toHaveBeenCalledWith({ deadline: "2026-05-02" });
   });
 
+  it("drops a cleared deadline and team instead of saving blank strings", () => {
+    const { onChange, panel } = openPanel({
+      deadline: "2026-04-01",
+      team: "Ada" as unknown as string[],
+    });
+
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+    fireEvent.change(deadline, { target: { value: "  " } });
+    fireEvent.blur(deadline);
+    expect(onChange).toHaveBeenCalledWith({ deadline: undefined });
+
+    const team = within(panel).getByRole("textbox", { name: "team" });
+    fireEvent.change(team, { target: { value: "" } });
+    fireEvent.blur(team);
+    expect(onChange).toHaveBeenCalledWith({ team: undefined });
+  });
+
+  it("leaves a deadline that is already an empty string", () => {
+    const { onChange, panel } = openPanel({ deadline: "" });
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+    fireEvent.change(deadline, { target: { value: "" } });
+    fireEvent.blur(deadline);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("shows YYYY-MM-DD on an empty deadline text field", () => {
     const { panel } = openPanel({ deadline: "" });
     const deadline = within(panel).getByRole("textbox", { name: "deadline" });

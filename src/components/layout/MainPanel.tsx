@@ -16,7 +16,17 @@ import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent, serializeNote } from "../../lib/note-parser";
-import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import {
+  enqueueNoteWrite,
+  forgetScheduledPath,
+  rememberNotePath,
+  resolveNoteWritePath,
+} from "../../lib/note-write-path";
+import {
+  flushPendingSaves,
+  registerSaveFlusher,
+  unregisterSaveFlusher,
+} from "../../lib/pending-saves";
 import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { saveNoteContent } from "../../lib/save-note";
@@ -182,11 +192,7 @@ export const MarkdownTextarea = forwardRef<
     const next = val.slice(0, start) + prefix + selected + suffix + val.slice(end);
     dirtyRef.current = true;
     setValue(next);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveTimer.current = null;
-      commitSave(next);
-    }, 1000);
+    scheduleBodySave(next);
 
     // Restore selection inside the wrapping characters
     requestAnimationFrame(() => {
@@ -200,16 +206,27 @@ export const MarkdownTextarea = forwardRef<
     const next = e.target.value;
     dirtyRef.current = true;
     setValue(next);
+    scheduleBodySave(next);
+  };
+
+  function scheduleBodySave(next: string) {
+    if (saveTimer.current === null) {
+      const path = useNoteStore
+        .getState()
+        .notes.find((note) => note.id === noteIdRef.current)?.filePath;
+      if (path) rememberNotePath(noteIdRef.current, path);
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
       commitSave(next);
     }, 1000);
-  };
+  }
 
   useEffect(
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      forgetScheduledPath(noteIdRef.current);
     },
     [],
   );
@@ -440,17 +457,18 @@ function revertFrontmatterWrite(
 }
 
 /**
- * Write one header edit after any earlier edit for this panel has finished.
- * The store already shows the edit. renameNote keeps the snapshot it was given
- * until both disk steps finish, then applies the new path onto the latest
- * store note so a flag click during the rename is not dropped. The queued
- * write then saves that note at its new path.
+ * Write one header edit after any earlier edit for this note has finished.
+ * The store already shows the edit. The write overwrites a file that exists:
+ * the path captured when the edit was queued, or a later path the rename or
+ * the watcher has already created. It never creates a second file at a slug
+ * that is not on disk yet.
  */
 async function persistFrontmatterChange(
   noteId: string,
   updates: Partial<NoteFrontmatter>,
   before: Note,
   applied: Note,
+  enqueuedPath: string,
 ): Promise<void> {
   const vaultPath = useNoteStore
     .getState()
@@ -458,6 +476,9 @@ async function persistFrontmatterChange(
 
   if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
     try {
+      // Body keystrokes still inside the debounce window land on the file
+      // that exists, then the rename moves that file.
+      await flushPendingSaves();
       await useNoteStore.getState().renameNote(before, updates.title);
     } catch (error) {
       reportError("Failed to rename note", error);
@@ -468,17 +489,26 @@ async function persistFrontmatterChange(
 
   const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
   if (!current) return;
+  const path = await resolveNoteWritePath(noteId, enqueuedPath);
+  if (!path) {
+    reportError("Failed to save frontmatter", new Error("The note file is not on disk"));
+    revertFrontmatterWrite(noteId, before, applied, updates);
+    return;
+  }
+  const fileName = path.split("/").pop() ?? current.fileName;
+  const target = path === current.filePath ? current : { ...current, filePath: path, fileName };
+  if (target !== current) useNoteStore.getState().updateNote(target);
   // A tag edit can delete body text, including a list or task line that held
   // only that tag. Snapshot the file that is still on disk before overwriting
   // it. The snapshot is awaited so it lands first, and a failure must not block
   // the write. Frontmatter-only edits leave the body alone and skip this.
-  if (current.content !== before.content && vaultPath) {
-    await tauriCommands.snapshotNote(vaultPath, current.id, current.filePath).catch(() => {
+  if (target.content !== before.content && vaultPath) {
+    await tauriCommands.snapshotNote(vaultPath, target.id, path).catch(() => {
       /* snapshotting must never block a save */
     });
   }
   try {
-    await tauriCommands.writeNote(current.filePath, serializeNote(current));
+    await tauriCommands.writeNote(path, serializeNote(target));
   } catch (error) {
     reportError("Failed to save frontmatter", error);
     revertFrontmatterWrite(noteId, before, applied, updates);
@@ -522,8 +552,6 @@ export function MainPanel() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const { job: pdfJob, start: startPdfExport, handleReady: handlePdfReady } = usePdfExport();
   const markdownTextareaRef = useRef<MarkdownTextareaHandle>(null);
-  // Header edits (title rename, then a checkbox in the same click) must not overlap.
-  const frontmatterWrites = useRef(Promise.resolve());
   // Cursor and scroll position handed from the outgoing surface to the incoming
   // one across a markdown/editor toggle, tagged with the note it came from so a
   // note switch can never resurrect a stale position.
@@ -671,19 +699,16 @@ export function MainPanel() {
       return Promise.resolve();
     }
 
-    // Paint the control in this click. The disk write stays on the queue so it
-    // cannot race a rename that is still moving the file.
+    // Paint the control in this click. The disk write stays on the note's queue
+    // and is bound to the path that exists now, so a later slug in the store
+    // cannot create a second file.
     const applied = noteWithFrontmatter(before, updates);
+    const enqueuedPath = before.filePath;
     useNoteStore.getState().updateNote(applied);
 
-    const run = frontmatterWrites.current.then(() =>
-      persistFrontmatterChange(noteId, updates, before, applied),
+    return enqueueNoteWrite(noteId, () =>
+      persistFrontmatterChange(noteId, updates, before, applied, enqueuedPath),
     );
-    frontmatterWrites.current = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
   }
 
   async function handleArchiveToggle() {

@@ -13,6 +13,7 @@ import {
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
+import { forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { saveNoteContent } from "../../lib/save-note";
 import { NOTE_CONTENT_STYLE } from "../../lib/settings";
@@ -215,6 +216,11 @@ function PinnedNoteBody({
       if (applyingExternal.current || !transaction.docChanged) return;
       editingRef.current = true;
       if (lockedRef.current || !autoSaveRef.current) return;
+      if (saveTimeoutRef.current === null) {
+        const id = noteIdRef.current;
+        const path = useNoteStore.getState().notes.find((item) => item.id === id)?.filePath;
+        if (path) rememberNotePath(id, path);
+      }
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
         saveTimeoutRef.current = null;
@@ -224,7 +230,12 @@ function PinnedNoteBody({
     editor.on("update", handler);
     return () => {
       editor.off("update", handler);
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+        // The keystroke never flushed, so the path captured for it is stale.
+        forgetScheduledPath(noteIdRef.current);
+      }
     };
   }, [editor, triggerSave]);
 

@@ -293,6 +293,11 @@ function FrontmatterValue({
 
   function commitText(draft: string): boolean {
     try {
+      // A cleared field is removed. Writing "" created deadline: '' and team: ''
+      // on disk. A key that already holds "" stays that way.
+      if ((kind === "string" || kind === "date" || kind === "datetime") && draft.trim() === "") {
+        return commitParsed(value === "" ? "" : undefined);
+      }
       if (kind === "number") return commitParsed(parseNumber(draft));
       if (kind === "date") return commitParsed(commitDate(draft));
       if (kind === "datetime") {

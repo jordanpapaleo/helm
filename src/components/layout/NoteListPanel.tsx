@@ -15,7 +15,7 @@ import { moveDestinations, PROJECT_CATEGORIES, projectForPath } from "../../lib/
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp, timestampDate } from "../../lib/timestamps";
-import { useNoteStore } from "../../store/notes";
+import { occupiedNotePaths, useNoteStore } from "../../store/notes";
 import { pinNoteToSide, unpinNoteFromSide, usePinnedPanelStore } from "../../store/pinned-panel";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
@@ -98,7 +98,7 @@ export function NoteListPanel() {
   async function handleRestore(noteId: string) {
     const item = trashItems.find((entry) => entry.note.id === noteId);
     if (!item) return;
-    const occupied = notes.map((note) => note.filePath);
+    const occupied = occupiedNotePaths();
     const { held } = planTrashRestore([item], occupied);
     if (held.length > 0) {
       reportPathCollisions(held);

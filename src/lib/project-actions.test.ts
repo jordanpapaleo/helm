@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useNoteStore } from "../store/notes";
 import { useProjectStore } from "../store/projects";
 import type { Note } from "../types/note";
-import { promoteFolder } from "./project-actions";
+import { moveNoteToCategory, promoteFolder } from "./project-actions";
+import type { Project } from "./projects";
 import { tauriCommands } from "./tauri-commands";
 
 function ideasNote(): Note {
@@ -33,6 +34,7 @@ vi.mock("./tauri-commands", () => ({
     createFolder: vi.fn().mockResolvedValue(undefined),
     writeNote: vi.fn().mockResolvedValue(undefined),
     writeTextFile: vi.fn().mockResolvedValue(undefined),
+    renameNote: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -87,5 +89,40 @@ describe("promoteFolder", () => {
     expect(written).not.toContain(existing.filePath);
     expect(tauriCommands.createFolder).not.toHaveBeenCalledWith("/vault/renovation");
     expect(tauriCommands.createFolder).toHaveBeenCalledWith("/vault/renovation/thinking");
+  });
+});
+
+describe("moveNoteToCategory", () => {
+  it("does not move onto a path held by a duplicate-ID copy", async () => {
+    const note = ideasNote();
+    const keeper = {
+      ...ideasNote(),
+      id: "01DUP0000000000000000000001",
+      filePath: "/vault/renovation/plan.md",
+    };
+    keeper.frontmatter = { ...keeper.frontmatter, id: keeper.id };
+    const copy = { ...keeper, filePath: "/vault/renovation/features/ideas.md" };
+    useNoteStore.setState({ notes: [], duplicateGroups: [] });
+    useNoteStore.getState().setNotes([note, keeper, copy]);
+    const project: Project = {
+      id: "p1",
+      name: "Renovation",
+      mainPageId: "01MAIN0000000000000000001",
+      status: "active",
+      repository: null,
+      rootPath: "/vault/renovation",
+      metaPath: "/vault/renovation/helm-project.json",
+      vaultId: "v1",
+      vaultPath: "/vault",
+    };
+
+    const moved = await moveNoteToCategory(note, project, "features");
+
+    expect(moved.filePath).toBe("/vault/renovation/features/ideas-2.md");
+    expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+      "/vault/renovation/ideas.md",
+      "/vault/renovation/features/ideas-2.md",
+    );
+    useNoteStore.setState({ duplicateGroups: [] });
   });
 });

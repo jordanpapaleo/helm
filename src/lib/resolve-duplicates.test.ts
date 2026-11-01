@@ -43,6 +43,7 @@ beforeEach(() => {
   disk.set("/vault/plan copy.md", file("Plan", "Edited copy body"));
   useNoteStore.setState({ notes: [], duplicateGroups: [], selectedNoteId: null });
   useTrashStore.setState({ items: [] });
+  localStorage.clear();
   useToastStore.setState({ toasts: [] });
   vi.clearAllMocks();
 });
@@ -123,6 +124,50 @@ describe("trashDuplicateCopy", () => {
     const { notes, duplicateGroups } = useNoteStore.getState();
     expect(duplicateGroups).toEqual([]);
     expect(notes.map((n) => n.filePath)).toEqual(["/vault/plan.md"]);
+  });
+
+  it("persists the Trash entry before deleting the file", async () => {
+    load();
+    const copy = useNoteStore.getState().duplicateGroups[0].copies[0];
+    vi.mocked(tauriCommands.deleteNote).mockImplementationOnce(async (path: string) => {
+      const saved = JSON.parse(localStorage.getItem("helm-trash") ?? "[]");
+      expect(saved.map((item: { note: Note }) => item.note.filePath)).toEqual([path]);
+      disk.delete(path);
+    });
+
+    expect(await trashDuplicateCopy(copy)).toBe(true);
+    expect(tauriCommands.deleteNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the file when Trash cannot be persisted", async () => {
+    load();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    const copy = useNoteStore.getState().duplicateGroups[0].copies[0];
+
+    try {
+      expect(await trashDuplicateCopy(copy)).toBe(false);
+    } finally {
+      setItem.mockRestore();
+    }
+    expect(tauriCommands.deleteNote).not.toHaveBeenCalled();
+    expect(disk.has("/vault/plan copy.md")).toBe(true);
+    expect(useTrashStore.getState().items).toEqual([]);
+    expect(useNoteStore.getState().duplicateGroups).toHaveLength(1);
+  });
+
+  it("takes the entry back out of Trash when the delete fails", async () => {
+    load();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(tauriCommands.deleteNote).mockRejectedValueOnce(new Error("EACCES"));
+    const copy = useNoteStore.getState().duplicateGroups[0].copies[0];
+
+    expect(await trashDuplicateCopy(copy)).toBe(false);
+    expect(useTrashStore.getState().items).toEqual([]);
+    expect(JSON.parse(localStorage.getItem("helm-trash") ?? "[]")).toEqual([]);
+    expect(useNoteStore.getState().duplicateGroups).toHaveLength(1);
   });
 
   it("refuses a locked copy", async () => {

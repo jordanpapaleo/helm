@@ -52,9 +52,15 @@ export async function trashDuplicateCopy(note: Note): Promise<boolean> {
   try {
     await flushPendingSavesSettled();
     const content = await tauriCommands.readNote(note.filePath);
-    const parsed = { ...parseNote(content, note.filePath), vaultId: note.vaultId };
-    await tauriCommands.deleteNote(note.filePath);
-    useTrashStore.getState().addToTrash(withId(parsed, ulid()));
+    const trashed = withId({ ...parseNote(content, note.filePath), vaultId: note.vaultId }, ulid());
+    // Throws if Trash cannot be persisted, before the file is touched.
+    useTrashStore.getState().addToTrash(trashed);
+    try {
+      await tauriCommands.deleteNote(note.filePath);
+    } catch (e) {
+      useTrashStore.getState().removeFromTrash(trashed.id);
+      throw e;
+    }
     useNoteStore.getState().removeNoteAtPath(note.filePath);
     return true;
   } catch (e) {

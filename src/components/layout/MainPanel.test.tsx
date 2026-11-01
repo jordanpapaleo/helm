@@ -1272,6 +1272,30 @@ describe("MainPanel deleted notes", () => {
     expect(useTrashStore.getState().items.map((item) => item.note.id)).toEqual([deleted.id]);
     expect(useNoteStore.getState().notes.map((item) => item.content)).toEqual(["live body"]);
   });
+
+  it("leaves a deleted note in Trash when a duplicate-ID copy holds its path", async () => {
+    const deleted = openDeleted();
+    const keeper = makeNote({ id: "01DUP0000000000000000001", filePath: "/vault/plan.md" });
+    keeper.frontmatter = { ...keeper.frontmatter, id: keeper.id };
+    const copy = { ...keeper, filePath: deleted.filePath, fileName: deleted.fileName };
+    act(() => {
+      useNoteStore.getState().setNotes([keeper, copy]);
+      useNoteStore.setState({
+        selectedNoteId: deleted.id,
+        vaults: [VAULT],
+        activeVaultId: VAULT.id,
+      });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useTrashStore.getState().items.map((item) => item.note.id)).toEqual([deleted.id]);
+    expect(useNoteStore.getState().duplicateGroups[0]?.copies).toEqual([copy]);
+    act(() => useNoteStore.setState({ duplicateGroups: [] }));
+  });
 });
 
 describe("MainPanel PDF export request", () => {

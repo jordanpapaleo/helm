@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS } from "../lib/settings";
 import { tauriCommands } from "../lib/tauri-commands";
 import { todayDate } from "../lib/timestamps";
 import type { Note, VaultConfig } from "../types/note";
-import { useNoteStore } from "./notes";
+import { occupiedNotePaths, useNoteStore } from "./notes";
 import { useSettingsStore } from "./settings";
 import { useToastStore } from "./toast";
 import { useTrashStore } from "./trash";
@@ -1398,6 +1398,26 @@ describe("useNoteStore with duplicate ids", () => {
     const { notes, duplicateGroups } = useNoteStore.getState();
     expect(notes).toEqual([keeper]);
     expect(duplicateGroups).toEqual([]);
+  });
+
+  it("reports every loaded path as occupied, duplicate copies included", () => {
+    expect(occupiedNotePaths().sort()).toEqual(["/notes/plan copy.md", "/notes/plan.md"]);
+  });
+
+  it("replacing one vault keeps another vault's duplicate copies", () => {
+    const other = makeNote({ filePath: "/other/x.md", vaultId: "vault-2", id: "X" });
+    useNoteStore.getState().replaceVaultNotes("vault-2", [other]);
+    useNoteStore.getState().replaceVaultNotes("vault-2", [{ ...other, content: "synced" }]);
+    const { notes, duplicateGroups } = useNoteStore.getState();
+    expect(notes.map((n) => n.filePath)).toEqual(["/notes/plan.md", "/other/x.md"]);
+    expect(notes[1].content).toBe("synced");
+    expect(duplicateGroups).toEqual([{ id: keeper.id, keeper, copies: [copy] }]);
+  });
+
+  it("replacing a vault drops that vault's own copies that are gone from disk", () => {
+    useNoteStore.getState().replaceVaultNotes("vault-1", [keeper]);
+    expect(useNoteStore.getState().duplicateGroups).toEqual([]);
+    expect(useNoteStore.getState().notes).toEqual([keeper]);
   });
 
   it("appending another vault with the same id regroups deterministically", () => {

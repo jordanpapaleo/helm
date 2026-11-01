@@ -106,6 +106,11 @@ interface NoteStore {
   setNotes: (notes: Note[]) => void;
   /** Append notes from a new vault without replacing existing ones */
   appendNotes: (notes: Note[]) => void;
+  /**
+   * Replace every loaded file of one vault (duplicate copies included) and
+   * keep all files of the other vaults.
+   */
+  replaceVaultNotes: (vaultId: string, notes: Note[]) => void;
   /** Replace all vault configs and persist */
   setVaults: (vaults: VaultConfig[]) => void;
   /** Add a single vault config */
@@ -213,6 +218,14 @@ async function writeRewrittenNotes(
   return written;
 }
 
+/**
+ * Every path a loaded note file occupies, including duplicate copies that are
+ * not in `notes`. Use it for any "is this path free?" check.
+ */
+export function occupiedNotePaths(): string[] {
+  return allNotes(useNoteStore.getState()).map((n) => n.filePath);
+}
+
 /** Every loaded file: the keepers in `notes` plus the duplicate copies. */
 function allNotes(state: Pick<NoteStore, "notes" | "duplicateGroups">): Note[] {
   if (state.duplicateGroups.length === 0) return state.notes;
@@ -263,6 +276,10 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const incomingPaths = new Set(incoming.map((n) => n.filePath));
     const existing = allNotes(get()).filter((n) => !incomingPaths.has(n.filePath));
     set(derive([...existing, ...incoming]));
+  },
+  replaceVaultNotes: (vaultId, incoming) => {
+    const others = allNotes(get()).filter((n) => n.vaultId !== vaultId);
+    set(derive([...others, ...incoming]));
   },
   setVaults: (vaults) => set({ vaults }),
   addVaultConfig: (vault) => set((s) => ({ vaults: [...s.vaults, vault] })),

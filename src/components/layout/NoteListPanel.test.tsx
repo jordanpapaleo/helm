@@ -59,6 +59,7 @@ function makeNote(overrides: Partial<Note["frontmatter"]> = {}): Note {
 function resetStores(note: Note) {
   useNoteStore.setState({
     notes: [note],
+    duplicateGroups: [],
     selectedNoteId: null,
     vaults: [VAULT],
     activeVaultId: "v1",
@@ -287,6 +288,33 @@ describe("NoteListPanel — archive", () => {
     expect(screen.queryByText("Gone")).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "draft" } });
     expect(screen.getByText("Gone")).toBeInTheDocument();
+  });
+
+  it("keeps a trashed note in Trash when a duplicate-ID copy holds its path", async () => {
+    const keeper = makeNote({ title: "Plan" });
+    const copy = { ...keeper, filePath: "/vault/plan copy.md", fileName: "plan copy.md" };
+    const deleted = makeNote({ title: "Gone" });
+    deleted.id = "gone";
+    deleted.filePath = copy.filePath;
+    deleted.fileName = copy.fileName;
+    deleted.frontmatter = { ...deleted.frontmatter, id: "gone" };
+    resetStores(keeper);
+    useToastStore.setState({ toasts: [] });
+    vi.mocked(tauriCommands.writeNote).mockClear();
+    useNoteStore.getState().setNotes([keeper, copy]);
+    useTrashStore.setState({
+      items: [{ note: deleted, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    useUIStore.setState({ selectedGrouping: { type: "trash", id: null }, activeView: "notes" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<NoteListPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+
+    await waitFor(() => expect(useToastStore.getState().toasts.length).toBeGreaterThan(0));
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useTrashStore.getState().items.map((item) => item.note.id)).toEqual(["gone"]);
+    expect(useNoteStore.getState().duplicateGroups[0]?.copies).toEqual([copy]);
   });
 
   it("shows archived notes with a mark when the setting is on", () => {

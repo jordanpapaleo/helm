@@ -60,8 +60,7 @@ export async function reloadVaultNotes(vault: VaultConfig): Promise<void> {
     };
   });
   const store = useNoteStore.getState();
-  const others = store.notes.filter((note) => note.vaultId !== vault.id);
-  store.setNotes([...others, ...incoming]);
+  store.replaceVaultNotes(vault.id, incoming);
   const folders = await tauriCommands.listFolders(vault.path).catch(() => [] as string[]);
   const rest = store.knownFolderPaths.filter(
     (path) => !path.startsWith(`${vault.path}/`) && path !== vault.path,

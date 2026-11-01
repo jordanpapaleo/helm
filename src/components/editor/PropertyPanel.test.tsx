@@ -6,6 +6,7 @@ import { NOTE_STATES } from "../../lib/constants";
 import { DEFAULT_LAYOUT } from "../../lib/workspace-layout";
 import { useLayoutStore } from "../../store/layout";
 import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
+import { useToastStore } from "../../store/toast";
 import type { NoteFrontmatter } from "../../types/note";
 import { PropertyPanel } from "./PropertyPanel";
 
@@ -113,7 +114,7 @@ describe("PropertyPanel title", () => {
 });
 
 describe("PropertyPanel header tags", () => {
-  it("renders tag chips on the header and the same tags as read-only text", () => {
+  it("renders tag chips on the header and the same tags in the properties field", () => {
     render(
       <PropertyPanel
         frontmatter={makeFrontmatter({ tags: ["ai-skills/skill", "work"] })}
@@ -127,10 +128,9 @@ describe("PropertyPanel header tags", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     const panel = screen.getByRole("region", { name: "Properties" });
-    expect(within(panel).getByText("Tags").parentElement).toHaveTextContent(
+    expect(within(panel).getByRole("textbox", { name: "tags" })).toHaveValue(
       "ai-skills/skill, work",
     );
-    expect(panel.querySelector("input, textarea")).toBeNull();
   });
 });
 
@@ -149,8 +149,7 @@ describe("PropertyPanel unmanaged notes", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     const panel = screen.getByRole("region", { name: "Properties" });
-    expect(within(panel).getByText("Blocked").parentElement).toHaveTextContent("No");
-    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(panel).getByRole("checkbox", { name: "blocked" })).not.toBeChecked();
   });
 
   it("keeps state and urgency on the heading when the note is unmanaged", () => {
@@ -175,8 +174,7 @@ describe("PropertyPanel unmanaged notes", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     const panel = screen.getByRole("region", { name: "Properties" });
-    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(within(panel).getByText("Unmanaged").parentElement).toHaveTextContent("Yes");
+    expect(within(panel).getByRole("checkbox", { name: "unmanaged" })).toBeChecked();
   });
 
   it("clears the workflow fields in a single onChange when Unmanaged is switched on", () => {
@@ -319,10 +317,12 @@ describe("PropertyPanel template flag", () => {
     expect(onChange).toHaveBeenLastCalledWith({ template: false });
   });
 
-  it("does not surface template as an extra frontmatter field", () => {
+  it("shows template once, as the frontmatter toggle", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter({ template: true })} onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    expect(screen.queryByText("template")).not.toBeInTheDocument();
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getAllByText("template")).toHaveLength(1);
+    expect(within(panel).getByRole("checkbox", { name: "template" })).toBeChecked();
   });
 });
 
@@ -587,9 +587,19 @@ describe("PropertyPanel header layout", () => {
     );
   });
 
-  it("toggles template and unmanaged from the heading and shows them as text", () => {
+  it("toggles template and unmanaged from the heading and the properties panel", () => {
     const onChange = vi.fn();
-    renderHeader({ state: "Doing", urgent: true, important: true, blocked: true }, { onChange });
+    renderHeader(
+      {
+        state: "Doing",
+        urgent: true,
+        important: true,
+        blocked: true,
+        template: false,
+        unmanaged: false,
+      },
+      { onChange },
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Template" }));
     expect(onChange).toHaveBeenCalledWith({ template: true });
@@ -605,12 +615,11 @@ describe("PropertyPanel header layout", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     const panel = screen.getByRole("region", { name: "Properties" });
-    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(within(panel).getByText("Template").parentElement).toHaveTextContent("No");
-    expect(within(panel).getByText("Unmanaged").parentElement).toHaveTextContent("No");
+    expect(within(panel).getByRole("checkbox", { name: "template" })).not.toBeChecked();
+    expect(within(panel).getByRole("checkbox", { name: "unmanaged" })).not.toBeChecked();
   });
 
-  it("opens the read-only properties panel from the info icon", () => {
+  it("opens the properties editor from the info icon", () => {
     renderHeader({ deadline: "2026-04-01", team: ["Ada"] });
 
     expect(screen.queryByRole("region", { name: "Properties" })).not.toBeInTheDocument();
@@ -620,14 +629,11 @@ describe("PropertyPanel header layout", () => {
     const panel = screen.getByRole("region", { name: "Properties" });
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(panel.querySelector("input, select, textarea")).toBeNull();
     expect(within(panel).getByText("Path").parentElement).toHaveTextContent("/vault/command.md");
-    expect(within(panel).getByText("Created")).toBeInTheDocument();
-    expect(within(panel).getByText("Updated")).toBeInTheDocument();
+    expect(within(panel).queryByRole("textbox", { name: "Path" })).not.toBeInTheDocument();
     expect(within(panel).getByText("01JPMXYZ123")).toBeInTheDocument();
-    expect(within(panel).getByText("Deadline").parentElement).toHaveTextContent("2026-04-01");
-    expect(within(panel).getByText("Team").parentElement).toHaveTextContent("Ada");
-    expect(within(panel).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(panel).getByLabelText("deadline")).toHaveValue("2026-04-01");
+    expect(within(panel).getByLabelText("team")).toHaveValue("Ada");
 
     fireEvent.click(toggle);
     expect(screen.queryByRole("region", { name: "Properties" })).not.toBeInTheDocument();
@@ -746,5 +752,132 @@ describe("PropertyPanel tags", () => {
     fireEvent.blur(next);
 
     expect(screen.getByText("#kept")).toBeInTheDocument();
+  });
+});
+
+describe("PropertyPanel frontmatter values", () => {
+  function openPanel(frontmatter: Partial<NoteFrontmatter> = {}) {
+    const onChange = vi.fn();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter(frontmatter)}
+        filePath="/vault/command.md"
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    return { onChange, panel: screen.getByRole("region", { name: "Properties" }) };
+  }
+
+  it("renders custom keys that are not part of the known frontmatter", () => {
+    const { panel } = openPanel({
+      owner: "Ada",
+      score: 3,
+      meta: { lane: "now" },
+    });
+
+    expect(within(panel).getByText("owner")).toBeInTheDocument();
+    expect(within(panel).getByRole("textbox", { name: "owner" })).toHaveValue("Ada");
+    expect(within(panel).getByRole("textbox", { name: "score" })).toHaveValue("3");
+    expect(within(panel).getByRole("textbox", { name: "meta" })).toHaveValue(
+      JSON.stringify({ lane: "now" }),
+    );
+  });
+
+  it("round-trips boolean, array, number, and date values", () => {
+    const { onChange, panel } = openPanel({
+      deadline: "2026-04-01",
+      team: ["Ada"],
+      score: 3,
+    });
+
+    fireEvent.click(within(panel).getByRole("checkbox", { name: "blocked" }));
+    expect(onChange).toHaveBeenCalledWith({ blocked: true });
+
+    const team = within(panel).getByRole("textbox", { name: "team" });
+    fireEvent.change(team, { target: { value: "Ada, Grace" } });
+    fireEvent.blur(team);
+    expect(onChange).toHaveBeenCalledWith({ team: ["Ada", "Grace"] });
+
+    const score = within(panel).getByRole("textbox", { name: "score" });
+    fireEvent.change(score, { target: { value: "4" } });
+    fireEvent.keyDown(score, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith({ score: 4 });
+    expect(onChange.mock.calls.some((call) => typeof call[0].score === "number")).toBe(true);
+
+    const deadline = within(panel).getByLabelText("deadline");
+    fireEvent.change(deadline, { target: { value: "2026-05-02" } });
+    fireEvent.blur(deadline);
+    expect(onChange).toHaveBeenCalledWith({ deadline: "2026-05-02" });
+  });
+
+  it("leaves id, created, updated, and path as text", () => {
+    const { panel } = openPanel();
+
+    expect(within(panel).queryByRole("textbox", { name: "id" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("textbox", { name: "created" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("textbox", { name: "updated" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("textbox", { name: "Path" })).not.toBeInTheDocument();
+    expect(within(panel).getByText("01JPMXYZ123")).toBeInTheDocument();
+    expect(within(panel).getByText("/vault/command.md")).toBeInTheDocument();
+    expect(within(panel).getAllByTitle("2026-07-10")).toHaveLength(2);
+  });
+
+  it("disables every properties input when the note is locked", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ locked: true, deadline: "2026-04-01", score: 3 })}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+
+    for (const control of panel.querySelectorAll("input, select, textarea")) {
+      expect(control).toBeDisabled();
+    }
+    expect(screen.getByRole("switch", { name: "Locked" })).toBeEnabled();
+    expect(screen.getByRole("switch", { name: "Locked" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("rejects an invalid object and keeps the stored value", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ meta: { lane: "now" } })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const meta = screen.getByRole("textbox", { name: "meta" });
+    fireEvent.change(meta, { target: { value: "{not json" } });
+    fireEvent.blur(meta);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(meta).toHaveValue(JSON.stringify({ lane: "now" }));
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("Could not save meta")),
+    ).toBe(true);
+  });
+
+  it("keeps the header state select in step with the properties select", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PropertyPanel frontmatter={makeFrontmatter({ state: "Prepare" })} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const header = screen.getByRole("combobox", { name: "State" });
+    const panelState = screen.getByRole("combobox", { name: "state" });
+
+    fireEvent.change(panelState, { target: { value: "Done" } });
+    expect(onChange).toHaveBeenCalledWith({ state: "Done" });
+
+    rerender(
+      <PropertyPanel frontmatter={makeFrontmatter({ state: "Done" })} onChange={onChange} />,
+    );
+    expect(header).toHaveValue("Done");
+    expect(panelState).toHaveValue("Done");
   });
 });

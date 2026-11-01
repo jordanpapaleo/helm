@@ -252,6 +252,55 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     ).toBe(true);
   });
 
+  it("keeps a properties edit on screen while the write is still running", async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(tauriCommands.writeNote).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    );
+    try {
+      const note = makeNote();
+      note.frontmatter.deadline = "2026-04-01";
+      note.frontmatter.state = "Prepare";
+      setup(note, true);
+
+      fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+      const deadline = screen.getByLabelText("deadline");
+      const headerState = screen.getByRole("combobox", { name: "State" });
+      const panelState = screen.getByRole("combobox", { name: "state" });
+
+      fireEvent.change(deadline, { target: { value: "2026-05-02" } });
+      fireEvent.blur(deadline);
+      expect((deadline as HTMLInputElement).value).toBe("2026-05-02");
+      expect(useNoteStore.getState().notes[0].frontmatter.deadline).toBe("2026-05-02");
+
+      fireEvent.change(panelState, { target: { value: "Done" } });
+      expect(headerState).toHaveValue("Done");
+      expect(panelState).toHaveValue("Done");
+      expect((deadline as HTMLInputElement).value).toBe("2026-05-02");
+      expect(useNoteStore.getState().notes[0].frontmatter.state).toBe("Done");
+
+      await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+      expect(screen.getByLabelText("deadline")).toHaveValue("2026-05-02");
+      expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("Done");
+
+      pending[0]?.();
+      await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
+      pending[1]?.();
+      await waitFor(() => expect(useNoteStore.getState().notes[0].frontmatter.state).toBe("Done"));
+
+      expect(screen.getByLabelText("deadline")).toHaveValue("2026-05-02");
+      expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("Done");
+      expect(screen.getByRole("combobox", { name: "state" })).toHaveValue("Done");
+      expect(useNoteStore.getState().notes[0].frontmatter.deadline).toBe("2026-05-02");
+    } finally {
+      for (const resolve of pending) resolve();
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
   it("does not commit the header when the watcher reloads identical content", async () => {
     const base = makeNote();
     const raw = serializeNote(base);

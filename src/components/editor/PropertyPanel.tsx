@@ -1,10 +1,12 @@
 import { Icon } from "@iconify/react";
+import matter from "gray-matter";
 import { memo, useEffect, useId, useRef, useState } from "react";
 import { isArchived } from "../../lib/archive";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { resolveOutgoingLinks } from "../../lib/note-links";
 import { formatTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
+import { reportError } from "../../store/toast";
 import type { NoteFrontmatter, NoteState } from "../../types/note";
 import { PinToSideButton } from "../layout/PinToSideButton";
 
@@ -27,28 +29,124 @@ interface PropertyPanelProps {
   readOnly?: boolean;
 }
 
-// Fields handled explicitly — excluded from the "extra fields" section
-const KNOWN_FIELDS = new Set([
-  "id",
+/** Shown as text. Path is rendered beside these but is not a frontmatter key. */
+const READ_ONLY_KEYS = new Set(["id", "created", "updated"]);
+
+/** Known keys keep a stable order. Anything else follows in file order. */
+const KNOWN_ORDER = [
   "title",
-  "created",
-  "updated",
-  "tags",
+  "state",
   "urgent",
   "important",
-  "state",
   "blocked",
+  "pinned",
+  "locked",
+  "template",
+  "unmanaged",
+  "archived",
   "deadline",
   "team",
+  "tags",
   "links",
-  "locked",
-  "pinned",
-  "archived",
-  "unmanaged",
   "kanbanOrder",
   "eisenhowerOrder",
-  "template",
-]);
+];
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+type ValueKind =
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "array"
+  | "state"
+  | "number"
+  | "string"
+  | "object";
+
+function valueKind(key: string, value: unknown): ValueKind {
+  if (key === "state") return "state";
+  if (typeof value === "boolean") return "boolean";
+  if (typeof value === "number") return "number";
+  if (Array.isArray(value)) return "array";
+  if (value !== null && typeof value === "object") return "object";
+  if (typeof value === "string" && DATE_ONLY.test(value)) return "date";
+  if (typeof value === "string" && DATE_TIME.test(value)) return "datetime";
+  return "string";
+}
+
+function editableKeys(frontmatter: NoteFrontmatter): string[] {
+  const keys = Object.keys(frontmatter).filter((key) => !READ_ONLY_KEYS.has(key));
+  const known = KNOWN_ORDER.filter((key) => keys.includes(key));
+  const rest = keys.filter((key) => !KNOWN_ORDER.includes(key));
+  return [...known, ...rest];
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function listText(value: unknown[]): string {
+  return value.map((item) => String(item)).join(", ");
+}
+
+function parseList(text: string, current: unknown[]): unknown[] {
+  const parts = text
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const numeric = current.length > 0 && current.every((item) => typeof item === "number");
+  if (!numeric) return parts;
+  if (parts.some((part) => part.trim() === "" || !Number.isFinite(Number(part)))) {
+    throw new Error("Enter numbers separated by commas");
+  }
+  return parts.map((part) => Number(part));
+}
+
+function parseNumber(text: string): number {
+  const trimmed = text.trim();
+  if (trimmed === "" || !Number.isFinite(Number(trimmed))) {
+    throw new Error("Enter a number");
+  }
+  return Number(trimmed);
+}
+
+function commitDatetime(draft: string, current: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(draft)) {
+    throw new Error("Enter a date and time");
+  }
+  if (draft === current.slice(0, 16)) return current;
+  return current.length > 16 ? draft + current.slice(16) : draft;
+}
+
+function parseObject(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Enter a JSON or YAML object");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    try {
+      parsed = matter(`---\n${trimmed}\n---\n`).data;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "invalid YAML";
+      throw new Error(detail);
+    }
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Enter a JSON or YAML object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function displayText(kind: ValueKind, value: unknown): string {
+  if (kind === "array" && Array.isArray(value)) return listText(value);
+  if (kind === "object") return JSON.stringify(value);
+  if (kind === "datetime" && typeof value === "string") return value.slice(0, 16);
+  if (kind === "number") return String(value ?? "");
+  return typeof value === "string" ? value : value == null ? "" : String(value);
+}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -62,15 +160,22 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function StateSelect({
   value,
   onChange,
+  label = "State",
+  className = "select select-sm note-heading-state",
+  disabled = false,
 }: {
   value: NoteState;
   onChange: (state: NoteState) => void;
+  label?: string;
+  className?: string;
+  disabled?: boolean;
 }) {
   return (
     <select
-      aria-label="State"
-      className="select select-sm note-heading-state"
+      aria-label={label}
+      className={className}
       value={value}
+      disabled={disabled}
       onChange={(event) => onChange(event.target.value as NoteState)}
     >
       <option value="">State</option>
@@ -91,16 +196,126 @@ function FieldText({ value }: { value: string }) {
   );
 }
 
-function yesNo(value: boolean | undefined): string {
-  return value ? "Yes" : "No";
+function DraftInput({
+  label,
+  text,
+  type,
+  disabled,
+  mono = false,
+  onCommit,
+}: {
+  label: string;
+  text: string;
+  type: "text" | "date" | "datetime-local";
+  disabled: boolean;
+  mono?: boolean;
+  /** Return false to reject the draft and restore the stored value. */
+  onCommit: (draft: string) => boolean;
+}) {
+  const [draft, setDraft] = useState(text);
+  useEffect(() => {
+    setDraft(text);
+  }, [text]);
+
+  function commit() {
+    if (disabled) return;
+    if (!onCommit(draft)) setDraft(text);
+  }
+
+  return (
+    <input
+      aria-label={label}
+      type={type}
+      disabled={disabled}
+      value={draft}
+      className={`input input-sm w-full max-w-md ${mono ? "font-mono text-xs" : ""}`}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        commit();
+      }}
+    />
+  );
 }
 
-function formatExtra(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
+function FrontmatterValue({
+  fieldKey,
+  value,
+  disabled,
+  onChange,
+}: {
+  fieldKey: string;
+  value: unknown;
+  disabled: boolean;
+  onChange: (updates: Partial<NoteFrontmatter>) => void;
+}) {
+  const kind = valueKind(fieldKey, value);
+  const text = displayText(kind, value);
+
+  function commitParsed(next: unknown): boolean {
+    if (sameValue(next, value)) return true;
+    onChange({ [fieldKey]: next });
+    return true;
   }
-  return JSON.stringify(value);
+
+  function commitText(draft: string): boolean {
+    try {
+      if (kind === "number") return commitParsed(parseNumber(draft));
+      if (kind === "date") {
+        if (!DATE_ONLY.test(draft)) throw new Error("Enter a date");
+        return commitParsed(draft);
+      }
+      if (kind === "datetime") {
+        return commitParsed(commitDatetime(draft, typeof value === "string" ? value : ""));
+      }
+      if (kind === "array") {
+        return commitParsed(parseList(draft, Array.isArray(value) ? value : []));
+      }
+      if (kind === "object") return commitParsed(parseObject(draft));
+      return commitParsed(draft);
+    } catch (error) {
+      reportError(`Could not save ${fieldKey}`, error);
+      return false;
+    }
+  }
+
+  if (kind === "boolean") {
+    return (
+      <input
+        type="checkbox"
+        className="toggle toggle-sm"
+        aria-label={fieldKey}
+        checked={value === true}
+        disabled={disabled}
+        onChange={(event) => onChange({ [fieldKey]: event.target.checked })}
+      />
+    );
+  }
+
+  if (kind === "state") {
+    return (
+      <StateSelect
+        label="state"
+        className="select select-sm w-full max-w-md"
+        value={(typeof value === "string" ? value : "") as NoteState}
+        disabled={disabled}
+        onChange={(state) => onChange({ state })}
+      />
+    );
+  }
+
+  return (
+    <DraftInput
+      label={fieldKey}
+      text={text}
+      mono={kind === "object"}
+      type={kind === "date" ? "date" : kind === "datetime" ? "datetime-local" : "text"}
+      disabled={disabled}
+      onCommit={commitText}
+    />
+  );
 }
 
 /** Stable icon ids. Iconify otherwise mints new ids and replaces the svg on every render. */
@@ -304,6 +519,7 @@ function HeaderTags({
 function sameHeadingProps(prev: PropertyPanelProps, next: PropertyPanelProps): boolean {
   return (
     prev.frontmatter === next.frontmatter &&
+    prev.content === next.content &&
     prev.filePath === next.filePath &&
     prev.readOnly === next.readOnly &&
     prev.markdownMode === next.markdownMode &&
@@ -413,9 +629,7 @@ export const PropertyPanel = memo(function PropertyPanel({
 
   const unmanaged = frontmatter.unmanaged ?? false;
   const archived = isArchived(frontmatter);
-
-  // Extra unknown fields beyond the known set
-  const extraFields = Object.entries(frontmatter).filter(([k]) => !KNOWN_FIELDS.has(k));
+  const fieldsDisabled = readOnly || frontmatter.locked === true;
 
   return (
     <div className="space-y-3 border-b border-base-300 px-12 py-4" data-testid="note-heading">
@@ -647,39 +861,33 @@ export const PropertyPanel = memo(function PropertyPanel({
           <Row label="Path">
             <FieldText value={filePath ?? ""} />
           </Row>
-          <Row label="ID">
+          <Row label="id">
             <span className="font-mono text-xs text-[var(--color-text-muted)]">
               {frontmatter.id}
             </span>
           </Row>
-          <Row label="Created">
+          <Row label="created">
             <span className="text-[var(--color-text-muted)]" title={frontmatter.created}>
               {formatTimestamp(frontmatter.created)}
             </span>
           </Row>
-          <Row label="Updated">
+          <Row label="updated">
             <span className="text-[var(--color-text-muted)]" title={frontmatter.updated}>
               {formatTimestamp(frontmatter.updated)}
             </span>
           </Row>
-          <Row label="Deadline">
-            <FieldText value={frontmatter.deadline ?? ""} />
-          </Row>
-          <Row label="Team">
-            <FieldText value={frontmatter.team?.join(", ") ?? ""} />
-          </Row>
-          <Row label="Tags">
-            <FieldText value={frontmatter.tags.join(", ")} />
-          </Row>
-          <Row label="Blocked">
-            <FieldText value={yesNo(frontmatter.blocked)} />
-          </Row>
-          <Row label="Unmanaged">
-            <FieldText value={yesNo(unmanaged)} />
-          </Row>
-          <Row label="Template">
-            <FieldText value={yesNo(frontmatter.template)} />
-          </Row>
+          <fieldset disabled={fieldsDisabled} className="m-0 min-w-0 border-0 p-0">
+            {editableKeys(frontmatter).map((key) => (
+              <Row key={key} label={key}>
+                <FrontmatterValue
+                  fieldKey={key}
+                  value={frontmatter[key]}
+                  disabled={fieldsDisabled}
+                  onChange={onChange}
+                />
+              </Row>
+            ))}
+          </fieldset>
           <Row label="Links">
             {outgoingLinks.length > 0 ? (
               <div className="flex flex-wrap gap-1">
@@ -693,11 +901,6 @@ export const PropertyPanel = memo(function PropertyPanel({
               <span className="text-[var(--color-text-muted)]">—</span>
             )}
           </Row>
-          {extraFields.map(([key, value]) => (
-            <Row key={key} label={key}>
-              <FieldText value={formatExtra(value)} />
-            </Row>
-          ))}
         </section>
       )}
     </div>

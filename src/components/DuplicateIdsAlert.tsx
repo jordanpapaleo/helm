@@ -16,7 +16,7 @@ export function DuplicateIdsAlert() {
       {count > 0 && (
         <div
           role="status"
-          className="alert alert-warning alert-soft rounded-none px-4 py-2 text-sm"
+          className="alert alert-warning rounded-none px-4 py-2 text-sm"
         >
           <Icon icon="uil:exclamation-triangle" aria-hidden="true" />
           <span className="min-w-0">

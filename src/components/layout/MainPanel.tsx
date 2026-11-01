@@ -31,7 +31,7 @@ import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
-import type { NoteFrontmatter } from "../../types/note";
+import type { Note, NoteFrontmatter } from "../../types/note";
 import { DashboardView } from "../../views/DashboardView";
 import { EisenhowerView } from "../../views/EisenhowerView";
 import { GraphView } from "../../views/GraphView";
@@ -385,64 +385,103 @@ export const MarkdownTextarea = forwardRef<
   );
 });
 
+function noteWithFrontmatter(note: Note, updates: Partial<NoteFrontmatter>): Note {
+  const titleOnly = typeof updates.title === "string" && Object.keys(updates).length === 1;
+  // An empty tag list is a real edit. Reading a note unions frontmatter with
+  // inline `#tag`s, so a tag left in the body would be parsed back in and the
+  // last one would look like it could not be removed. Strip only the tags
+  // the field dropped; a child the field still lists stays in the body.
+  const content = Array.isArray(updates.tags)
+    ? dropRemovedInlineTags(note.content, note.frontmatter.tags, updates.tags)
+    : note.content;
+  return {
+    ...note,
+    content,
+    frontmatter: {
+      ...note.frontmatter,
+      ...updates,
+      ...(titleOnly ? {} : { updated: nowTimestamp() }),
+    },
+  };
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/** Put this edit back if a later edit has not already replaced it. */
+function revertFrontmatterWrite(
+  noteId: string,
+  before: Note,
+  applied: Note,
+  updates: Partial<NoteFrontmatter>,
+) {
+  const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
+  if (!current) return;
+  const frontmatter = { ...current.frontmatter };
+  let restore = false;
+  for (const key of Object.keys(updates) as (keyof NoteFrontmatter)[]) {
+    if (sameValue(current.frontmatter[key], applied.frontmatter[key])) {
+      frontmatter[key] = before.frontmatter[key];
+      restore = true;
+    }
+  }
+  let content = current.content;
+  if (current.content === applied.content && current.content !== before.content) {
+    content = before.content;
+    restore = true;
+  }
+  if (restore && current.frontmatter.updated === applied.frontmatter.updated) {
+    frontmatter.updated = before.frontmatter.updated;
+  }
+  if (restore) {
+    useNoteStore.getState().updateNote({ ...current, content, frontmatter });
+  }
+}
+
 /**
- * Apply one header edit after any earlier edit for this panel has finished.
- * renameNote keeps the note it was given until both disk steps finish, then
- * replaces the store entry with that snapshot. A checkbox click during the
- * rename used to write the old path and title, and the snapshot then dropped
- * the checkbox. Waiting lets the checkbox save onto the renamed note.
+ * Write one header edit after any earlier edit for this panel has finished.
+ * The store already shows the edit. renameNote keeps the snapshot it was given
+ * until both disk steps finish, then applies the new path onto the latest
+ * store note so a flag click during the rename is not dropped. The queued
+ * write then saves that note at its new path.
  */
 async function persistFrontmatterChange(
   noteId: string,
   updates: Partial<NoteFrontmatter>,
+  before: Note,
+  applied: Note,
 ): Promise<void> {
-  const note = useNoteStore.getState().notes.find((item) => item.id === noteId);
-  if (!note) return;
-  if (note.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) return;
-  const vaultPath = useNoteStore.getState().vaults.find((vault) => vault.id === note.vaultId)?.path;
-  if (useGitSyncStore.getState().isWriteBlocked(noteId, vaultPath ?? null)) return;
+  const vaultPath = useNoteStore
+    .getState()
+    .vaults.find((vault) => vault.id === before.vaultId)?.path;
 
   if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
     try {
-      await useNoteStore.getState().renameNote(note, updates.title);
+      await useNoteStore.getState().renameNote(before, updates.title);
     } catch (error) {
       reportError("Failed to rename note", error);
+      revertFrontmatterWrite(noteId, before, applied, updates);
     }
     return;
   }
 
   const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
   if (!current) return;
-  // An empty tag list is a real edit. Reading a note unions frontmatter with
-  // inline `#tag`s, so a tag left in the body would be parsed back in and the
-  // last one would look like it could not be removed. Strip only the tags
-  // the field dropped; a child the field still lists stays in the body.
-  const content = Array.isArray(updates.tags)
-    ? dropRemovedInlineTags(current.content, current.frontmatter.tags, updates.tags)
-    : current.content;
-  const updated = {
-    ...current,
-    content,
-    frontmatter: {
-      ...current.frontmatter,
-      ...updates,
-      updated: nowTimestamp(),
-    },
-  };
-  useNoteStore.getState().updateNote(updated);
   // A tag edit can delete body text, including a list or task line that held
   // only that tag. Snapshot the file that is still on disk before overwriting
   // it. The snapshot is awaited so it lands first, and a failure must not block
   // the write. Frontmatter-only edits leave the body alone and skip this.
-  if (content !== current.content && vaultPath) {
+  if (current.content !== before.content && vaultPath) {
     await tauriCommands.snapshotNote(vaultPath, current.id, current.filePath).catch(() => {
       /* snapshotting must never block a save */
     });
   }
   try {
-    await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
+    await tauriCommands.writeNote(current.filePath, serializeNote(current));
   } catch (error) {
     reportError("Failed to save frontmatter", error);
+    revertFrontmatterWrite(noteId, before, applied, updates);
   }
 }
 
@@ -613,7 +652,26 @@ export function MainPanel() {
   function handleFrontmatterChange(updates: Partial<NoteFrontmatter>): Promise<void> {
     if (!selectedNote || viewingDeleted) return Promise.resolve();
     const noteId = selectedNote.id;
-    const run = frontmatterWrites.current.then(() => persistFrontmatterChange(noteId, updates));
+    const before = useNoteStore.getState().notes.find((item) => item.id === noteId);
+    if (!before) return Promise.resolve();
+    if (before.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) {
+      return Promise.resolve();
+    }
+    const vaultPath = useNoteStore
+      .getState()
+      .vaults.find((vault) => vault.id === before.vaultId)?.path;
+    if (useGitSyncStore.getState().isWriteBlocked(noteId, vaultPath ?? null)) {
+      return Promise.resolve();
+    }
+
+    // Paint the control in this click. The disk write stays on the queue so it
+    // cannot race a rename that is still moving the file.
+    const applied = noteWithFrontmatter(before, updates);
+    useNoteStore.getState().updateNote(applied);
+
+    const run = frontmatterWrites.current.then(() =>
+      persistFrontmatterChange(noteId, updates, before, applied),
+    );
     frontmatterWrites.current = run.then(
       () => undefined,
       () => undefined,

@@ -293,7 +293,29 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       // `files` lists keepers first, so a rename resolves to the id's keeper.
       if (index < 0) index = files.findIndex((n) => n.id === updated.id);
       if (index < 0) return state;
-      return derive(files.map((n, i) => (i === index ? updated : n)));
+      const previous = files[index];
+      const nextFiles = files.map((n, i) => (i === index ? updated : n));
+      // A duplicate copy lives outside `notes`, and a path or id change can
+      // move which file is the keeper. Both go through partition. A field edit
+      // of a keeper skips the search and tag-tree rebuild when those inputs
+      // did not change, so a heading click can paint before the indexes run.
+      const regroup =
+        !state.notes.includes(previous) ||
+        previous.filePath !== updated.filePath ||
+        previous.id !== updated.id;
+      if (regroup) return derive(nextFiles);
+      const notes = state.notes.map((n) => (n === previous ? updated : n));
+      const tagsChanged =
+        previous.frontmatter.tags.join("\0") !== updated.frontmatter.tags.join("\0");
+      const indexedChanged =
+        tagsChanged ||
+        previous.frontmatter.title !== updated.frontmatter.title ||
+        previous.content !== updated.content;
+      return {
+        notes,
+        ...(tagsChanged ? { tagTree: buildTagTree(notes) } : {}),
+        ...(indexedChanged ? { searchIndex: buildIndex(notes) } : {}),
+      };
     }),
   setNoteTitleLive: (id, title) =>
     set((state) => ({
@@ -364,7 +386,16 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     // note (with a stale filename at worst) — never a truncated or missing file.
     await tauriCommands.writeNote(note.filePath, serializeNote(updated));
     await tauriCommands.renameNote(note.filePath, newFilePath);
-    get().updateNote(updated);
+    // A flag click during the rename already updated the store. Keep those
+    // fields and only apply the path and title from this rename. Wiki-link
+    // resolution below still uses the catalog captured before this write.
+    const latest = get().notes.find((item) => item.id === note.id) ?? updated;
+    get().updateNote({
+      ...latest,
+      filePath: newFilePath,
+      fileName: newFileName,
+      frontmatter: { ...latest.frontmatter, title: newTitle },
+    });
 
     // Rewrite [[Old Title]] only where that wiki link resolved to this note.
     // Locked notes are left untouched: no snapshot and no write. Saved link

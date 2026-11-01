@@ -10,6 +10,7 @@ import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
+import { useToastStore } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
@@ -176,6 +177,59 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     expect(stamp.slice(0, 10)).toBe(todayDate());
     expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
+  });
+
+  it("updates urgent before the heading write resolves", async () => {
+    let releaseWrite: () => void = () => {};
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(() => writeGate);
+
+    setup(makeNote(), true);
+    const urgent = screen.getByRole("button", { name: "Urgent" });
+    const important = screen.getByRole("button", { name: "Important" });
+    expect(urgent).toHaveAttribute("aria-pressed", "false");
+
+    try {
+      fireEvent.click(urgent);
+
+      expect(urgent).toHaveAttribute("aria-pressed", "true");
+      expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
+
+      fireEvent.click(important);
+      expect(important).toHaveAttribute("aria-pressed", "true");
+      expect(useNoteStore.getState().notes[0].frontmatter.important).toBe(true);
+
+      releaseWrite();
+      await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
+      expect(urgent).toHaveAttribute("aria-pressed", "true");
+      expect(important).toHaveAttribute("aria-pressed", "true");
+    } finally {
+      releaseWrite();
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
+  it("reverts urgent and reports the error when the heading write fails", async () => {
+    vi.mocked(tauriCommands.writeNote).mockRejectedValueOnce(new Error("disk full"));
+    setup(makeNote(), true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute("aria-pressed", "true");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+    expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(false);
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("Failed to save frontmatter")),
+    ).toBe(true);
   });
 });
 

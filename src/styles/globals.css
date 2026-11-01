@@ -377,6 +377,13 @@ input[type="checkbox"]:not(.toggle):not(ul[data-type="taskList"] li > label inpu
   --noise: 0;
 }
 
+/* Same gap as .toggle: DaisyUI rounds the status dot with --radius-selector
+   and shades it with --depth. A full radius keeps it a circle in every theme. */
+.status {
+  --radius-selector: 9999px;
+  --depth: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   input.toggle {
     transition: none;

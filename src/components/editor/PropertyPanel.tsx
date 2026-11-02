@@ -33,10 +33,10 @@ interface PropertyPanelProps {
 const READ_ONLY_KEYS = new Set(["id", "created", "updated"]);
 
 /**
- * Workflow fields an unmanaged note does not use. They leave the heading and
- * the properties editor, and marking the note unmanaged clears their values.
+ * Workflow fields hidden for an unmanaged note. State, urgent, and important
+ * leave the heading and the properties editor. Blocked stays in Properties.
  */
-const UNMANAGED_HIDDEN_KEYS = new Set(["state", "urgent", "important", "blocked"]);
+const UNMANAGED_HIDDEN_KEYS = new Set(["state", "urgent", "important"]);
 
 /** Known keys keep a stable order. Anything else follows in file order. */
 const KNOWN_ORDER = [
@@ -404,6 +404,7 @@ function JoinToggle({
     label: string;
     pressed: boolean;
     title?: string;
+    icon?: string;
     onClick: () => void;
   }>;
 }) {
@@ -417,11 +418,20 @@ function JoinToggle({
           aria-label={segment.label}
           aria-pressed={segment.pressed}
           title={segment.title ?? segment.label}
+          data-icon={segment.icon}
           data-selected={segment.pressed ? "true" : "false"}
-          className="btn btn-sm join-item h-7 min-h-0 rounded-full px-3 font-medium"
+          className="btn btn-sm join-item h-7 min-h-0 rounded-full px-2 font-medium"
           onClick={segment.onClick}
         >
-          {segment.label}
+          {segment.icon ? (
+            <HeadingIcon
+              icon={segment.icon}
+              id={`note-heading-mode-${segment.label.replace(/\s+/g, "-").toLowerCase()}`}
+              className="h-4 w-4"
+            />
+          ) : (
+            segment.label
+          )}
         </button>
       ))}
     </fieldset>
@@ -782,7 +792,8 @@ export const PropertyPanel = memo(function PropertyPanel({
                 label="Editor mode"
                 segments={[
                   {
-                    label: "Rich",
+                    label: "Rich text",
+                    icon: "uil:file-alt",
                     pressed: markdownMode !== true,
                     title: markdownMode ? "Switch to editor" : "Rich text",
                     onClick: () => {
@@ -791,6 +802,7 @@ export const PropertyPanel = memo(function PropertyPanel({
                   },
                   {
                     label: "Markdown",
+                    icon: "uil:brackets-curly",
                     pressed: markdownMode === true,
                     title: markdownMode ? "Markdown" : "Switch to Markdown",
                     onClick: () => {
@@ -844,8 +856,8 @@ export const PropertyPanel = memo(function PropertyPanel({
           disabled={readOnly}
           className="m-0 flex min-w-0 flex-wrap items-center justify-start gap-2 border-0 p-0"
         >
-          {/* State, Urgent, and Important are workflow. Blocked lives in
-              Properties. All four are hidden once the note is unmanaged. */}
+          {/* State, Urgent, and Important leave the heading when the note is
+              unmanaged. Blocked stays in Properties and has no header toggle. */}
           {!unmanaged && (
             <>
               <StateSelect value={frontmatter.state} onChange={(state) => onChange({ state })} />

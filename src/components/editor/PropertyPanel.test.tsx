@@ -159,7 +159,7 @@ describe("PropertyPanel unmanaged notes", () => {
     expect(within(panel).getByRole("checkbox", { name: "blocked" })).not.toBeChecked();
   });
 
-  it("hides state, urgent, important, and blocked when the note is unmanaged", () => {
+  it("hides state, urgent, and important when the note is unmanaged", () => {
     render(
       <PropertyPanel
         frontmatter={makeFrontmatter({
@@ -191,7 +191,7 @@ describe("PropertyPanel unmanaged notes", () => {
     expect(within(panel).queryByRole("combobox", { name: "state" })).not.toBeInTheDocument();
     expect(within(panel).queryByRole("checkbox", { name: "urgent" })).not.toBeInTheDocument();
     expect(within(panel).queryByRole("checkbox", { name: "important" })).not.toBeInTheDocument();
-    expect(within(panel).queryByRole("checkbox", { name: "blocked" })).not.toBeInTheDocument();
+    expect(within(panel).getByRole("checkbox", { name: "blocked" })).toBeChecked();
     expect(within(panel).getByRole("checkbox", { name: "unmanaged" })).toBeChecked();
     expect(within(panel).getByRole("textbox", { name: "tags" })).toBeInTheDocument();
   });
@@ -449,7 +449,7 @@ const TITLE_ROW_ACTIONS = [
   "Pin to side",
   "Note history",
   "Export to PDF",
-  "Rich",
+  "Rich text",
   "Markdown",
   "Archive note",
   "Delete note",
@@ -540,10 +540,20 @@ describe("PropertyPanel header layout", () => {
     expect(important).toHaveAttribute("title", "Important");
     expect(important).toHaveAttribute("aria-pressed", "true");
     expect(important).toHaveAttribute("data-icon", "uil:star");
-    const rich = screen.getByRole("button", { name: "Rich" });
+    const rich = screen.getByRole("button", { name: "Rich text" });
+    const markdown = screen.getByRole("button", { name: "Markdown" });
     expect(rich.className).toContain("join-item");
+    expect(rich.parentElement?.className).toContain("join");
     expect(rich.parentElement?.className).toContain("note-heading-mode");
-    expect(screen.getByRole("button", { name: "Markdown" }).className).toContain("join-item");
+    expect(rich).toHaveAttribute("aria-pressed", "true");
+    expect(rich).toHaveAttribute("title", "Rich text");
+    expect(rich).toHaveAttribute("data-icon", "uil:file-alt");
+    expect(rich).not.toHaveTextContent("Rich");
+    expect(markdown.className).toContain("join-item");
+    expect(markdown).toHaveAttribute("aria-pressed", "false");
+    expect(markdown).toHaveAttribute("title", "Switch to Markdown");
+    expect(markdown).toHaveAttribute("data-icon", "uil:brackets-curly");
+    expect(markdown).not.toHaveTextContent("Markdown");
 
     const archive = screen.getByRole("button", { name: "Archive note" });
     const deleteNote = screen.getByRole("button", { name: "Delete note" });
@@ -663,12 +673,15 @@ describe("PropertyPanel header layout", () => {
     const onToggleMarkdown = vi.fn();
     const view = renderHeader({}, { onToggleMarkdown });
 
-    expect(screen.getByRole("button", { name: "Rich" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Rich text" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Markdown" })).toHaveAttribute(
       "title",
       "Switch to Markdown",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Rich" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
     expect(onToggleMarkdown).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     expect(onToggleMarkdown).toHaveBeenCalledTimes(1);
@@ -682,13 +695,13 @@ describe("PropertyPanel header layout", () => {
         onToggleMarkdown={onToggleMarkdown}
       />,
     );
-    expect(screen.getByRole("button", { name: "Rich" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Rich text" })).toHaveAttribute(
       "title",
       "Switch to editor",
     );
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     expect(onToggleMarkdown).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Rich" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
     expect(onToggleMarkdown).toHaveBeenCalledTimes(2);
   });
 

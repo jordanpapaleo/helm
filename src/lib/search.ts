@@ -10,6 +10,11 @@ interface SearchDoc {
 
 export type NoteIndex = MiniSearch<SearchDoc>;
 
+/**
+ * MiniSearch throws on a repeated document id, so only the first note per id
+ * is indexed. The notes store already holds one note per id (see
+ * duplicate-ids.ts); this keeps a stray duplicate from crashing the app.
+ */
 export function buildIndex(notes: Note[]): NoteIndex {
   const index = new MiniSearch<SearchDoc>({
     fields: ["title", "content", "tags"],
@@ -20,14 +25,19 @@ export function buildIndex(notes: Note[]): NoteIndex {
     },
   });
 
-  index.addAll(
-    notes.map((n) => ({
+  const seen = new Set<string>();
+  const docs: SearchDoc[] = [];
+  for (const n of notes) {
+    if (seen.has(n.id)) continue;
+    seen.add(n.id);
+    docs.push({
       id: n.id,
       title: n.frontmatter.title,
       content: n.content,
       tags: n.frontmatter.tags.join(" "),
-    })),
-  );
+    });
+  }
+  index.addAll(docs);
 
   return index;
 }

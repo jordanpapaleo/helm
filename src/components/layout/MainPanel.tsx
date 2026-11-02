@@ -25,7 +25,7 @@ import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
-import { useNoteStore } from "../../store/notes";
+import { occupiedNotePaths, useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -630,7 +630,7 @@ export function MainPanel() {
 
   async function handleRestoreDeleted() {
     if (!deletedItem) return;
-    const occupied = useNoteStore.getState().notes.map((note) => note.filePath);
+    const occupied = occupiedNotePaths();
     const { held } = planTrashRestore([deletedItem], occupied);
     if (held.length > 0) {
       reportPathCollisions(held);

@@ -146,6 +146,7 @@ Write lists as normal Markdown. Do not put blank lines between items — Helm sp
 
 **Key rules:**
 - Always use ULIDs as identifiers, never filenames. A drag onto a folder renames the file and keeps the id. A drag onto a tag appends the tag and keeps the body.
+- If two files carry the same id (a copied file, a sync conflict), every tool sees only one of them: the earliest `created`, then the shortest path. That is the same copy the Helm app keeps (`duplicates.ts`, kept in sync with `src/lib/duplicate-ids.ts`). The other copies are left out of every tool until the user resolves them in Helm's **Duplicate note IDs** window.
 - A note's links are the saved `links` ids that still match a loaded note, plus `[[wiki links]]` whose text matches another note's title (case-insensitive). The graph, the note footer, and the properties Links field all show that union. Loading a note does not rewrite the file.
 - Renaming a note replaces `[[Old Title]]` with `[[New Title]]` only in notes whose wiki link resolved to the renamed note. A shared title does not retarget links that resolved to the other note. Locked notes are not rewritten. `links` ids stay.
 - Call `resolve_note` before adding to `links`. Put `[[Exact Title]]` in the body as well: the editor rebuilds `links` from wiki links on the next body save, which drops canvas-only edges.

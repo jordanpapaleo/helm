@@ -24,7 +24,7 @@ import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash"
 import { normalizeTagName, noteMatchesTag, tagMatches } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { listTemplateChoices } from "../../lib/templates";
-import { buildTagTree, type TagNode, useNoteStore } from "../../store/notes";
+import { buildTagTree, occupiedNotePaths, type TagNode, useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -665,7 +665,7 @@ export function LeftColumn() {
   async function handleRestoreAll() {
     const items = [...useTrashStore.getState().items];
     if (items.length === 0) return;
-    const occupied = useNoteStore.getState().notes.map((note) => note.filePath);
+    const occupied = occupiedNotePaths();
     // One snapshot per path. The rest stay in Trash with their original content
     // so a later write cannot replace an earlier one and then drop both entries.
     const { restore, held } = planTrashRestore(items, occupied);

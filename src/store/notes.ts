@@ -4,6 +4,7 @@
  * full-text search index for note discovery.
  */
 import { create } from "zustand";
+import { type DuplicateGroup, partitionDuplicateIds } from "../lib/duplicate-ids";
 import { notesToRewrite, replaceWikiLinkTitle } from "../lib/note-links";
 import { serializeNote, slugify } from "../lib/note-parser";
 import { buildIndex, type NoteIndex, noteMatchesQuery, searchNotes } from "../lib/search";
@@ -77,8 +78,13 @@ export function buildTagTree(notes: Note[]): Record<string, TagNode> {
  * Notes store state and actions.
  */
 interface NoteStore {
-  /** All loaded notes across all vaults */
+  /** All loaded notes across all vaults, one per id */
   notes: Note[];
+  /**
+   * Ids carried by more than one file. Each group's keeper is in `notes`; its
+   * other copies are held only here until the user resolves them.
+   */
+  duplicateGroups: DuplicateGroup<Note>[];
   /** ID of currently selected note, or null if none selected */
   selectedNoteId: string | null;
   /** All configured vaults */
@@ -100,6 +106,11 @@ interface NoteStore {
   setNotes: (notes: Note[]) => void;
   /** Append notes from a new vault without replacing existing ones */
   appendNotes: (notes: Note[]) => void;
+  /**
+   * Replace every loaded file of one vault (duplicate copies included) and
+   * keep all files of the other vaults.
+   */
+  replaceVaultNotes: (vaultId: string, notes: Note[]) => void;
   /** Replace all vault configs and persist */
   setVaults: (vaults: VaultConfig[]) => void;
   /** Add a single vault config */
@@ -110,7 +121,11 @@ interface NoteStore {
   setActiveVaultId: (id: string | null) => void;
   /** Select a note by ID (or null to deselect) */
   selectNote: (id: string | null) => void;
-  /** Update an existing note and rebuild indexes */
+  /**
+   * Update an existing note and rebuild indexes. Matches the loaded note at
+   * the same file path (including a duplicate copy), else the note with the
+   * same id (a rename).
+   */
   updateNote: (note: Note) => void;
   /**
    * Live title update for in-progress editing: patches only the note's
@@ -122,8 +137,13 @@ interface NoteStore {
   setNoteTitleLive: (id: string, title: string) => void;
   /** Add a new note and rebuild indexes */
   addNote: (note: Note) => void;
-  /** Remove a note by ID and rebuild indexes */
+  /**
+   * Remove the note that owns this id and rebuild indexes. A duplicate copy of
+   * the id, if any, takes its place.
+   */
   removeNote: (id: string) => void;
+  /** Remove whichever loaded note (or duplicate copy) lives at this path. */
+  removeNoteAtPath: (filePath: string) => void;
   /** Search for notes matching a query (rebuilds search index if needed) */
   search: (query: string) => void;
   /** Replace the known folder paths (called on vault load and dir change events) */
@@ -199,11 +219,49 @@ async function writeRewrittenNotes(
 }
 
 /**
+ * Every path a loaded note file occupies, including duplicate copies that are
+ * not in `notes`. Use it for any "is this path free?" check.
+ */
+export function occupiedNotePaths(): string[] {
+  return allNotes(useNoteStore.getState()).map((n) => n.filePath);
+}
+
+/** Every loaded file: the keepers in `notes` plus the duplicate copies. */
+function allNotes(state: Pick<NoteStore, "notes" | "duplicateGroups">): Note[] {
+  if (state.duplicateGroups.length === 0) return state.notes;
+  return [...state.notes, ...state.duplicateGroups.flatMap((group) => group.copies)];
+}
+
+/**
+ * The one place loaded files become store state: one note per id in `notes`,
+ * the rest in `duplicateGroups`, and both indexes rebuilt from `notes`.
+ */
+function derive(files: Note[]) {
+  const { unique, groups } = partitionDuplicateIds(files, (n) => ({
+    id: n.id,
+    filePath: n.filePath,
+    created: n.frontmatter.created ?? "",
+  }));
+  return {
+    notes: unique,
+    duplicateGroups: groups,
+    tagTree: buildTagTree(unique),
+    searchIndex: buildIndex(unique),
+  };
+}
+
+function replaceByPath(files: Note[], written: Note[]): Note[] {
+  const byPath = new Map(written.map((n) => [n.filePath, n]));
+  return files.map((n) => byPath.get(n.filePath) ?? n);
+}
+
+/**
  * Global notes store using Zustand.
  * Manages all note operations, selection, tagging, and search.
  */
 export const useNoteStore = create<NoteStore>((set, get) => ({
   notes: [],
+  duplicateGroups: [],
   selectedNoteId: null,
   vaults: [],
   activeVaultId: null,
@@ -213,15 +271,15 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   searchResults: [],
   knownFolderPaths: [],
 
-  setNotes: (notes) => {
-    const searchIndex = buildIndex(notes);
-    set({ notes, tagTree: buildTagTree(notes), searchIndex });
-  },
+  setNotes: (notes) => set(derive(notes)),
   appendNotes: (incoming) => {
-    const existing = get().notes.filter((n) => !incoming.some((i) => i.filePath === n.filePath));
-    const notes = [...existing, ...incoming];
-    const searchIndex = buildIndex(notes);
-    set({ notes, tagTree: buildTagTree(notes), searchIndex });
+    const incomingPaths = new Set(incoming.map((n) => n.filePath));
+    const existing = allNotes(get()).filter((n) => !incomingPaths.has(n.filePath));
+    set(derive([...existing, ...incoming]));
+  },
+  replaceVaultNotes: (vaultId, incoming) => {
+    const others = allNotes(get()).filter((n) => n.vaultId !== vaultId);
+    set(derive([...others, ...incoming]));
   },
   setVaults: (vaults) => set({ vaults }),
   addVaultConfig: (vault) => set((s) => ({ vaults: [...s.vaults, vault] })),
@@ -230,9 +288,12 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   selectNote: (id) => set({ selectedNoteId: id }),
   updateNote: (updated) =>
     set((state) => {
-      const notes = state.notes.map((n) => (n.id === updated.id ? updated : n));
-      const searchIndex = buildIndex(notes);
-      return { notes, tagTree: buildTagTree(notes), searchIndex };
+      const files = allNotes(state);
+      let index = files.findIndex((n) => n.filePath === updated.filePath);
+      // `files` lists keepers first, so a rename resolves to the id's keeper.
+      if (index < 0) index = files.findIndex((n) => n.id === updated.id);
+      if (index < 0) return state;
+      return derive(files.map((n, i) => (i === index ? updated : n)));
     }),
   setNoteTitleLive: (id, title) =>
     set((state) => ({
@@ -244,19 +305,27 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     set((state) => {
       // Skip if a note with the same filePath is already in the store to prevent
       // duplicate entries from concurrent watcher callbacks or StrictMode runs.
-      if (state.notes.some((n) => n.filePath === note.filePath)) return state;
-      const notes = [...state.notes, note];
-      return { notes, tagTree: buildTagTree(notes), searchIndex: buildIndex(notes) };
+      const files = allNotes(state);
+      if (files.some((n) => n.filePath === note.filePath)) return state;
+      return derive([...files, note]);
     }),
   removeNote: (id) =>
     set((state) => {
-      const notes = state.notes.filter((n) => n.id !== id);
+      const keeper = state.notes.find((n) => n.id === id);
       return {
-        notes,
-        tagTree: buildTagTree(notes),
-        searchIndex: buildIndex(notes),
+        ...derive(allNotes(state).filter((n) => n !== keeper)),
         selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
       };
+    }),
+  removeNoteAtPath: (filePath) =>
+    set((state) => {
+      const files = allNotes(state);
+      const removed = files.find((n) => n.filePath === filePath);
+      if (!removed) return state;
+      const next = derive(files.filter((n) => n !== removed));
+      const selectionGone =
+        state.selectedNoteId === removed.id && !next.notes.some((n) => n.id === removed.id);
+      return { ...next, selectedNoteId: selectionGone ? null : state.selectedNoteId };
     }),
   search: (query) => {
     const { notes, searchIndex } = get();
@@ -320,11 +389,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       "Failed to update links after rename",
     );
     if (written.length === 0) return;
-    const byId = new Map(written.map((item) => [item.id, item]));
-    set((state) => {
-      const notes = state.notes.map((item) => byId.get(item.id) ?? item);
-      return { notes, tagTree: buildTagTree(notes), searchIndex: buildIndex(notes) };
-    });
+    set((state) => derive(replaceByPath(allNotes(state), written)));
   },
 
   renameFolder: async (oldPath, newName) => {
@@ -338,7 +403,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
 
     const oldPrefix = `${oldPath}/`;
     set((state) => {
-      const notes = state.notes.map((n) => {
+      const files = allNotes(state).map((n) => {
         if (!n.filePath.startsWith(oldPrefix)) return n;
         const newFilePath = `${newPath}/${n.filePath.slice(oldPrefix.length)}`;
         return {
@@ -354,7 +419,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
             ? `${newPath}/${fp.slice(oldPrefix.length)}`
             : fp,
       );
-      return { notes, knownFolderPaths, tagTree: buildTagTree(notes) };
+      return { ...derive(files), knownFolderPaths };
     });
   },
 
@@ -387,12 +452,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
 
     const written = await writeRewrittenNotes(updates, get().vaults, `Failed to rename #${oldTag}`);
     if (written.length === 0) return;
-
-    const byPath = new Map(written.map((n) => [n.filePath, n]));
-    set((state) => {
-      const notes = state.notes.map((n) => byPath.get(n.filePath) ?? n);
-      return { notes, tagTree: buildTagTree(notes), searchIndex: buildIndex(notes) };
-    });
+    set((state) => derive(replaceByPath(allNotes(state), written)));
   },
 
   deleteTag: async (tagInput) => {
@@ -414,11 +474,6 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
 
     const written = await writeRewrittenNotes(updates, get().vaults, `Failed to delete #${tag}`);
     if (written.length === 0) return;
-
-    const byPath = new Map(written.map((n) => [n.filePath, n]));
-    set((state) => {
-      const notes = state.notes.map((n) => byPath.get(n.filePath) ?? n);
-      return { notes, tagTree: buildTagTree(notes), searchIndex: buildIndex(notes) };
-    });
+    set((state) => derive(replaceByPath(allNotes(state), written)));
   },
 }));

@@ -857,6 +857,30 @@ describe("LeftColumn — archive and trash", () => {
     expect(useTrashStore.getState().items[0]?.note.content).toBe("trashed body");
   });
 
+  it("does not overwrite a duplicate-ID copy when Restore all hits its path", async () => {
+    const keeper = listed("dup", "Plan");
+    const copy = { ...listed("dup", "Plan"), filePath: "/vault/plan copy.md" };
+    copy.content = "copy body";
+    const trashed = listed("gone", "Gone");
+    trashed.filePath = copy.filePath;
+    trashed.fileName = "plan copy.md";
+    useNoteStore.getState().setNotes([keeper, copy]);
+    useTrashStore.setState({
+      items: [{ note: trashed, deletedAt: "2026-04-01T00:00:00.000Z" }],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Trash" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Restore all" }));
+
+    await waitFor(() =>
+      expect(useTrashStore.getState().items.map((item) => item.note.id)).toEqual(["gone"]),
+    );
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().duplicateGroups[0]?.copies).toEqual([copy]);
+    useNoteStore.setState({ duplicateGroups: [] });
+  });
+
   it("permanently deletes every trashed note after confirmation", async () => {
     const alpha = listed("a", "Alpha");
     useNoteStore.setState({ selectedNoteId: "a" });

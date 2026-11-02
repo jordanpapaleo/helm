@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { type Panel, workspaceGeometry } from "../../lib/workspace-layout";
 import { useLayoutStore } from "../../store/layout";
 import { useUIStore } from "../../store/ui";
+import { DuplicateIdsAlert } from "../DuplicateIdsAlert";
 import { SettingsModal } from "../settings/SettingsModal";
 import { GlobalNewNoteMenu } from "../sidebar/NewNoteMenu";
 import { AppToolbar } from "./AppToolbar";
@@ -80,6 +81,7 @@ export function AppShell() {
   return (
     <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-[var(--color-bg)]">
       <AppToolbar left={geometry.left} right={geometry.right} />
+      <DuplicateIdsAlert />
       <div ref={workspace} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {geometry.collapsedNav && <CollapsedSidebar />}
         <div

@@ -3,7 +3,7 @@
  * only place those plans are applied, and every write goes through tauri-commands.
  */
 import { ulid } from "ulid";
-import { useNoteStore } from "../store/notes";
+import { occupiedNotePaths, useNoteStore } from "../store/notes";
 import { useProjectStore } from "../store/projects";
 import type { Note, NoteFrontmatter } from "../types/note";
 import { serializeNote } from "./note-parser";
@@ -56,13 +56,11 @@ function snapshotInputs(): Pick<
   CreateProjectInput,
   "existingFolderPaths" | "existingFilePaths" | "projects"
 > {
-  const { notes, knownFolderPaths } = useNoteStore.getState();
+  const { knownFolderPaths } = useNoteStore.getState();
+  const filePaths = occupiedNotePaths();
   return {
-    existingFilePaths: notes.map((note) => note.filePath),
-    existingFolderPaths: collectFolderPaths(
-      notes.map((note) => note.filePath),
-      knownFolderPaths,
-    ),
+    existingFilePaths: filePaths,
+    existingFolderPaths: collectFolderPaths(filePaths, knownFolderPaths),
     projects: useProjectStore.getState().projects,
   };
 }
@@ -154,7 +152,7 @@ export async function moveNoteToCategory(
   project: Project,
   category: ProjectCategoryId,
 ): Promise<Note> {
-  const taken = useNoteStore.getState().notes.map((item) => item.filePath);
+  const taken = occupiedNotePaths();
   const plan = planCategoryMove({
     noteId: note.id,
     filePath: note.filePath,

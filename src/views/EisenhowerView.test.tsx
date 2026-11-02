@@ -91,6 +91,18 @@ beforeEach(() => {
   });
 });
 
+describe("EisenhowerView — unmanaged notes", () => {
+  it("hides an unmanaged note even when its state is Doing", () => {
+    const managed = archivedNote("On the board");
+    const unmanaged = archivedNote("Off the board");
+    unmanaged.frontmatter = { ...unmanaged.frontmatter, unmanaged: true };
+    useNoteStore.setState({ notes: [managed, unmanaged] });
+    render(<EisenhowerView />);
+    expect(screen.getByText("On the board")).toBeInTheDocument();
+    expect(screen.queryByText("Off the board")).not.toBeInTheDocument();
+  });
+});
+
 describe("EisenhowerView — archived notes", () => {
   it("hides archived notes from the matrix by default", () => {
     useNoteStore.setState({ notes: [archivedNote("Live"), archivedNote("Shelved", true)] });

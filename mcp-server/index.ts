@@ -34,6 +34,7 @@ import {
   walkMarkdownFiles,
 } from "./projects";
 import { normalizeTimestamp, nowTimestamp, todayDate } from "./timestamps";
+import { groupEisenhower, groupKanban } from "./workflow";
 
 // ── Vault resolution ──────────────────────────────────────────────────────────
 // Supports multiple vaults via HELM_VAULTS (comma-separated paths) or HELM_VAULT (single path)
@@ -1005,11 +1006,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       args?.project_id,
     );
     if (typeof scoped === "string") return { content: [{ type: "text", text: scoped }] };
-    const active = scoped.filter(
-      (n) =>
-        n.frontmatter.unmanaged !== true &&
-        (n.frontmatter.state === "Prepare" || n.frontmatter.state === "Doing"),
-    );
+    const active = groupEisenhower(scoped);
     const quadrants: Record<Quadrant, ReturnType<typeof noteSummary>[]> = {
       do: [],
       schedule: [],
@@ -1031,25 +1028,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── get_kanban ─────────────────────────────────────────────────────────────
   if (name === "get_kanban") {
-    const columns: Record<string, ReturnType<typeof noteSummary>[]> = {
-      Prepare: [],
-      Doing: [],
-      Maintain: [],
-      Done: [],
-    };
     const kanbanNotes = restrictToProject(
       excludeArchivedUnless(notes, args?.include_archived),
       args?.project_id,
     );
     if (typeof kanbanNotes === "string") return { content: [{ type: "text", text: kanbanNotes }] };
-    for (const n of kanbanNotes) {
-      if (n.frontmatter.unmanaged === true) continue;
-      // `??` not `||` — a cleared (empty) state means the note is unmanaged, and
-      // the `state in columns` guard below intentionally leaves it off the board.
-      // Do not "fix" this into `||`: that would bucket unmanaged notes into Prepare.
-      const state = n.frontmatter.state ?? "Prepare";
-      if (state in columns) columns[state].push(noteSummary(n, notes));
-    }
+    const grouped = groupKanban(kanbanNotes);
+    const columns = {
+      Prepare: grouped.Prepare.map((n) => noteSummary(n, notes)),
+      Doing: grouped.Doing.map((n) => noteSummary(n, notes)),
+      Maintain: grouped.Maintain.map((n) => noteSummary(n, notes)),
+      Done: grouped.Done.map((n) => noteSummary(n, notes)),
+    };
     return {
       content: [
         {

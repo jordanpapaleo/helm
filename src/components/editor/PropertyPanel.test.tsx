@@ -138,43 +138,62 @@ describe("PropertyPanel unmanaged notes", () => {
   it("shows the workflow controls for a managed note", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} />);
 
+    const metaRow = screen.getByTestId("note-heading-meta-row");
+    expect(metaRow).toContainElement(screen.getByRole("combobox", { name: "State" }));
     expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("Prepare");
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
     expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
       "data-icon",
       "uil:clock",
     );
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
     expect(screen.getByRole("button", { name: "Important" })).toHaveAttribute(
       "data-icon",
       "uil:star",
     );
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getByRole("combobox", { name: "state" })).toHaveValue("Prepare");
+    expect(within(panel).getByRole("checkbox", { name: "urgent" })).not.toBeChecked();
+    expect(within(panel).getByRole("checkbox", { name: "important" })).not.toBeChecked();
     expect(within(panel).getByRole("checkbox", { name: "blocked" })).not.toBeChecked();
   });
 
-  it("keeps state and urgency on the heading when the note is unmanaged", () => {
+  it("hides state, urgent, important, and blocked when the note is unmanaged", () => {
     render(
       <PropertyPanel
-        frontmatter={makeFrontmatter({ unmanaged: true, state: "" })}
+        frontmatter={makeFrontmatter({
+          unmanaged: true,
+          state: "Doing",
+          urgent: true,
+          important: true,
+          blocked: true,
+        })}
         onChange={vi.fn()}
       />,
     );
 
     const metaRow = screen.getByTestId("note-heading-meta-row");
-    expect(metaRow).toContainElement(screen.getByRole("combobox", { name: "State" }));
-    expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("");
-    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
-    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
-
-    expect(screen.getByRole("switch", { name: "Pinned" })).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Locked" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "State" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Urgent" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Important" })).not.toBeInTheDocument();
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Locked" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Template" }));
     expect(screen.getByRole("button", { name: "Unmanaged" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+    expect(screen.getByRole("button", { name: "Properties" })).toBeEnabled();
+
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).queryByRole("combobox", { name: "state" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("checkbox", { name: "urgent" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("checkbox", { name: "important" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("checkbox", { name: "blocked" })).not.toBeInTheDocument();
     expect(within(panel).getByRole("checkbox", { name: "unmanaged" })).toBeChecked();
+    expect(within(panel).getByRole("textbox", { name: "tags" })).toBeInTheDocument();
   });
 
   it("clears the workflow fields in a single onChange when Unmanaged is switched on", () => {

@@ -32,6 +32,12 @@ interface PropertyPanelProps {
 /** Shown as text. Path is rendered beside these but is not a frontmatter key. */
 const READ_ONLY_KEYS = new Set(["id", "created", "updated"]);
 
+/**
+ * Workflow fields an unmanaged note does not use. They leave the heading and
+ * the properties editor, and marking the note unmanaged clears their values.
+ */
+const UNMANAGED_HIDDEN_KEYS = new Set(["state", "urgent", "important", "blocked"]);
+
 /** Known keys keep a stable order. Anything else follows in file order. */
 const KNOWN_ORDER = [
   "title",
@@ -93,7 +99,10 @@ function isCalendarDate(value: string): boolean {
 }
 
 function editableKeys(frontmatter: NoteFrontmatter): string[] {
-  const keys = Object.keys(frontmatter).filter((key) => !READ_ONLY_KEYS.has(key));
+  const hideWorkflow = frontmatter.unmanaged === true;
+  const keys = Object.keys(frontmatter).filter(
+    (key) => !READ_ONLY_KEYS.has(key) && !(hideWorkflow && UNMANAGED_HIDDEN_KEYS.has(key)),
+  );
   const known = KNOWN_ORDER.filter((key) => keys.includes(key));
   const rest = keys.filter((key) => !KNOWN_ORDER.includes(key));
   return [...known, ...rest];
@@ -835,22 +844,28 @@ export const PropertyPanel = memo(function PropertyPanel({
           disabled={readOnly}
           className="m-0 flex min-w-0 flex-wrap items-center justify-start gap-2 border-0 p-0"
         >
-          <StateSelect value={frontmatter.state} onChange={(state) => onChange({ state })} />
-          <FlagSwitch
-            label="Urgent"
-            pressed={frontmatter.urgent}
-            icon="uil:clock"
-            indicator="pressed"
-            onToggle={() => onChange({ urgent: !frontmatter.urgent })}
-          />
-          <FlagSwitch
-            label="Important"
-            pressed={frontmatter.important}
-            icon="uil:star"
-            indicator="pressed"
-            onToggle={() => onChange({ important: !frontmatter.important })}
-          />
-          <HeadingDivider />
+          {/* State, Urgent, and Important are workflow. Blocked lives in
+              Properties. All four are hidden once the note is unmanaged. */}
+          {!unmanaged && (
+            <>
+              <StateSelect value={frontmatter.state} onChange={(state) => onChange({ state })} />
+              <FlagSwitch
+                label="Urgent"
+                pressed={frontmatter.urgent}
+                icon="uil:clock"
+                indicator="pressed"
+                onToggle={() => onChange({ urgent: !frontmatter.urgent })}
+              />
+              <FlagSwitch
+                label="Important"
+                pressed={frontmatter.important}
+                icon="uil:star"
+                indicator="pressed"
+                onToggle={() => onChange({ important: !frontmatter.important })}
+              />
+              <HeadingDivider />
+            </>
+          )}
           <FlagSwitch
             label="Pinned"
             pressed={frontmatter.pinned ?? false}

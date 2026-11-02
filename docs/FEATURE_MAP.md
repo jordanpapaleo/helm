@@ -180,7 +180,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Tags section** — hierarchical, recursive counts; hidden when empty; built from visible notes; Rename/Delete Tag in the context menu (see [Tags](#12-tags)).
 - **All Notes, Archive, Trash** — see [Trash and archive](#15-trash-and-archive).
 - **Note list** — `notesForList`
-  - Pinned notes first, then most recently updated (`byRecent`).
+  - Most recently updated first; with **Pinned notes float to top** on (the default), pinned notes come first (`pinnedFirst`). This is the only list that floats pinned notes: the Dashboard sorts by date and the boards by saved order.
   - Folder scope is a path prefix; tag scope matches the tag or a descendant.
   - Archived notes hidden unless the setting is on; a search also returns scoped archived and Trash matches, marked.
   - Search matches title, tags, or body; each grouping keeps its own query.
@@ -384,8 +384,9 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Settings modal** — tabs Tools, Typography, Themes, General, Sync; Escape or backdrop closes.
 - **Typography** — note font (system, serif, mono), font size 12–24, line height 1.2–2.2, Restore Defaults; an unknown saved font is dropped.
 - **Themes** — 15 themes; light themes listed first; persisted in `helm-theme`; unknown id falls back to the first theme.
-- **General toggles** — Autocomplete wiki links, Auto-save on edit, Pinned notes float, Show note count on tags, Show archived notes (off), Enable Projects (off), Default note view.
-  - **Gap:** Pinned notes float and Show note count on tags are saved but nothing reads them; pinned notes always float and counts always show.
+- **General toggles** — Autocomplete wiki links, Auto-save on edit, Pinned notes float to top (on), Show note count on tags, Show archived notes (off), Enable Projects (off), Default note view.
+  - Pinned notes float to top controls the note list order (see [Sidebar and layout](#5-sidebar-and-layout)); wired in [PR #99](https://github.com/jordanpapaleo/helm/pull/99).
+  - **Gap:** Show note count on tags is saved but nothing reads it; counts always show.
 - **Persistence** — settings in `helm-settings` localStorage; sync prefs live with the vault in the Tauri config.
 - **Right-panel extensions** — OpenAI Assistant and Claude Assistant (`src/components/tools/extensions.ts`).
   - Enabling adds the toolbar icon; disabling hides it and keeps connection settings.

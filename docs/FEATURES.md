@@ -191,7 +191,7 @@ All settings except sync are persisted to localStorage and applied immediately o
 
 ### Pinned & Locked Notes
 
-**Pinned notes** float to the top of the note list in all views (sidebar, dashboard filtered lists, etc.). Set via the `pinned` frontmatter field.
+**Pinned notes** float to the top of the note list while **Settings → General → Pinned notes float to top** is on (the default). With it off, the note list sorts by date only. Other lists (Dashboard, boards) do not float pinned notes. Set via the `pinned` frontmatter field.
 
 **Locked notes** are read-only in the editor:
 - Content and frontmatter cannot be edited (except unlocking)

@@ -5,7 +5,12 @@ import { notesForList, trashForList } from "./note-list";
 function note(
   id: string,
   title: string,
-  extra: Partial<Note> & { archived?: boolean; tags?: string[]; pinned?: boolean } = {},
+  extra: Partial<Note> & {
+    archived?: boolean;
+    tags?: string[];
+    pinned?: boolean;
+    updated?: string;
+  } = {},
 ): Note {
   return {
     id,
@@ -17,7 +22,7 @@ function note(
       id,
       title,
       created: "2026-01-01T00:00:00Z",
-      updated: "2026-01-01T00:00:00Z",
+      updated: extra.updated ?? "2026-01-01T00:00:00Z",
       tags: extra.tags ?? [],
       urgent: false,
       important: false,
@@ -48,6 +53,7 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: false,
       query: "",
+      pinnedFirst: true,
     });
     expect(hidden.map((row) => row.note.id)).toEqual(["current"]);
 
@@ -58,6 +64,7 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: false,
       query: "Old",
+      pinnedFirst: true,
     });
     expect(byTitle.map((row) => row.note.id)).toEqual(["old"]);
 
@@ -68,6 +75,7 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: false,
       query: "discarded",
+      pinnedFirst: true,
     });
     expect(byBody.map((row) => [row.note.id, row.deletedAt])).toEqual([
       ["gone", "2026-04-01T00:00:00.000Z"],
@@ -80,6 +88,7 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: false,
       query: "keep",
+      pinnedFirst: true,
     });
     expect(byTag.map((row) => row.note.id).sort()).toEqual(["gone", "old"]);
   });
@@ -92,6 +101,7 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: true,
       query: "body",
+      pinnedFirst: true,
     });
     expect(rows.map((row) => row.note.id).sort()).toEqual(["current", "old"]);
   });
@@ -104,6 +114,7 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: false,
       query: "",
+      pinnedFirst: true,
     });
     expect(all.map((row) => row.note.id)).toEqual(["old"]);
 
@@ -114,6 +125,7 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: false,
       query: "discarded",
+      pinnedFirst: true,
     });
     expect(missed).toEqual([]);
   });
@@ -136,8 +148,34 @@ describe("notesForList", () => {
       activeVaultId: "v1",
       showArchived: false,
       query: "lighthouse",
+      pinnedFirst: true,
     });
     expect(rows.map((row) => row.note.id)).toEqual(["inside"]);
+  });
+});
+
+describe("notesForList pinned order", () => {
+  const older = note("older", "Older", { updated: "2026-01-01T00:00:00Z", pinned: true });
+  const newer = note("newer", "Newer", { updated: "2026-02-01T00:00:00Z" });
+  const list = (pinnedFirst: boolean, query = "") =>
+    notesForList({
+      notes: [newer, older],
+      trash: [],
+      grouping: { type: "all", id: null },
+      activeVaultId: "v1",
+      showArchived: false,
+      query,
+      pinnedFirst,
+    }).map((row) => row.note.id);
+
+  it("puts pinned notes first when Pinned notes float is on", () => {
+    expect(list(true)).toEqual(["older", "newer"]);
+    expect(list(true, "e")).toEqual(["older", "newer"]);
+  });
+
+  it("sorts by updated only when Pinned notes float is off", () => {
+    expect(list(false)).toEqual(["newer", "older"]);
+    expect(list(false, "e")).toEqual(["newer", "older"]);
   });
 });
 

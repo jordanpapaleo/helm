@@ -45,6 +45,7 @@ export function NoteListPanel() {
   } = useNoteStore();
   const { items: trashItems, removeFromTrash, permanentlyDelete, addToTrash } = useTrashStore();
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
+  const pinnedNotesFloat = useSettingsStore((s) => s.settings.pinnedNotesFloat);
   const enableProjects = useSettingsStore((s) => s.settings.enableProjects);
   const projects = useProjectStore((s) => s.projects);
   const [menu, setMenu] = useState<MenuState>(null);
@@ -82,8 +83,17 @@ export function NoteListPanel() {
         activeVaultId,
         showArchived: showArchivedNotes,
         query: search,
+        pinnedFirst: pinnedNotesFloat,
       }),
-    [notes, trashItems, selectedGrouping, activeVaultId, showArchivedNotes, search],
+    [
+      notes,
+      trashItems,
+      selectedGrouping,
+      activeVaultId,
+      showArchivedNotes,
+      search,
+      pinnedNotesFloat,
+    ],
   );
   const visibleTrash = useMemo(() => trashForList(trashItems, search), [trashItems, search]);
 

@@ -74,7 +74,7 @@ A TipTap-based rich markdown editor with:
 - **Image paste**: Paste images directly; they're saved to `vault/assets/` and linked
 - **Wiki link autocomplete**: Type `[[` to see up to 8 matching titles (archived notes only when **Show archived notes** is on); select one to insert
 - **Locked notes**: When a note is locked, the editor becomes read-only; archive and delete are hidden
-- **Unmanaged notes**: The header hides State, Urgent, Important, and Blocked, and marking a note unmanaged clears those fields
+- **Unmanaged notes**: The header hides State, Urgent, and Important (Blocked is edited in Properties), and marking a note unmanaged clears all four fields
 
 The editor respects the user's typography settings (note font, font size, line height) and applies them in real time.
 

@@ -67,6 +67,18 @@ Areas:
   - Every debounced saver registers a flusher; one failing flusher never blocks the others.
   - Closing the main window flushes for at most 2 s (`CLOSE_FLUSH_TIMEOUT_MS`), then exits; a second close skips the flush.
   - Rust has an 8 s watchdog and exits on a second close request; closing the capture window does not quit.
+- **Duplicate ids** — `src/lib/duplicate-ids.ts` (KEEP IN SYNC with `mcp-server/duplicates.ts`), `src/store/notes.ts` (`derive`), `src/components/DuplicateIdsAlert.tsx`, `src/lib/resolve-duplicates.ts`
+  - When two files share an id, one copy is kept: earliest `created`, then the shorter path, then path order (`compareCopies`). The others go to `duplicateGroups`, not `notes`.
+  - The search index skips repeated ids, so only the kept copy is searchable.
+  - A banner offers **Review duplicates**; each extra copy can get a new id (`giveNoteNewId`) or go to Trash (`trashDuplicateCopy`).
+  - Trash restore treats every copy's path as occupied (`occupiedNotePaths`).
+- **Per-note write queue** — `src/lib/note-write-path.ts` (`enqueueNoteWrite`)
+  - Frontmatter writes, body saves, and renames for one note run in order on one chain, so a save never lands on a path a rename just left.
+  - A debounced save writes to the path captured when it was scheduled, falling back to the note's last known path.
+  - A failed frontmatter write reverts the store (`revertFrontmatterWrite` in `MainPanel`).
+- **Bundled icons** — `src/lib/bundled-icons.ts` (`BUNDLED_ICON_NAMES`, `registerBundledIcons`)
+  - The app is offline: only icons registered from the bundled `uil` set render. `registerBundledIcons` runs in `main.tsx` before the first render.
+  - A new `uil:*` icon must be added to `BUNDLED_ICON_NAMES`; `src/lib/bundled-icons.test.tsx` fails if any source file uses an icon that is not bundled.
 - **Window capabilities** — `src-tauri/capabilities/default.json`
   - Only `main` and `capture` are listed; a new window label must be added or its `invoke` calls fail silently.
 - **Errors reach the user** — `src/store/toast.ts` (`reportError`), `src/components/ToastContainer.tsx`, `src/components/ErrorBoundary.tsx`
@@ -82,22 +94,29 @@ Areas:
   - Switching notes drops an in-progress edit.
   - A title-only change goes through `renameNote` (file rename plus wiki-link rewrite), not a plain write.
 - **Archived badge** — shown when `archived: true`.
-- **Action row** — copy path, pin to side, history, export PDF, Rich/Markdown toggle, archive, delete.
+- **Action row** — icon buttons: copy path (`uil:copy`), pin to side (`uil:columns`), history (`uil:history`), export PDF (`uil:file-export`), the Rich/Markdown toggle, archive (`uil:archive`), delete (`uil:trash-alt`), and the Properties toggle (`uil:info-circle`).
+  - Every icon button has an `aria-label` and a tooltip.
   - Copy path shows a check for about 1.5 s.
   - Pin to side pins to the right panel; it does not set frontmatter `pinned` (`PinToSideButton.tsx`).
   - History and Export PDF are hidden for a deleted note; History also needs a vault path.
   - Archive and Delete are hidden for locked and deleted notes, and their handlers refuse too.
   - Delete is also refused while a sync barrier is active.
+- **Rich/Markdown toggle** — a two-segment "Editor mode" group: Rich text (`uil:file-alt`) and Markdown (`uil:brackets-curly`), each with `aria-pressed`.
   - Markdown mode resets to the **Default note view** setting on note switch; toggling keeps caret and scroll position.
-- **Workflow controls: State, Urgent, Important, Blocked** — `StateMenu`, checkboxes
-  - **Unmanaged note: the header hides State, Urgent, Important, and Blocked, and the Properties disclosure.**
-    - **Gap:** on `main` only the four workflow controls are hidden; the Properties disclosure still shows for unmanaged notes. [PR #94](https://github.com/jordanpapaleo/helm/pull/94) is restoring it.
-  - State menu offers None, Prepare, Doing, Maintain, Done; opens above the trigger when there is no room below; closes on outside click, Escape, scroll, or resize.
-- **Flag checkboxes: Pinned, Locked, Unmanaged, Template** — always shown, managed or not.
-  - Checking Unmanaged clears `state`, `urgent`, `important`, `blocked` in the same write (`UNMANAGED_CLEARED_FIELDS` in `src/lib/constants.ts`); unchecking only flips the flag.
+- **Workflow controls: State, Urgent, Important** — `StateSelect`, `FlagSwitch` (`uil:clock`, `uil:star`)
+  - State is a select with an empty "State" option, then Prepare, Doing, Maintain, Done.
+  - Urgent and Important are icon toggles with `aria-pressed`.
+  - **Unmanaged note: the header hides only State, Urgent, and Important.** Everything else stays, including the Properties toggle.
+  - Blocked has no header control; it is edited in [Properties](#3-properties).
+- **Flag toggles: Pinned, Locked, Template, Unmanaged** — icon switches (`uil:map-pin`, `uil:lock`/`uil:unlock`, `uil:clipboard-notes`, `uil:eye-slash`), always shown, managed or not.
+  - Turning Unmanaged on clears `state`, `urgent`, `important`, `blocked` in the same write (`UNMANAGED_CLEARED_FIELDS` in `src/lib/constants.ts`); turning it off only flips the flag.
+- **Header tags** — `HeaderTags`
+  - Each tag has a remove button (`uil:times`); **+ Tag** (`uil:plus`) opens an input.
+  - Enter or blur commits, Escape cancels; a leading `#` is stripped; an empty or duplicate tag is ignored.
+  - Removing a tag also removes its inline `#tag` from the body (`dropRemovedInlineTags` in `src/lib/tags.ts`), and that body change is snapshotted first (`MainPanel`).
 - **Locked note** — `MainPanel` (`persistFrontmatterChange`)
   - Every frontmatter write except `locked` itself is dropped while the note is locked.
-  - Locked does not disable the header controls visually; only deleted notes set `readOnly`.
+  - The header toggles stay clickable but their writes are dropped; the Properties editor is disabled. Only deleted notes disable the header (`readOnly`).
 - **Deleted note view** — `MainPanel`
   - A banner offers Restore and permanent Delete; all header fields are disabled (`readOnly`).
   - Heading/paragraph menu commands are ignored.
@@ -105,18 +124,18 @@ Areas:
 
 ## 3. Properties
 
-The disclosure under the header in `PropertyPanel.tsx`.
+The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 
-- **Properties toggle** — sits outside the disabled fieldset so a deleted note can still be inspected.
-  - Unmanaged notes must not show it (see Gap in [Note header](#2-note-header)).
-- **ID, Created, Updated** — read-only; timestamps shown in local time with the raw value as a tooltip.
-- **Deadline** — date input; clearing removes the key.
-- **Team** — comma list, saved on blur; empty removes the key.
-- **Tags** — comma list, saved on blur; leading `#` stripped; empty saves `[]`.
-  - Removing a tag here also removes its inline `#tag` from the body (`dropRemovedInlineTags` in `src/lib/tags.ts`), and that body change is snapshotted first (`MainPanel`).
-- **Links** — read-only titles from `resolveOutgoingLinks`, same as the graph and footer; empty shows a `[[Note Title]]` hint.
-- **Custom fields** — every frontmatter key not in `KNOWN_FIELDS` is editable as text; `kanbanOrder` and `eisenhowerOrder` are hidden.
-- **Disabled for deleted notes** — the whole panel is a disabled fieldset when `readOnly`.
+- **Properties toggle** — `uil:info-circle` icon switch with `aria-pressed` and `aria-expanded`; shown for every note, managed or unmanaged; sits outside the disabled fieldset so a deleted note can still be inspected.
+- **Read-only rows** — Path, `id`, `created`, `updated` (`READ_ONLY_KEYS`); timestamps shown in local time with the raw value as a tooltip.
+- **Full value editor** — every other frontmatter key is an editable row (`editableKeys`, `FrontmatterValue`).
+  - Known keys come first in a fixed order (`KNOWN_ORDER`: title, state, urgent, important, blocked, pinned, locked, template, unmanaged, archived, deadline, team, tags, links, `kanbanOrder`, `eisenhowerOrder`), then other keys in file order.
+  - Editors by value: booleans toggle; `state` uses the state select; `deadline` and `YYYY-MM-DD` strings are dates and must be real calendar dates; timestamps are `YYYY-MM-DDTHH:mm:ssZ`; arrays are comma lists (numeric arrays stay numeric); numbers; objects as JSON or YAML; everything else as text.
+  - An invalid value is rejected with a toast (`reportError`) and nothing is written.
+  - Clearing a text, date, or timestamp field removes the key, unless it was already `""`.
+  - **Unmanaged note:** `state`, `urgent`, and `important` rows are hidden (`UNMANAGED_HIDDEN_KEYS`); `blocked` stays.
+- **Links** — read-only titles from `resolveOutgoingLinks`, same as the graph and footer; empty shows "—".
+- **Disabled for locked and deleted notes** — the editable rows are a fieldset disabled when `readOnly` or `locked`; the read-only rows still show.
 
 ## 4. Editor
 
@@ -360,15 +379,16 @@ The disclosure under the header in `PropertyPanel.tsx`.
 
 ## 17. MCP server
 
-`mcp-server/index.ts` plus `links.ts`, `archive.ts`, `briefing.ts`, `projects.ts`, `history.ts`, `timestamps.ts`.
+`mcp-server/index.ts` plus `links.ts`, `archive.ts`, `briefing.ts`, `projects.ts`, `history.ts`, `timestamps.ts`, `duplicates.ts`, `workflow.ts`.
 
 - **Vault selection** — `HELM_VAULTS` (comma list) wins over `HELM_VAULT`; default `$HOME/notes`.
 - **22 tools** — reads (`get_rules`, `list_notes`, `read_note`, `resolve_note`, `search_notes`, `get_eisenhower`, `get_kanban`, `get_backlinks`, `get_tag_tree`), writes (`create_note`, `update_note`, `delete_note`), history (`get_note_history`, `read_note_version`, `restore_note_version`), `get_briefing`, projects (`list_projects`, `get_project`, `create_project`, `promote_folder`, `capture_to_thinking`, `move_note_to_category`). Also `note://` resources and four prompts.
 - **Reads** — walk the vault recursively, skipping dot-directories, `assets/`, and symlinks.
 - **Archived** — excluded unless the caller passes `include_archived: true`; the app setting is ignored; `read_note` by id still works.
+- **Duplicate ids** — `partitionDuplicateIds` keeps the same copy the app keeps; every tool reads and writes that copy, and the others are not listed.
 - **Unmanaged** — `get_eisenhower`, `get_kanban`, and `get_briefing` exclude unmanaged notes.
-  - `get_kanban` buckets with `state ?? "Prepare"`, never `||`, so an empty state stays off the board.
-  - `get_eisenhower` includes only Prepare and Doing notes.
+  - `get_kanban` buckets with `state ?? "Prepare"`, never `||`, so an empty state stays off the board (`groupKanban` in `workflow.ts`).
+  - `get_eisenhower` includes only Prepare and Doing notes (`groupEisenhower`).
 - **Locked** — `update_note`, `delete_note`, `restore_note_version`, and `move_note_to_category` refuse locked notes.
 - **Protected fields** — `id` and `locked` are ignored on update and kept on restore.
 - **Snapshots** — update snapshots before writing; delete and restore force a snapshot.
@@ -385,7 +405,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Typography** — note font (system, serif, mono), font size 12–24, line height 1.2–2.2, Restore Defaults; an unknown saved font is dropped.
 - **Themes** — 15 themes; light themes listed first; persisted in `helm-theme`; unknown id falls back to the first theme.
 - **General toggles** — Autocomplete wiki links, Auto-save on edit, Show note count on tags, Show archived notes (off), Enable Projects (off), Default note view.
-  - There is no pinned-notes toggle; pinned notes always float in the note list. A stale saved `pinnedNotesFloat` is ignored (`normalizeSettings`, [PR #99](https://github.com/jordanpapaleo/helm/pull/99)).
+  - There is no pinned-notes toggle; pinned notes always float in the note list. On load, `normalizeSettings` drops any saved key that is not in `DEFAULT_SETTINGS`, including a stale `pinnedNotesFloat`.
   - **Gap:** Show note count on tags is saved but nothing reads it; counts always show.
 - **Persistence** — settings in `helm-settings` localStorage; sync prefs live with the vault in the Tauri config.
 - **Right-panel extensions** — OpenAI Assistant and Claude Assistant (`src/components/tools/extensions.ts`).

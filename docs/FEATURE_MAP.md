@@ -354,12 +354,13 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 `src-tauri/src/vault.rs` (`snapshot_note`, `list_note_history`), `mcp-server/history.ts` (KEEP IN SYNC), `src/components/editor/NoteHistoryModal.tsx`.
 
 - **Snapshots** — `<vault>/.helm-history/<note-id>/<epoch-ms>.md`, taken before a content write.
-  - Coalesced: no new snapshot if the newest is under 5 minutes old (`HISTORY_MIN_AGE_SECS = 300`, `HISTORY_MIN_AGE_MS = 300_000`).
+  - Coalesced: no new snapshot if the newest is under 5 minutes old (`HISTORY_MIN_AGE_SECS = 300`, `HISTORY_MIN_AGE_MS = 300_000`). Ordinary edits keep this window. `snapshot_note`'s `min_age_secs` is optional and defaults to 300 when omitted.
   - Retention: the newest 50 are kept (`HISTORY_MAX_KEEP = 50`).
   - Note id must be non-empty ASCII alphanumeric; a missing source file is a silent no-op.
   - Snapshot failure never blocks the save.
   - MCP delete and restore force a snapshot regardless of age.
-- **History modal** — lists versions newest first; previews the body; Restore goes through the normal save path, so the current version is snapshotted first.
+  - Editor restore forces a snapshot (`min_age_secs` 0) of the current file before the save path replaces it. If that snapshot fails, the note is left unchanged.
+- **History modal** — lists versions newest first; previews the body; Restore forces a snapshot of the current file (min age 0), then writes the chosen body through the normal save path.
 - **History is local** — `.helm-history/` is hidden from the scanner and git-ignored by sync.
 
 ## 15. Trash and archive

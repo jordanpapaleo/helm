@@ -409,17 +409,23 @@ const HISTORY_MIN_AGE_SECS: u64 = 300;
 /// Maximum snapshots kept per note.
 const HISTORY_MAX_KEEP: usize = 50;
 
+/// Snapshot the note's current on-disk content.
+///
+/// `min_age_secs` defaults to `HISTORY_MIN_AGE_SECS` (300) when omitted, so
+/// ordinary edits still coalesce at 5 minutes. Pass `0` to force a snapshot.
+/// Editor restore does that before replacing the file; MCP restore uses the same rule.
 #[tauri::command]
 pub async fn snapshot_note(
     vault_path: String,
     note_id: String,
     file_path: String,
+    min_age_secs: Option<u64>,
 ) -> Result<(), String> {
     snapshot_note_impl(
         &vault_path,
         &note_id,
         &file_path,
-        HISTORY_MIN_AGE_SECS,
+        min_age_secs.unwrap_or(HISTORY_MIN_AGE_SECS),
         HISTORY_MAX_KEEP,
     )
 }
@@ -617,6 +623,41 @@ mod tests {
 
         let entries = list_note_history_impl(dir.to_str().unwrap(), "01ABC").unwrap();
         assert_eq!(entries.len(), 1);
+        assert_eq!(fs::read_to_string(&entries[0].path).unwrap(), "v1");
+    }
+
+    #[test]
+    fn snapshot_note_min_age_zero_snapshots_inside_the_coalesce_window() {
+        let dir = temp_dir("snap-force");
+        let note = dir.join("note.md");
+        fs::write(&note, "v1").unwrap();
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            HISTORY_MIN_AGE_SECS,
+            50,
+        )
+        .unwrap();
+        fs::write(&note, "current text").unwrap();
+        // A restore passes 0 so the text about to be replaced is kept even
+        // when the newest snapshot is younger than 5 minutes.
+        snapshot_note_impl(
+            dir.to_str().unwrap(),
+            "01ABC",
+            note.to_str().unwrap(),
+            0,
+            50,
+        )
+        .unwrap();
+
+        let entries = list_note_history_impl(dir.to_str().unwrap(), "01ABC").unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            fs::read_to_string(&entries[0].path).unwrap(),
+            "current text"
+        );
+        assert_eq!(fs::read_to_string(&entries[1].path).unwrap(), "v1");
     }
 
     #[test]

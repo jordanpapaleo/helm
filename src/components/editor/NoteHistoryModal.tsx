@@ -21,9 +21,10 @@ function formatTs(tsMs: number): string {
 
 /**
  * Time machine for a single note — lists snapshots taken before saves,
- * previews any version, and restores it through the normal save path
- * (which itself snapshots the current content first, so a restore is
- * always undoable).
+ * previews any version, and restores it. Restore forces a snapshot of the
+ * current file first (min age 0, same as MCP restore) so a version younger
+ * than five minutes is not skipped, then writes the chosen body through the
+ * normal save path.
  */
 export function NoteHistoryModal({ note, vaultPath, onClose, onRestore }: NoteHistoryModalProps) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
@@ -51,8 +52,17 @@ export function NoteHistoryModal({ note, vaultPath, onClose, onRestore }: NoteHi
     }
   }
 
-  function handleRestore() {
+  async function handleRestore() {
     if (previewBody === null) return;
+    // Ordinary saves coalesce snapshots younger than 5 minutes. Restore must
+    // keep the text it is about to replace, so force this snapshot (min age 0).
+    // A failure leaves the note alone — replacing it would drop that text.
+    try {
+      await tauriCommands.snapshotNote(vaultPath, note.id, note.filePath, 0);
+    } catch (e) {
+      reportError("Failed to snapshot the current note before restore", e);
+      return;
+    }
     onRestore(previewBody);
     onClose();
   }

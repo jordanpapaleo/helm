@@ -1,5 +1,7 @@
 # Helm — Feature Documentation
 
+> For the checklist of every feature and its conditional rules, with code locations, see [FEATURE_MAP.md](FEATURE_MAP.md). Where this guide and the code disagree, the code wins and both docs are fixed.
+
 ## Overview
 
 Helm is a personal knowledge management desktop app built with Tauri, React, and TypeScript. It provides a fast, offline-first note-taking system with Zettelkasten-style linking, Eisenhower matrix prioritization, and Kanban-style workflows. Notes are stored as markdown files in a local vault with YAML frontmatter, enabling version control, syncing, and integration with other tools.
@@ -63,18 +65,18 @@ Wiki links use the `[[Note Title]]` syntax. When you type `[[`, an autocomplete 
 
 A TipTap-based rich markdown editor with:
 
-- **Auto-save**: Saves every 1 second (debounced) and on blur to ensure no data loss
+- **Auto-save**: Saves 1 second after you stop typing (when **Auto-save on edit** is on) and always on blur. Opening a note never saves it
 - **Markdown syntax**: Full CommonMark + extensions
 - **Syntax-highlighted code blocks**: Uses the One Dark color scheme
 - **Mermaid diagrams**: ` ```mermaid ` blocks render as diagrams in the editor (bundled, works offline) using the current theme's colors; only the diagram is shown. Open the source with the block's **Edit source** button (or by clicking the diagram); it hides again with **Hide source**, Escape, when the editor loses focus, or when the caret leaves the block. The caret never rests inside hidden source. Invalid diagrams show the parse error. Markdown mode always shows the source, and PDF export shows only the diagram
 - **Inline formatting**: Bold, italic, strikethrough, inline code, highlight marks (`==text==`)
 - **Task lists**: Full checkbox support with visual toggle
 - **Image paste**: Paste images directly; they're saved to `vault/assets/` and linked
-- **Wiki link autocomplete**: Start typing `[[` to see all notes; select one to insert
-- **Locked notes**: When a note is locked, the editor becomes read-only; the delete button is hidden
-- **Syntax validation**: Parse errors are caught and reported
+- **Wiki link autocomplete**: Type `[[` to see up to 8 matching titles (archived notes only when **Show archived notes** is on); select one to insert
+- **Locked notes**: When a note is locked, the editor becomes read-only; archive and delete are hidden
+- **Unmanaged notes**: The header hides State, Urgent, Important, and Blocked, and marking a note unmanaged clears those fields
 
-The editor respects the user's typography settings (font size, line height, line width) and applies them in real time.
+The editor respects the user's typography settings (note font, font size, line height) and applies them in real time.
 
 ### Export to PDF
 
@@ -84,18 +86,19 @@ The editor respects the user's typography settings (font size, line height, line
 
 The left column provides navigation and filtering:
 
-- **Search**: Full-text search across note titles and content
 - **Views nav**: Links to Dashboard, Eisenhower, Kanban, and Graph
-- **Note filters**: Quick toggles for All Notes, Locked, and Pinned
-- **Tag tree**: Hierarchical tag view with counts; click a tag to filter notes
-- **Note list**: All notes (or filtered subset), with pinned notes at the top
-- **Theme picker**: 6 curated themes with live preview
-- **Settings**: Access typography and display preferences
+- **Vaults**: Add, remove, and select vaults; folders, tags, Archive, and Trash show for the selected vault
+- **Folders**: Create, rename, and delete folders; New Note Here; drag a note onto a folder to move it
+- **Tag tree**: Hierarchical tag view with counts; click a tag to filter notes; drag a note onto a tag to add it
+- **All Notes, Archive, Trash**: Groupings above the note list
+- **Note list**: The filtered notes, pinned first, then most recently updated, with a search box that matches title, tags, and body
+- **Settings**: Typography, themes, general preferences, sync, and tools
 
 ### Dashboard
 
 An analytics and overview view showing:
 
+- **Daily Briefing**: Doing, blocked, overdue, due within 7 days, and Doing notes untouched for 14+ days. Done and unmanaged notes are left out
 - **Summary chips**: Count of notes in each Eisenhower quadrant (Do, Schedule, Delegate, Eliminate) plus Blocked and Total
 - **Interactive filters**: Click a chip to show only that subset; charts and note list update accordingly
 - **Tag distribution**: Pie chart of the top 8 tags in the current subset
@@ -114,7 +117,7 @@ A 2x2 grid for priority-based task organization:
 - **Delegate** (urgent + not important, bottom-left): Should be passed to others
 - **Eliminate** (not urgent + not important, bottom-right): Low-value, skip them
 
-Drag cards between quadrants to update `urgent` and `important` frontmatter flags. Changes save immediately to disk. Each quadrant has a `+` button that opens the same Blank / template menu as New Note and creates a note in that quadrant.
+Only managed notes in Prepare or Doing appear. Drag cards between quadrants to update `urgent` and `important` frontmatter flags; the order within a quadrant is kept. Changes save immediately to disk. Each quadrant has a `+` button that opens the same Blank / template menu as New Note and creates a note in that quadrant.
 
 ### Kanban Board
 
@@ -125,19 +128,20 @@ A 4-column drag-and-drop workflow board:
 - **Maintain**: Completed but needs ongoing attention
 - **Done**: Finished
 
-Drag cards between columns to update the `state` frontmatter field. Changes save immediately. Each column has a `+` button that opens the same Blank / template menu as New Note and creates a note in that state. Columns automatically fill available width.
+Unmanaged notes never appear. Drag cards between columns to update the `state` frontmatter field; the order within a column is kept. Changes save immediately. Each column has a `+` button that opens the same Blank / template menu as New Note and creates a note in that state. Columns automatically fill available width.
 
 ### Graph View
 
 An interactive force-directed graph of note connections:
 
-- **Nodes**: Each note as a blue circle, sized by number of outgoing links
+- **Nodes**: Each note as a circle colored by state and sized by its number of links
 - **Edges**: Lines between notes connected by wiki links (from both saved frontmatter and live content analysis)
 - **Pan & zoom**: Standard canvas controls
 - **Click nodes**: Select and open a note, switching to the editor view
+- **Drag to link**: Drop a node on another to add a frontmatter link; click a frontmatter edge to remove it
 - **Labels**: Note titles appear when zoomed in enough for readability
 
-The graph is computed on demand from the notes and their link data, updating whenever notes change.
+The graph shows every visible note in the vault (it is not limited to a project) and updates whenever notes change.
 
 ### Frontmatter Fields
 
@@ -156,19 +160,14 @@ The graph is computed on demand from the notes and their link data, updating whe
 | `team` | string[]? | Optional list of responsible team members |
 | `links` | string[]? | Array of ULID references to linked notes (from `[[wiki links]]`) |
 | `locked` | boolean? | If true, note is read-only in the editor; delete and archive are hidden |
-| `pinned` | boolean? | If true, note floats to the top of all lists |
+| `pinned` | boolean? | If true, note floats to the top of the note list |
 | `archived` | boolean? | If true, the note is hidden from discovery views. Absent or false means active |
+| `unmanaged` | boolean? | If true, the note stays off Kanban, Eisenhower, and the briefing, and its workflow fields are cleared |
+| `template` | boolean? | If true, the note is offered in New Note menus |
 
 ### Themes
 
-Six curated color themes are available, each with semantic colors for background, surface, border, text, muted text, and accent:
-
-- **Midnight**: Dark blue-accented theme (accent: `#0a84ff`)
-- **Light**: Bright white surface with blue accent (accent: `#007aff`)
-- **Dracula**: Purple-accented dark theme (accent: `#ff79c6`)
-- **Nord**: Arctic blue dark theme (accent: `#88c0d0`)
-- **Catppuccin**: Lavender dark theme (accent: `#cba6f7`)
-- **Tokyo Night**: Indigo dark theme (accent: `#7aa2f7`)
+Fifteen themes are available: Light, Dark, Cyberpunk, Synthwave, Lo-Fi, CMYK, Garden, Nord, Dracula, Abyss, Corporate, Retro, Dim, Sunset, and Winter (`src/lib/themes.ts`).
 
 All themes are applied globally via CSS custom properties. Theme selection is persisted to localStorage.
 
@@ -177,14 +176,14 @@ All themes are applied globally via CSS custom properties. Theme selection is pe
 User preferences accessible from the sidebar:
 
 - **Typography**:
+  - Note font: System, Serif, or Mono
   - Font size: 12–24 px (default 16 px)
   - Line height: 1.2–2.2 (default 1.7)
-  - Line width: 40–100 ch (default 72 ch)
   - Live preview in editor while adjusting
 
-- **Themes**: Card grid to select any of the 6 themes
+- **Themes**: Card grid to select any of the 15 themes
 
-- **General**: Preference checkboxes, including **Show archived notes** (off by default, persisted in localStorage)
+- **General**: Preference toggles, including **Show archived notes** and **Enable Projects** (both off by default, persisted in localStorage)
 
 - **Sync**: Optional per-vault Git remote. Off by default, so a vault with no sync settings behaves as before. Connect shows the files that will be uploaded, then Helm can pull on startup and push after local checkpoints. Sync now, Pull, and Push are also on each connected vault in the sidebar. Conflicts keep the local notes and need attention. Sync does not force-push, reset the worktree, or delete untracked files. Replacing the remote or the local copy is a separate recovery action ([#48](https://github.com/jordanpapaleo/helm/issues/48)). Time Machine snapshots in `.helm-history/` stay on this machine.
 
@@ -192,13 +191,13 @@ All settings except sync are persisted to localStorage and applied immediately o
 
 ### Pinned & Locked Notes
 
-**Pinned notes** float to the top of the note list in all views (sidebar, dashboard filtered lists, etc.). Set via the `pinned` frontmatter field.
+**Pinned notes** always float to the top of the note list; there is no setting to turn this off. Other lists (Dashboard, boards) do not float pinned notes. Set via the `pinned` frontmatter field.
 
 **Locked notes** are read-only in the editor:
-- Content cannot be edited
-- Delete button is hidden
-- A lock icon is shown in the editor header
+- Content and frontmatter cannot be edited (except unlocking)
+- The title pencil is hidden
 - Archive and delete are unavailable until the note is unlocked
+- Find works, but Replace is not offered
 - Useful for reference notes you want to preserve exactly
 
 Set via the `locked` frontmatter field.
@@ -234,7 +233,7 @@ Projects are off until **Settings → General → Enable Projects**. Turning the
 
 A project is a folder with `helm-project.json` at its root. The file holds a stable project id and the id of the main page. The folder name is only a label. Clicking a project opens that main page. Expanding it shows the same four folders for every project: Thinking, Features, Bugs, and Context / Docs. Each of those rows has a `+` button. It opens the same Blank / template menu as New Note and creates the note in that section.
 
-The main page edits purpose, plan / milestone, next action, where work left off, and blockers or decisions, next to a count of that project's Doing and blocked notes. Dashboard, Kanban, and Eisenhower from the project include only that project's notes. **Leave project** in the sidebar clears that filter and returns to the vault-wide Dashboard. Eisenhower, Kanban, the link graph, and the note list are unscoped again after that.
+The main page edits purpose, plan / milestone, next action, where work left off, and blockers or decisions, next to a count of that project's Doing and blocked notes. Dashboard, Kanban, and Eisenhower from the project include only that project's notes. **Leave project** in the sidebar clears that filter and returns to the vault-wide Dashboard. Eisenhower, Kanban, and the note list are unscoped again after that. The link graph is always vault-wide.
 
 New notes in Thinking and Context / Docs start unmanaged, so they stay off the boards and the daily briefing until you mark them managed. Features and Bugs are a classification, not a commitment: a new note there is not marked Doing. Moving a note between those folders keeps its id, history, links, and workflow fields. Use **Move to category** in the note list.
 

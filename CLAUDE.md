@@ -17,6 +17,15 @@ npm run tauri build     # produce distributable .dmg — but see Releasing
 
 Before committing, all four must be green: `npm test`, `npm run test:types`, `npm run lint`, `cargo test`.
 
+## Feature Map — required for every change
+
+`docs/FEATURE_MAP.md` lists every feature and its conditional rules by area, with code locations. Features have been lost when components were rewritten, so:
+
+1. **Before working on a feature**, read the map sections for every area you will touch.
+2. **After the change**, verify each feature and rule in those areas either still works or was intentionally removed. Use tests, a manual check, or both.
+3. **Report it in the PR** under **Feature map check** (`.github/pull_request_template.md`): list the areas touched, then each mapped feature as "persists (verified how)" or "intentionally removed (why)".
+4. **Update the map in the same PR** when behavior is added, changed, or removed. If the map and the code disagree, fix whichever is wrong and say so in the PR.
+
 ## Project Structure
 
 ```
@@ -84,6 +93,8 @@ Markdown content here. You can use [[Wiki Links]] and #inline-tags.
 
 ## Key Conventions
 
+- **Feature map** — read `docs/FEATURE_MAP.md` for the areas you touch before changing them, and keep it current (see Feature Map above)
+
 - **IDs are ULIDs** — never use filenames as identifiers; notes can be renamed
 - **Links use IDs** — `links` frontmatter stores ULIDs so renames never break the graph
 - **Tauri commands** — all file I/O goes through `src/lib/tauri-commands.ts` (never use `fetch` or `fs` directly in React)
@@ -129,3 +140,4 @@ Full process is documented in `CONTRIBUTING.md` under the **Releasing** section.
 - `docs/plans/2026-03-13-helm.md` — original implementation plan (fully executed)
 - `docs/plans/2026-03-13-helm-design.md` — design document
 - `docs/FEATURES.md` — full feature documentation
+- `docs/FEATURE_MAP.md` — feature and rule checklist by area; every PR reports against it

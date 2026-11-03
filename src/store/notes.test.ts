@@ -654,6 +654,109 @@ describe("renameNote", () => {
     expect(result.current.notes[0].frontmatter.title).toBe("Test Note");
   });
 
+  it("refuses a rename when another note already occupies the destination", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useToastStore.setState({ toasts: [] });
+    const note = makeNote({
+      id: "n1",
+      filePath: "/vault/old-title.md",
+      fileName: "old-title.md",
+      frontmatter: { ...makeNote().frontmatter, id: "n1", title: "Old Title" },
+    });
+    const other = makeNote({
+      id: "n2",
+      filePath: "/vault/new-title.md",
+      fileName: "new-title.md",
+      content: "keep me",
+      frontmatter: { ...makeNote().frontmatter, id: "n2", title: "Already There" },
+    });
+    const { result } = renderHook(() => useNoteStore());
+    act(() => {
+      result.current.setNotes([note, other]);
+      result.current.updateNote({
+        ...note,
+        frontmatter: { ...note.frontmatter, title: "New Title" },
+      });
+    });
+
+    await act(async () => {
+      await result.current.renameNote(note, "New Title");
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(tauriCommands.renameNote).not.toHaveBeenCalled();
+    const kept = result.current.notes.find((item) => item.id === "n1");
+    const occupant = result.current.notes.find((item) => item.id === "n2");
+    expect(kept?.filePath).toBe("/vault/old-title.md");
+    expect(kept?.frontmatter.title).toBe("Old Title");
+    expect(occupant?.filePath).toBe("/vault/new-title.md");
+    expect(occupant?.content).toBe("keep me");
+    expect(useToastStore.getState().toasts.map((toast) => toast.message)).toEqual([
+      "Failed to rename note: /vault/new-title.md already has a note",
+    ]);
+  });
+
+  it("refuses a rename onto a duplicate copy that is not the kept note", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useToastStore.setState({ toasts: [] });
+    const keeper = makeNote({
+      id: "shared",
+      filePath: "/vault/alpha.md",
+      fileName: "alpha.md",
+      content: "keeper",
+      frontmatter: { ...makeNote().frontmatter, id: "shared", title: "Alpha" },
+    });
+    const copy = makeNote({
+      id: "shared",
+      filePath: "/vault/alpha-copy.md",
+      fileName: "alpha-copy.md",
+      content: "copy",
+      frontmatter: { ...makeNote().frontmatter, id: "shared", title: "Alpha" },
+    });
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([keeper, copy]));
+    expect(result.current.notes.map((item) => item.filePath)).toEqual(["/vault/alpha.md"]);
+    expect(occupiedNotePaths().sort()).toEqual(["/vault/alpha-copy.md", "/vault/alpha.md"]);
+
+    await act(async () => {
+      await result.current.renameNote(keeper, "Alpha Copy");
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(tauriCommands.renameNote).not.toHaveBeenCalled();
+    expect(result.current.notes[0].filePath).toBe("/vault/alpha.md");
+    expect(result.current.notes[0].frontmatter.title).toBe("Alpha");
+    expect(result.current.duplicateGroups[0].copies[0].content).toBe("copy");
+    expect(useToastStore.getState().toasts[0]?.message).toBe(
+      "Failed to rename note: /vault/alpha-copy.md already has a note",
+    );
+  });
+
+  it("still renames when the destination path is this note's own file", async () => {
+    const note = makeNote({
+      id: "n1",
+      filePath: "/vault/test-note.md",
+      fileName: "test-note.md",
+      frontmatter: { ...makeNote().frontmatter, id: "n1", title: "Test Note" },
+    });
+    const { result } = renderHook(() => useNoteStore());
+    act(() => result.current.setNotes([note]));
+
+    await act(async () => {
+      await result.current.renameNote(result.current.notes[0], "Test Note!");
+    });
+
+    expect(tauriCommands.writeNote).toHaveBeenCalledWith(
+      "/vault/test-note.md",
+      expect.stringContaining("Test Note!"),
+    );
+    expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+      "/vault/test-note.md",
+      "/vault/test-note.md",
+    );
+    expect(result.current.notes[0].frontmatter.title).toBe("Test Note!");
+  });
+
   it("rewrites [[Old Title]] in other notes and keeps their link ids", async () => {
     const renamed = makeNote({
       id: "alpha",

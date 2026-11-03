@@ -1216,6 +1216,105 @@ describe("MainPanel title rename", () => {
     expect(screen.getByRole("heading", { name: "New Title" })).toBeInTheDocument();
   });
 
+  it("keeps the old title when the new file name already belongs to another note", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useToastStore.setState({ toasts: [] });
+    const note = makeNote();
+    const other = makeNote({
+      id: "01OTHER",
+      filePath: "/vault/new-title.md",
+      fileName: "new-title.md",
+      content: "occupied",
+    });
+    other.frontmatter = { ...other.frontmatter, id: "01OTHER", title: "Already There" };
+    setup(note, true);
+    act(() => {
+      useNoteStore.getState().setNotes([note, other]);
+      useNoteStore.getState().selectNote(note.id);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    const input = screen.getByRole("textbox", { name: "Note title" });
+    fireEvent.change(input, { target: { value: "New Title" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.map((toast) => toast.message)).toEqual([
+        "Failed to rename note: /vault/new-title.md already has a note",
+      ]);
+    });
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(tauriCommands.renameNote).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Test Note" })).toBeInTheDocument();
+    const saved = useNoteStore.getState().notes.find((item) => item.id === note.id);
+    expect(saved?.frontmatter.title).toBe("Test Note");
+    expect(saved?.filePath).toBe("/vault/test.md");
+    expect(useNoteStore.getState().notes.find((item) => item.id === "01OTHER")?.content).toBe(
+      "occupied",
+    );
+  });
+
+  it("does not persist a rejected title from a flag write that was still queued", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useToastStore.setState({ toasts: [] });
+    let releaseFirstWrite: () => void = () => {};
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve;
+    });
+    const writes: Array<{ path: string; content: string }> = [];
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (path, content) => {
+      writes.push({ path, content });
+      if (writes.length === 1) await firstWrite;
+    });
+
+    const note = makeNote();
+    const other = makeNote({
+      id: "01OTHER",
+      filePath: "/vault/new-title.md",
+      fileName: "new-title.md",
+      content: "occupied",
+    });
+    other.frontmatter = { ...other.frontmatter, id: "01OTHER", title: "Already There" };
+    setup(note, true);
+    act(() => {
+      useNoteStore.getState().setNotes([note, other]);
+      useNoteStore.getState().selectNote(note.id);
+    });
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+      await waitFor(() => expect(writes).toHaveLength(1));
+      // This flag write stays queued behind the urgent write, so it reads the
+      // store only after the title edit. A rejected title must not be there.
+      fireEvent.click(screen.getByRole("button", { name: "Important" }));
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+      const input = screen.getByRole("textbox", { name: "Note title" });
+      fireEvent.change(input, { target: { value: "New Title" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      releaseFirstWrite();
+
+      await waitFor(() => expect(writes.length).toBeGreaterThan(1));
+      await waitFor(() => {
+        expect(
+          useNoteStore.getState().notes.find((item) => item.id === note.id)?.frontmatter.title,
+        ).toBe("Test Note");
+      });
+
+      const saved = useNoteStore.getState().notes.find((item) => item.id === note.id);
+      expect(saved?.frontmatter.urgent).toBe(true);
+      expect(saved?.frontmatter.important).toBe(true);
+      expect(saved?.filePath).toBe("/vault/test.md");
+      const persisted = writes.filter((write) => write.path === "/vault/test.md");
+      expect(persisted.at(-1)?.content).toContain("title: Test Note");
+      expect(persisted.at(-1)?.content).not.toContain("New Title");
+      expect(persisted.some((write) => write.content.includes("New Title"))).toBe(false);
+    } finally {
+      releaseFirstWrite();
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
   it("keeps a checkbox change that lands while the title rename is still saving", async () => {
     let releaseRenameWrite: () => void = () => {};
     const renameWriteGate = new Promise<void>((resolve) => {

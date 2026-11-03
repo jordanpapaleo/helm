@@ -251,6 +251,19 @@ export function occupiedNotePaths(): string[] {
   return allNotes(useNoteStore.getState()).map((n) => n.filePath);
 }
 
+/**
+ * Path a title rename would take when another loaded note already occupies it.
+ * This note's own file is not a collision. Null when the rename can proceed.
+ */
+export function occupiedRenamePath(note: Note, newTitle: string): string | null {
+  if (!newTitle || newTitle === note.frontmatter.title) return null;
+  const folder = note.filePath.split("/").slice(0, -1).join("/");
+  const newFilePath = `${folder}/${slugify(newTitle)}.md`;
+  if (newFilePath === note.filePath) return null;
+  if (!occupiedNotePaths().includes(newFilePath)) return null;
+  return newFilePath;
+}
+
 /** Every loaded file: the keepers in `notes` plus the duplicate copies. */
 function allNotes(state: Pick<NoteStore, "notes" | "duplicateGroups">): Note[] {
   if (state.duplicateGroups.length === 0) return state.notes;
@@ -403,6 +416,21 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const folder = note.filePath.split("/").slice(0, -1).join("/");
     const newFileName = `${slugify(newTitle)}.md`;
     const newFilePath = `${folder}/${newFileName}`;
+    // Checked before any write. Callers that paint the title first must use
+    // the same helper before painting, or a queued save will persist it.
+    const blocked = occupiedRenamePath(note, newTitle);
+    if (blocked) {
+      const current = get().notes.find((item) => item.id === note.id);
+      // A caller may have painted the new title before this refusal. Put it back.
+      if (current && current.filePath === note.filePath && current.frontmatter.title === newTitle) {
+        get().updateNote({
+          ...current,
+          frontmatter: { ...current.frontmatter, title: oldTitle },
+        });
+      }
+      reportError("Failed to rename note", new Error(`${blocked} already has a note`));
+      return;
+    }
     const updated: Note = {
       ...note,
       filePath: newFilePath,

@@ -40,10 +40,18 @@ interface UIStore {
   newNoteMenuOpen: boolean;
   openNewNoteMenu: () => void;
   closeNewNoteMenu: () => void;
+  /** ⌘P note palette. */
+  quickOpenOpen: boolean;
+  setQuickOpenOpen: (open: boolean) => void;
 
   navHistory: NavEntry[];
   navIndex: number;
   navigate: (entry: NavEntry) => void;
+  /**
+   * Show a note in the editor, as clicking it in the note list does. Keeps the
+   * current grouping unless one is given.
+   */
+  openNote: (noteId: string, grouping?: Grouping) => void;
   goBack: () => void;
   goForward: () => void;
 }
@@ -67,6 +75,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
   newNoteMenuOpen: false,
   openNewNoteMenu: () => set({ newNoteMenuOpen: true }),
   closeNewNoteMenu: () => set({ newNoteMenuOpen: false }),
+  quickOpenOpen: false,
+  setQuickOpenOpen: (quickOpenOpen) => set({ quickOpenOpen }),
 
   navHistory: [initialEntry],
   navIndex: 0,
@@ -98,6 +108,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     });
     useNoteStore.getState().selectNote(entry.selectedNoteId);
   },
+
+  openNote: (noteId, grouping = get().selectedGrouping) =>
+    get().navigate({ view: "notes", selectedNoteId: noteId, selectedGrouping: grouping }),
 
   goBack: () => {
     const { navHistory, navIndex } = get();

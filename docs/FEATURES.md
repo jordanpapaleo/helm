@@ -82,6 +82,17 @@ The editor respects the user's typography settings (note font, font size, line h
 
 **File → Export to PDF…** (⇧⌘E) or the export button in the note header saves the current note as a PDF, picking the destination in a save dialog. The PDF is the rendered note — title, formatted text and mermaid diagrams as vector graphics — not the markdown source, and it works the same with markdown mode on. It is laid out by the platform's own print engine (WebKit on macOS and Linux), so text stays selectable. Light themes print as they look; dark themes print on the Light palette, because print engines leave page margins white. Windows is not supported yet.
 
+### Go to Note (⌘P)
+
+**File → Go to Note…** (⌘P on macOS, Ctrl+P elsewhere) opens a note palette from anywhere in the main window, including while you are typing in the editor. Helm has no Print command, so the shortcut is free; it also stops the webview from opening its own print dialog. The quick-capture window does not have the palette.
+
+- **Search as you type**: Uses the app's search index with prefix and typo-tolerant matching. Notes whose title matches come first, then notes that match only in tags or the body. Up to 50 results.
+- **Empty query**: Lists the 20 most recently updated notes.
+- **Each row**: Title, folder (relative to the vault; the vault name for a note at the root, prefixed with the vault name when several vaults are loaded), the note's state when it is managed, its first tag, and an Archived badge.
+- **Keys**: ↑/↓ move the selection (wrapping), Enter opens it, Escape closes and returns focus to where you were. Clicking a row opens it; clicking outside closes.
+- **Opening**: The note becomes the active note in the editor exactly as clicking it in the note list does: the Notes view opens, the current folder or tag grouping is kept, and Back/Forward history records it. From Trash, the palette switches to All Notes so the live note is shown.
+- **What is listed**: Unmanaged notes and templates are included. Archived notes are listed only when **Show archived notes** is on, as in the other discovery views. Notes in Trash are never listed.
+
 ### Sidebar
 
 The left column provides navigation and filtering:
@@ -309,7 +320,8 @@ Helm uses Zustand for all global state, split into four focused stores:
 
 2. **ui store** (`src/store/ui.ts`):
    - Active view (dashboard, eisenhower, kanban, graph, notes)
-   - Method: `setView`
+   - Whether the ⌘P Go to Note palette is open
+   - Methods: `setView`, `navigate`, `openNote` (show a note in the editor, shared by the note list and the palette)
 
 3. **theme store** (`src/store/theme.ts`):
    - Current theme object
@@ -334,6 +346,7 @@ src/
     layout/
       MainPanel.tsx         # Editor + property panel
       LeftColumn.tsx        # Sidebar (search, views, tags, note list)
+    QuickOpen.tsx           # ⌘P Go to Note palette (main window only)
     settings/
       SettingsModal.tsx     # Typography, theme, and Git sync controls
       SyncTab.tsx           # Per-vault remote connect, pull, and push
@@ -347,6 +360,7 @@ src/
     themes.ts             # Theme definitions and applyTheme
     settings.ts           # Settings interface and applySettings
     search.ts             # Full-text search index and searchNotes
+    quick-open.ts         # ⌘P palette ranking (recent notes, title-first search) and folder labels
     tauri-commands.ts     # Bindings to Tauri Rust backend (file I/O, vault ops)
     constants.ts          # NOTE_STATES, colors, etc.
   store/

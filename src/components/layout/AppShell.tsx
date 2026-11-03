@@ -3,6 +3,7 @@ import { type Panel, workspaceGeometry } from "../../lib/workspace-layout";
 import { useLayoutStore } from "../../store/layout";
 import { useUIStore } from "../../store/ui";
 import { DuplicateIdsAlert } from "../DuplicateIdsAlert";
+import { QuickOpen } from "../QuickOpen";
 import { SettingsModal } from "../settings/SettingsModal";
 import { GlobalNewNoteMenu } from "../sidebar/NewNoteMenu";
 import { AppToolbar } from "./AppToolbar";
@@ -123,6 +124,7 @@ export function AppShell() {
       </div>
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       <GlobalNewNoteMenu />
+      <QuickOpen />
     </div>
   );
 }

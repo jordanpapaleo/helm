@@ -70,6 +70,7 @@ export default function App() {
       fns.push(await listen("show-mcp-setup", () => setShowMcpSetup(true)));
       fns.push(await listen("new-note", () => useUIStore.getState().openNewNoteMenu()));
       fns.push(await listen("open-settings", () => useUIStore.getState().setSettingsOpen(true)));
+      fns.push(await listen("quick-open", () => useUIStore.getState().setQuickOpenOpen(true)));
       fns.push(await listen("toggle-markdown", () => useUIStore.getState().toggleMarkdownMode()));
       fns.push(
         await listen("check-for-updates", () => {

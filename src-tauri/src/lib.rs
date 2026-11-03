@@ -220,6 +220,11 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+N")
                 .build(app)?;
 
+            let quick_open_item = MenuItemBuilder::new("Go to Note…")
+                .id("quick_open")
+                .accelerator("CmdOrCtrl+P")
+                .build(app)?;
+
             let add_vault_item = MenuItemBuilder::new("Add Vault…")
                 .id("add_vault")
                 .build(app)?;
@@ -231,6 +236,7 @@ pub fn run() {
 
             let file_menu = SubmenuBuilder::new(app, "File")
                 .item(&new_note_item)
+                .item(&quick_open_item)
                 .separator()
                 .item(&export_pdf_item)
                 .separator()
@@ -384,6 +390,10 @@ pub fn run() {
                     }
                     "new_note" => {
                         let _ = app_handle.emit("new-note", ());
+                    }
+                    // Only the main window has the palette; the capture window ignores it.
+                    "quick_open" => {
+                        let _ = app_handle.emit_to("main", "quick-open", ());
                     }
                     "export_pdf" => {
                         let _ = app_handle.emit("export-pdf", ());

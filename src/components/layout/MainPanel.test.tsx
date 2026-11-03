@@ -1216,6 +1216,44 @@ describe("MainPanel title rename", () => {
     expect(screen.getByRole("heading", { name: "New Title" })).toBeInTheDocument();
   });
 
+  it("keeps the old title when the new file name already belongs to another note", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useToastStore.setState({ toasts: [] });
+    const note = makeNote();
+    const other = makeNote({
+      id: "01OTHER",
+      filePath: "/vault/new-title.md",
+      fileName: "new-title.md",
+      content: "occupied",
+    });
+    other.frontmatter = { ...other.frontmatter, id: "01OTHER", title: "Already There" };
+    setup(note, true);
+    act(() => {
+      useNoteStore.getState().setNotes([note, other]);
+      useNoteStore.getState().selectNote(note.id);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    const input = screen.getByRole("textbox", { name: "Note title" });
+    fireEvent.change(input, { target: { value: "New Title" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.map((toast) => toast.message)).toEqual([
+        "Failed to rename note: /vault/new-title.md already has a note",
+      ]);
+    });
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(tauriCommands.renameNote).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Test Note" })).toBeInTheDocument();
+    const saved = useNoteStore.getState().notes.find((item) => item.id === note.id);
+    expect(saved?.frontmatter.title).toBe("Test Note");
+    expect(saved?.filePath).toBe("/vault/test.md");
+    expect(useNoteStore.getState().notes.find((item) => item.id === "01OTHER")?.content).toBe(
+      "occupied",
+    );
+  });
+
   it("keeps a checkbox change that lands while the title rename is still saving", async () => {
     let releaseRenameWrite: () => void = () => {};
     const renameWriteGate = new Promise<void>((resolve) => {

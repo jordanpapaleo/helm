@@ -403,6 +403,21 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const folder = note.filePath.split("/").slice(0, -1).join("/");
     const newFileName = `${slugify(newTitle)}.md`;
     const newFilePath = `${folder}/${newFileName}`;
+    // occupiedNotePaths includes duplicate copies, which are not in `notes`.
+    // This note's own file is occupied too; renaming onto it only rewrites content.
+    if (newFilePath !== note.filePath && occupiedNotePaths().includes(newFilePath)) {
+      const current = get().notes.find((item) => item.id === note.id);
+      // The header paints the new title before this runs. Put that paint back
+      // so a refusal does not leave the store claiming a rename that never happened.
+      if (current && current.filePath === note.filePath && current.frontmatter.title === newTitle) {
+        get().updateNote({
+          ...current,
+          frontmatter: { ...current.frontmatter, title: oldTitle },
+        });
+      }
+      reportError("Failed to rename note", new Error(`${newFilePath} already has a note`));
+      return;
+    }
     const updated: Note = {
       ...note,
       filePath: newFilePath,

@@ -33,17 +33,52 @@ function reportSyncHold(noteId: string) {
   );
 }
 
-// Extract absolute file paths from asset:// URLs embedded in markdown image tags.
+// Drive-letter and UNC paths. A URL pathname for a drive is `/C:\...` or `/C:/...`.
+// On macOS and Linux `\` is a filename character, so it is not a separator there.
+function isWindowsPath(input: string): boolean {
+  return (
+    /^[A-Za-z]:[\\/]/.test(input) || /^\/[A-Za-z]:[\\/]/.test(input) || input.startsWith("\\\\")
+  );
+}
+
+// Absolute path with trailing slashes stripped, or null when it is relative
+// or contains `..`. Backslashes stay literal except in a Windows path.
+function absolutePath(input: string): string | null {
+  let path = isWindowsPath(input) ? input.replaceAll("\\", "/") : input;
+  if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1);
+  if (path.length > 1) path = path.replace(/\/+$/, "");
+  const isAbsolute = path.startsWith("/") || /^[A-Za-z]:\//.test(path);
+  if (!isAbsolute || path.split("/").includes("..")) return null;
+  return path;
+}
+
+// Normalized path of a file strictly inside `<vaultPath>/assets`, or null.
+// A sibling such as `<vault>/assets-evil` does not match, and a decoded
+// `%2F..%2F` traversal does not either.
+function vaultAssetFile(vaultPath: string, assetPath: string): string | null {
+  const vault = absolutePath(vaultPath);
+  const asset = absolutePath(assetPath);
+  if (!vault || !asset) return null;
+  const prefix = `${vault}/assets/`;
+  if (!asset.startsWith(prefix)) return null;
+  const relative = asset.slice(prefix.length);
+  if (!relative.split("/").every((segment) => segment !== "" && segment !== ".")) return null;
+  return asset;
+}
+
+// Extract asset files referenced by markdown images, limited to this vault's
+// assets directory.
 // http://asset.localhost/Users/foo/notes/assets/img.png → /Users/foo/notes/assets/img.png
-function extractAssetPaths(content: string): Set<string> {
+function extractAssetPaths(content: string, vaultPath: string | null): Set<string> {
   const paths = new Set<string>();
+  if (!vaultPath) return paths;
   for (const match of content.matchAll(/!\[.*?\]\(([^)]+)\)/g)) {
     const src = match[1];
     try {
       const url = new URL(src);
-      if (url.hostname === "asset.localhost") {
-        paths.add(decodeURIComponent(url.pathname));
-      }
+      if (url.hostname !== "asset.localhost") continue;
+      const assetPath = vaultAssetFile(vaultPath, decodeURIComponent(url.pathname));
+      if (assetPath) paths.add(assetPath);
     } catch {
       /* not a URL, skip */
     }
@@ -144,14 +179,17 @@ async function persistNoteContent(
     reportError("Failed to save note", e);
   }
 
-  // Delete any asset files removed from this note since the last save
-  const oldPaths = extractAssetPaths(latest.content);
-  const newPaths = extractAssetPaths(content);
-  for (const assetPath of oldPaths) {
-    if (!newPaths.has(assetPath)) {
-      tauriCommands.deleteAsset(assetPath).catch(() => {
-        /* already gone, ignore */
-      });
+  // Delete asset files removed from this note since the last save. Only paths
+  // inside this vault's assets directory are eligible; anything else is ignored.
+  const oldPaths = extractAssetPaths(latest.content, vaultPath);
+  const newPaths = extractAssetPaths(content, vaultPath);
+  if (vaultPath) {
+    for (const assetPath of oldPaths) {
+      if (!newPaths.has(assetPath)) {
+        tauriCommands.deleteAsset(vaultPath, assetPath).catch(() => {
+          /* already gone, ignore */
+        });
+      }
     }
   }
   return "saved";

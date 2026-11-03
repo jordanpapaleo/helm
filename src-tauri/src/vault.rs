@@ -438,20 +438,69 @@ pub async fn list_note_history(
     list_note_history_impl(&vault_path, &note_id)
 }
 
-fn delete_asset_impl(file_path: &str) -> Result<(), String> {
+fn outside_assets(file_path: &str) -> String {
+    format!(
+        "Refusing to delete a file outside the vault assets directory: {}",
+        file_path
+    )
+}
+
+fn is_markdown(path: &std::path::Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("md")
+}
+
+/// The file `delete_asset` is allowed to remove: a non-markdown file whose
+/// lexical path and canonical path are both strictly inside `<vault>/assets`.
+fn vault_asset_file(vault_path: &str, file_path: &str) -> Result<PathBuf, String> {
+    let vault = validate_path(vault_path)?;
     let path = validate_path(file_path)?;
-    if path.extension().and_then(|e| e.to_str()) == Some("md") {
+    let relative = path
+        .strip_prefix(vault.join("assets"))
+        .map_err(|_| outside_assets(file_path))?;
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(outside_assets(file_path));
+    }
+    if is_markdown(&path) {
         return Err(format!(
             "Refusing to delete a note file as an asset: {}",
             file_path
         ));
     }
+
+    // `assets` itself must be a real directory. A symlink there would make a
+    // lexical prefix check delete files in the link target.
+    let canonical_vault = fs::canonicalize(&vault).map_err(|_| outside_assets(file_path))?;
+    let assets_dir = canonical_vault.join("assets");
+    let assets_meta = fs::symlink_metadata(&assets_dir).map_err(|_| outside_assets(file_path))?;
+    if !assets_meta.file_type().is_dir() {
+        return Err(outside_assets(file_path));
+    }
+
+    let canonical_file = fs::canonicalize(&path).map_err(|err| err.to_string())?;
+    if !canonical_file.starts_with(&assets_dir) || canonical_file == assets_dir {
+        return Err(outside_assets(file_path));
+    }
+    if is_markdown(&canonical_file) {
+        return Err(format!(
+            "Refusing to delete a note file as an asset: {}",
+            file_path
+        ));
+    }
+    Ok(path)
+}
+
+fn delete_asset_impl(vault_path: &str, file_path: &str) -> Result<(), String> {
+    let path = vault_asset_file(vault_path, file_path)?;
     fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_asset(file_path: String) -> Result<(), String> {
-    delete_asset_impl(&file_path)
+pub async fn delete_asset(vault_path: String, file_path: String) -> Result<(), String> {
+    delete_asset_impl(&vault_path, &file_path)
 }
 
 #[tauri::command]
@@ -747,9 +796,11 @@ mod tests {
     #[test]
     fn delete_asset_impl_refuses_markdown_files() {
         let dir = temp_dir("asset-refuse-md");
-        let md = dir.join("note.md");
+        let assets = dir.join("assets");
+        fs::create_dir(&assets).unwrap();
+        let md = assets.join("note.md");
         fs::write(&md, "content").unwrap();
-        assert!(delete_asset_impl(md.to_str().unwrap()).is_err());
+        assert!(delete_asset_impl(dir.to_str().unwrap(), md.to_str().unwrap()).is_err());
         assert!(md.exists(), "markdown file must not be deleted");
     }
 
@@ -799,12 +850,73 @@ mod tests {
     }
 
     #[test]
-    fn delete_asset_impl_deletes_non_markdown_file() {
+    fn delete_asset_impl_deletes_file_inside_vault_assets() {
         let dir = temp_dir("asset-delete");
-        let img = dir.join("img.png");
+        let assets = dir.join("assets");
+        fs::create_dir(&assets).unwrap();
+        let img = assets.join("img.png");
         fs::write(&img, [1, 2, 3]).unwrap();
-        delete_asset_impl(img.to_str().unwrap()).unwrap();
+        delete_asset_impl(dir.to_str().unwrap(), img.to_str().unwrap()).unwrap();
         assert!(!img.exists());
+    }
+
+    #[test]
+    fn delete_asset_impl_refuses_files_outside_vault_assets() {
+        let dir = temp_dir("asset-outside");
+        let vault = dir.to_str().unwrap();
+        let assets = dir.join("assets");
+        fs::create_dir(&assets).unwrap();
+
+        let outside = dir.join("secret.png");
+        fs::write(&outside, [1]).unwrap();
+        assert!(delete_asset_impl(vault, outside.to_str().unwrap()).is_err());
+        assert!(outside.exists());
+
+        let sibling = dir.join("assets-evil");
+        fs::create_dir(&sibling).unwrap();
+        let sibling_file = sibling.join("pic.png");
+        fs::write(&sibling_file, [1]).unwrap();
+        assert!(delete_asset_impl(vault, sibling_file.to_str().unwrap()).is_err());
+        assert!(sibling_file.exists());
+
+        assert!(delete_asset_impl(vault, assets.to_str().unwrap()).is_err());
+        assert!(assets.exists());
+
+        let traversal = assets.join("..").join("secret.png");
+        assert!(delete_asset_impl(vault, traversal.to_str().unwrap()).is_err());
+        assert!(outside.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn delete_asset_impl_refuses_symlink_escape() {
+        let dir = temp_dir("asset-symlink");
+        let vault = dir.to_str().unwrap();
+        let outside = dir.join("outside");
+        fs::create_dir(&outside).unwrap();
+        let secret = outside.join("secret.png");
+        fs::write(&secret, [9]).unwrap();
+
+        let assets = dir.join("assets");
+        fs::create_dir(&assets).unwrap();
+        let link = assets.join("secret.png");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+        assert!(delete_asset_impl(vault, link.to_str().unwrap()).is_err());
+        assert!(secret.exists(), "symlink target must stay");
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+
+        // Replace the real assets directory with a symlink to somewhere else.
+        let linked_root = temp_dir("asset-symlink-root");
+        let relocated = linked_root.join("secret.png");
+        fs::write(&relocated, [9]).unwrap();
+        fs::remove_dir_all(&assets).unwrap();
+        std::os::unix::fs::symlink(&linked_root, &assets).unwrap();
+        let via_assets = assets.join("secret.png");
+        assert!(delete_asset_impl(vault, via_assets.to_str().unwrap()).is_err());
+        assert!(
+            relocated.exists(),
+            "symlinked assets directory must not be followed"
+        );
     }
 
     #[test]

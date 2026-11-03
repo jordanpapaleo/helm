@@ -86,8 +86,8 @@ The editor respects the user's typography settings (note font, font size, line h
 
 **File → Go to Note…** (⌘P on macOS, Ctrl+P elsewhere) opens a note palette from anywhere in the main window, including while you are typing in the editor. Helm has no Print command, so the shortcut is free; it also stops the webview from opening its own print dialog. The quick-capture window does not have the palette.
 
-- **Search as you type**: Uses the app's search index with prefix and typo-tolerant matching against the title only. A word that appears only in the body or tags does not list the note. Up to 50 results.
-- **Empty query**: Lists the 20 most recently updated notes.
+- **Search as you type**: Uses the app's search index with prefix and typo-tolerant matching. **Matching titles** lists notes whose title matches. **Matching content** lists notes that match only in the body or tags. A note appears in one section. Title matches come first. Up to 50 results.
+- **Empty query**: Lists the 20 most recently updated notes, with no sections.
 - **Each row**: Title, then a muted folder path beside it (relative to the vault root, folder only — not the filename; the vault name for a note at the root, prefixed with the vault name when several vaults are loaded), the note's state when it is managed, its first tag, and an Archived badge. Two notes with the same title stay distinct because their paths differ.
 - **Keys**: ↑/↓ move the selection (wrapping), Enter opens it, Escape closes and returns focus to where you were. Clicking a row opens it; clicking outside closes.
 - **Opening**: The note becomes the active note in the editor exactly as clicking it in the note list does: the Notes view opens, the current folder or tag grouping is kept, and Back/Forward history records it. From Trash, the palette switches to All Notes so the live note is shown.

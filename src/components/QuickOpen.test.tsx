@@ -171,16 +171,25 @@ describe("QuickOpen", () => {
     expect(within(rows[0]).queryByText(/standup\.md/)).not.toBeInTheDocument();
   });
 
-  it("filters as you type to title matches only", () => {
+  it("groups title matches ahead of body-only matches", () => {
     render(<QuickOpen />);
     pressShortcut();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "roadm" } });
-    expect(screen.getByText("Matching notes")).toBeInTheDocument();
-    expect(optionTitles()).toEqual(["Roadmap"]);
-    expect(screen.queryByRole("option", { name: "Weekly review" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Matching titles" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Matching content" })).toBeInTheDocument();
+    expect(screen.queryByText("Matching notes")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recently updated")).not.toBeInTheDocument();
+    expect(optionTitles()).toEqual(["Roadmap", "Weekly review"]);
+    const titles = screen.getByRole("group", { name: "Matching titles" });
+    const content = screen.getByRole("group", { name: "Matching content" });
+    expect(within(titles).getByRole("option", { name: "Roadmap" })).toBeInTheDocument();
+    expect(within(titles).queryByRole("option", { name: "Weekly review" })).not.toBeInTheDocument();
+    expect(within(content).getByRole("option", { name: "Weekly review" })).toBeInTheDocument();
+    expect(within(content).getByText("Vault")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "qqqq" } });
     expect(screen.getByRole("status")).toHaveTextContent("No matching notes");
+    expect(screen.queryByRole("group", { name: "Matching titles" })).not.toBeInTheDocument();
   });
 
   it("moves the selection with the arrow keys and wraps", () => {
@@ -204,7 +213,8 @@ describe("QuickOpen", () => {
     render(<QuickOpen />);
     pressShortcut();
     const input = screen.getByRole("combobox");
-    fireEvent.change(input, { target: { value: "week" } });
+    fireEvent.change(input, { target: { value: "roadm" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(useNoteStore.getState().selectedNoteId).toBe("review");

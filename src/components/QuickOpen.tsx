@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { isArchived } from "../lib/archive";
-import { quickOpenFolder, quickOpenResults } from "../lib/quick-open";
+import { quickOpenFolder, quickOpenList } from "../lib/quick-open";
 import { useNoteStore } from "../store/notes";
 import { useSettingsStore } from "../store/settings";
 import { useUIStore } from "../store/ui";
@@ -55,10 +55,11 @@ function QuickOpenDialog({ onClose }: { onClose: () => void }) {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const results = useMemo(
-    () => quickOpenResults({ notes, index, query, showArchived }),
+  const list = useMemo(
+    () => quickOpenList({ notes, index, query, showArchived }),
     [notes, index, query, showArchived],
   );
+  const results = list.kind === "recent" ? list.notes : [...list.titles, ...list.content];
   const activeIndex = Math.min(active, results.length - 1);
 
   useEffect(() => {
@@ -123,7 +124,7 @@ function QuickOpenDialog({ onClose }: { onClose: () => void }) {
             ref={inputRef}
             type="text"
             role="combobox"
-            aria-label="Search notes by title"
+            aria-label="Search notes by title or content"
             aria-expanded="true"
             aria-controls={LISTBOX_ID}
             aria-autocomplete="list"
@@ -140,9 +141,11 @@ function QuickOpenDialog({ onClose }: { onClose: () => void }) {
             className="min-w-0 grow"
           />
         </label>
-        <p className="px-4 pb-1 text-xs font-semibold uppercase tracking-wide opacity-50">
-          {query.trim() ? "Matching notes" : "Recently updated"}
-        </p>
+        {list.kind === "recent" && (
+          <p className="px-4 pb-1 text-xs font-semibold uppercase tracking-wide opacity-50">
+            Recently updated
+          </p>
+        )}
         {results.length === 0 ? (
           <p role="status" className="px-4 py-6 text-center text-sm opacity-60">
             {query.trim() ? "No matching notes" : "No notes yet"}
@@ -154,19 +157,37 @@ function QuickOpenDialog({ onClose }: { onClose: () => void }) {
             aria-label="Notes"
             className="min-h-0 flex-1 overflow-y-auto"
           >
-            <ul role="none" className="menu w-full flex-nowrap px-2 pt-0">
-              {results.map((note, i) => (
-                <ResultRow
-                  key={note.id}
-                  note={note}
-                  index={i}
-                  active={i === activeIndex}
+            {list.kind === "recent" ? (
+              <ResultList
+                notes={list.notes}
+                offset={0}
+                activeIndex={activeIndex}
+                vaults={vaults}
+                onHover={setActive}
+                onChoose={choose}
+              />
+            ) : (
+              <>
+                <ResultSection
+                  label="Matching titles"
+                  notes={list.titles}
+                  offset={0}
+                  activeIndex={activeIndex}
                   vaults={vaults}
-                  onHover={() => setActive(i)}
-                  onChoose={() => choose(note)}
+                  onHover={setActive}
+                  onChoose={choose}
                 />
-              ))}
-            </ul>
+                <ResultSection
+                  label="Matching content"
+                  notes={list.content}
+                  offset={list.titles.length}
+                  activeIndex={activeIndex}
+                  vaults={vaults}
+                  onHover={setActive}
+                  onChoose={choose}
+                />
+              </>
+            )}
           </div>
         )}
         <div className="flex flex-wrap items-center gap-3 border-t border-base-300 px-4 py-2 text-xs opacity-70">
@@ -193,6 +214,73 @@ function QuickOpenDialog({ onClose }: { onClose: () => void }) {
         onClick={onClose}
       />
     </div>
+  );
+}
+
+const sectionClass = "px-4 pb-1 text-xs font-semibold uppercase tracking-wide opacity-50";
+
+function ResultSection({
+  label,
+  notes,
+  offset,
+  activeIndex,
+  vaults,
+  onHover,
+  onChoose,
+}: {
+  label: string;
+  notes: Note[];
+  offset: number;
+  activeIndex: number;
+  vaults: VaultConfig[];
+  onHover: (index: number) => void;
+  onChoose: (note: Note) => void;
+}) {
+  if (notes.length === 0) return null;
+  return (
+    <fieldset className="m-0 min-w-0 border-0 p-0">
+      <legend className={`${sectionClass} block w-full pt-2`}>{label}</legend>
+      <ResultList
+        notes={notes}
+        offset={offset}
+        activeIndex={activeIndex}
+        vaults={vaults}
+        onHover={onHover}
+        onChoose={onChoose}
+      />
+    </fieldset>
+  );
+}
+
+function ResultList({
+  notes,
+  offset,
+  activeIndex,
+  vaults,
+  onHover,
+  onChoose,
+}: {
+  notes: Note[];
+  offset: number;
+  activeIndex: number;
+  vaults: VaultConfig[];
+  onHover: (index: number) => void;
+  onChoose: (note: Note) => void;
+}) {
+  return (
+    <ul role="none" className="menu w-full flex-nowrap px-2 pt-0">
+      {notes.map((note, i) => (
+        <ResultRow
+          key={note.id}
+          note={note}
+          index={offset + i}
+          active={offset + i === activeIndex}
+          vaults={vaults}
+          onHover={() => onHover(offset + i)}
+          onChoose={() => onChoose(note)}
+        />
+      ))}
+    </ul>
   );
 }
 

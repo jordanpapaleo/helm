@@ -1,3 +1,75 @@
+## v1.10.0 — 2026-11-03
+
+- Reconcile in-flight note saves with later edits
+- Keep a failed note save dirty so the next save retries
+- Keep flushed frontmatter when a rename writes the note
+- Keep POSIX backslashes in asset deletion paths
+- Refuse a colliding title before the header paints it.
+- Restrict asset deletion to the vault assets directory
+- Force a snapshot before restoring a note from history.
+- Refuse a note rename that would overwrite another note.
+- Typecheck the MCP server in CI
+- Keep a bad tags value from aborting vault load
+- Keep Find from taking focus while Go to Note is open
+- Limit Matching content to body matches
+- Group Go to Note matches into titles and content
+- Match Go to Note queries against titles only
+- Show the vault folder beside each Go to Note title
+- Document Go to Note and bundle the search icon
+- Add ⌘P Go to Note palette
+- Match the PR template example to the unmanaged header rule
+- Describe the merged note header and bundled icons in the feature map
+- Bundle Unicons so the mode toggle renders offline.
+- Pinned notes always float; drop the setting from the map
+- Format the MCP pinned descriptions
+- Remove the unused Pinned notes float setting
+- Revert "Let the Pinned notes float setting control the note list order"
+- Show icons in the Rich and Markdown toggle.
+- Hide workflow fields on unmanaged notes again.
+- Keep queued note writes on the file that already exists.
+- Show date format placeholders in Properties.
+- Let Properties edit every frontmatter value.
+- Turn the info icon into a read-only properties panel.
+- Skip identical note reloads so heading icons stay mounted.
+- Use DaisyUI select and filter in the note heading.
+- Update heading flags before the disk write finishes.
+- Rebuild the note heading so the actions sit on the right.
+- Use DaisyUI joins, a dropdown, and badges in the note heading.
+- Left-align the note heading.
+- Remove the note info button so archive sits before trash.
+- Reset the tag cancel flag when starting another entry.
+- Restyle the open note header into two rows.
+- Describe the Pinned notes float setting accurately in the feature map
+- Let the Pinned notes float setting control the note list order
+- Add a feature map and require every PR to check it
+- Count duplicate copies in path checks, persist Trash before deleting, keep copies on sync reload
+- Format duplicate-ID banner
+- Use the solid warning alert for duplicate-ID banner contrast
+- Tolerate duplicate note IDs and add a recovery modal
+- Keep a shared vault watched when a sibling vault is removed
+- Keep the DaisyUI status dot round in every Helm theme
+- Fix vault watcher and listener leaks across reloads and StrictMode
+- Document the shared tool panel header
+- Share one extension panel header with a DaisyUI connection status
+- Keep the Writer controls on the Tools settings page
+- Use the wrench icon on the Tools settings tab
+- Add the Tools settings list for built-in assistants
+- Skip locked notes and shared-title links on rename.
+- Resolve graph, footer, and properties links the same way.
+- Remove the Pin to side button from the right-panel header
+- Keep note tabs on the left and tool icons in the right toolbar group
+- Add built-in OpenAI and Claude extensions to the right panel
+- Serialize header edits so a rename does not drop a checkbox
+- Snapshot a note before a properties tag edit rewrites its body.
+- Fix the note header state menu, tags, and title rename
+- Let the properties field clear every tag.
+- Add copy, PDF export, and right-panel actions to the note menu
+- Replace General settings checkboxes with DaisyUI toggles
+- Add a screenshot of the typography font control
+- Add a note font picker to typography settings
+- Correct MCP vault instructions for Helm 1.9.0
+- chore: update version to 1.9.0 in package-lock.json and Cargo.lock
+
 ## v1.9.0 — 2026-10-27
 
 - Let the desktop webview accept a note drop

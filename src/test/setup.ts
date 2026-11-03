@@ -1,9 +1,9 @@
 import "@testing-library/jest-dom";
-import { addCollection } from "@iconify/react";
-import icons from "@iconify-json/uil/icons.json";
+import { registerBundledIcons } from "../lib/bundled-icons";
 
-// Keep component tests offline and avoid icon-fetch callbacks after jsdom teardown.
-addCollection(icons);
+// Same subset the app registers. Keeps component tests offline and avoids
+// icon-fetch callbacks after jsdom teardown.
+registerBundledIcons();
 
 // jsdom doesn't implement ResizeObserver, which @dnd-kit (Kanban board) and some
 // components rely on at import/render time. Provide a no-op stub for tests.

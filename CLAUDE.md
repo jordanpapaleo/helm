@@ -39,6 +39,7 @@ src/
     ErrorBoundary.tsx   # app-wide render-crash fallback
     ToastContainer.tsx  # renders the toast store (see Key Conventions)
     QuickCapture.tsx    # global-shortcut capture window (⌘⇧Space)
+    QuickOpen.tsx       # ⌘P Go to Note palette (main window only; opens notes via useUIStore.openNote)
   hooks/
     useVault.ts     # vault init, note loading, file watch listener
   lib/

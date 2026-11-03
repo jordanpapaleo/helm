@@ -30,7 +30,7 @@ import { RenameInput } from "../sidebar/RenameInput";
 type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
 
 export function NoteListPanel() {
-  const { selectedGrouping, navigate } = useUIStore();
+  const { selectedGrouping, openNote } = useUIStore();
   const {
     notes,
     selectedNoteId,
@@ -89,10 +89,6 @@ export function NoteListPanel() {
 
   function handleNewNote(templateId: string | null) {
     void createNote({ ...creationTargetFromUI(), templateId });
-  }
-
-  function openNote(noteId: string) {
-    navigate({ view: "notes", selectedNoteId: noteId, selectedGrouping });
   }
 
   async function handleRestore(noteId: string) {

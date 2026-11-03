@@ -1333,15 +1333,15 @@ describe("MainPanel title rename", () => {
       fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
       const input = screen.getByRole("textbox", { name: "Note title" });
       fireEvent.change(input, { target: { value: "New Title" } });
-      // Clicking another control blurs the title first, which starts the rename,
-      // and only then delivers the checkbox change.
+      // Blur starts the rename. The flush await yields before the file is
+      // written, so this click is already in the store when the rename writes.
       fireEvent.blur(input);
       fireEvent.click(screen.getByLabelText("Urgent"));
 
       await waitFor(() => expect(writes).toHaveLength(1));
       expect(writes[0]?.path).toBe("/vault/test.md");
       expect(writes[0]?.content).toContain("New Title");
-      expect(writes[0]?.content).not.toContain("urgent: true");
+      expect(writes[0]?.content).toContain("urgent: true");
 
       releaseRenameWrite();
 
@@ -1368,8 +1368,48 @@ describe("MainPanel title rename", () => {
         ),
       ).toBe(false);
     } finally {
+      releaseRenameWrite();
       vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
     }
+  });
+
+  it("keeps frontmatter a pending save flushed when the title is renamed", async () => {
+    const note = makeNote({ content: "Test content" });
+    setup(note, true);
+
+    // Leave the body save inside the debounce window. Do not blur the textarea:
+    // blur would write before the title snapshot is taken, which hides the bug.
+    fireEvent.change(screen.getByDisplayValue("Test content"), {
+      target: { value: "Test content #alpha" },
+    });
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    const input = screen.getByRole("textbox", { name: "Note title" });
+    fireEvent.change(input, { target: { value: "New Title" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(tauriCommands.renameNote).toHaveBeenCalledWith(
+        "/vault/test.md",
+        "/vault/new-title.md",
+      );
+    });
+
+    const written = vi
+      .mocked(tauriCommands.writeNote)
+      .mock.calls.filter(([path]) => path === "/vault/test.md")
+      .at(-1)?.[1];
+    if (!written) throw new Error("rename did not write the old path");
+    const frontmatter = written.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+    const saved = parseNote(written, "/vault/test.md");
+
+    expect(saved.frontmatter.title).toBe("New Title");
+    expect(saved.content).toContain("#alpha");
+    expect(frontmatter).toContain("alpha");
+    expect(saved.frontmatter.updated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(useNoteStore.getState().notes[0].frontmatter.tags).toContain("alpha");
+    expect(useNoteStore.getState().notes[0].filePath).toBe("/vault/new-title.md");
   });
 
   it("does not rename the file when the title edit is cancelled", () => {

@@ -37,7 +37,6 @@ export interface Settings {
   noteFont: NoteFont;
   autocompleteWikiLinks: boolean;
   autoSaveOnEdit: boolean;
-  pinnedNotesFloat: boolean;
   showNoteCountOnTags: boolean;
   /** When false, archived notes are hidden from discovery views. */
   showArchivedNotes: boolean;
@@ -55,7 +54,6 @@ export const DEFAULT_SETTINGS: Settings = {
   noteFont: "system",
   autocompleteWikiLinks: true,
   autoSaveOnEdit: true,
-  pinnedNotesFloat: true,
   showNoteCountOnTags: true,
   showArchivedNotes: false,
   enableProjects: false,
@@ -68,14 +66,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Merge a persisted blob with defaults. An unknown `noteFont` is dropped so a
- * bad value cannot stick after a settings change.
+ * bad value cannot stick after a settings change. Keys that are not settings
+ * are dropped so a value saved by an older version is not written back.
  */
 export function normalizeSettings(value: unknown): Settings {
   if (!isRecord(value)) return { ...DEFAULT_SETTINGS };
+  const known = Object.fromEntries(
+    Object.entries(value).filter(([key]) => Object.hasOwn(DEFAULT_SETTINGS, key)),
+  ) as Partial<Settings>;
   const noteFont = isNoteFont(value.noteFont) ? value.noteFont : DEFAULT_SETTINGS.noteFont;
   return {
     ...DEFAULT_SETTINGS,
-    ...(value as Partial<Settings>),
+    ...known,
     noteFont,
   };
 }

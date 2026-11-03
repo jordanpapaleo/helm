@@ -5,7 +5,12 @@ import { notesForList, trashForList } from "./note-list";
 function note(
   id: string,
   title: string,
-  extra: Partial<Note> & { archived?: boolean; tags?: string[]; pinned?: boolean } = {},
+  extra: Partial<Note> & {
+    archived?: boolean;
+    tags?: string[];
+    pinned?: boolean;
+    updated?: string;
+  } = {},
 ): Note {
   return {
     id,
@@ -17,7 +22,7 @@ function note(
       id,
       title,
       created: "2026-01-01T00:00:00Z",
-      updated: "2026-01-01T00:00:00Z",
+      updated: extra.updated ?? "2026-01-01T00:00:00Z",
       tags: extra.tags ?? [],
       urgent: false,
       important: false,
@@ -138,6 +143,30 @@ describe("notesForList", () => {
       query: "lighthouse",
     });
     expect(rows.map((row) => row.note.id)).toEqual(["inside"]);
+  });
+});
+
+describe("notesForList pinned order", () => {
+  const pinnedOld = note("pinned", "Pinned old", {
+    updated: "2026-01-01T00:00:00Z",
+    pinned: true,
+    archived: true,
+  });
+  const newer = note("newer", "Newer", { updated: "2026-02-01T00:00:00Z", archived: true });
+  const list = (grouping: { type: "all" | "archive"; id: null }, query: string) =>
+    notesForList({
+      notes: [newer, pinnedOld],
+      trash: [],
+      grouping,
+      activeVaultId: "v1",
+      showArchived: true,
+      query,
+    }).map((row) => row.note.id);
+
+  it("always puts pinned notes before newer unpinned notes", () => {
+    expect(list({ type: "all", id: null }, "")).toEqual(["pinned", "newer"]);
+    expect(list({ type: "all", id: null }, "e")).toEqual(["pinned", "newer"]);
+    expect(list({ type: "archive", id: null }, "")).toEqual(["pinned", "newer"]);
   });
 });
 

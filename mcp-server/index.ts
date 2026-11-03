@@ -466,8 +466,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           blocked: { type: "boolean", description: "Filter by blocked status." },
           pinned: {
             type: "boolean",
-            description:
-              "Filter by pinned. Pinned notes float to the top of Helm's note list.",
+            description: "Filter by pinned. Pinned notes float to the top of Helm's note list.",
           },
           locked: { type: "boolean", description: "Filter to locked (read-only) notes." },
           overdue: {
@@ -602,8 +601,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           pinned: {
             type: "boolean",
             default: false,
-            description:
-              "Pin this note so it floats to the top of Helm's note list.",
+            description: "Pin this note so it floats to the top of Helm's note list.",
           },
           deadline: { type: "string", description: "Due date in YYYY-MM-DD format." },
           team: {

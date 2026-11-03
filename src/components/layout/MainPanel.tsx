@@ -35,7 +35,7 @@ import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
 import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
-import { occupiedNotePaths, useNoteStore } from "../../store/notes";
+import { occupiedNotePaths, occupiedRenamePath, useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
@@ -697,6 +697,17 @@ export function MainPanel() {
       .vaults.find((vault) => vault.id === before.vaultId)?.path;
     if (useGitSyncStore.getState().isWriteBlocked(noteId, vaultPath ?? null)) {
       return Promise.resolve();
+    }
+
+    // A queued non-title save serializes whatever title is in the store when it
+    // starts. Painting a title that rename will reject lets that save write the
+    // rejected title, and the later rollback only fixes memory.
+    if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
+      const blocked = occupiedRenamePath(before, updates.title);
+      if (blocked) {
+        reportError("Failed to rename note", new Error(`${blocked} already has a note`));
+        return Promise.resolve();
+      }
     }
 
     // Paint the control in this click. The disk write stays on the note's queue

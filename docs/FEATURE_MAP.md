@@ -52,7 +52,7 @@ Areas:
   - Writes go to `.{name}.tmp-{pid}` in the same folder, then rename; a failed rename deletes the temp file.
 - **Rename ordering** — `src/store/notes.ts` (`renameNote`)
   - New content is written to the old path first, then the file is renamed, so a crash leaves an intact note.
-  - A destination path already occupied by another loaded note, including a duplicate copy (`occupiedNotePaths`), is refused before that write. The file is not renamed, the failure is reported, and a title the header already painted is put back. This note's own path is not a collision.
+  - A destination path already occupied by another loaded note, including a duplicate copy (`occupiedNotePaths`), is refused before the header paints the new title and before the write. A header save still queued behind an earlier edit therefore cannot persist the rejected title. The file is not renamed, the failure is reported, and a title already painted by a direct `renameNote` call is put back. This note's own path is not a collision.
 - **Hidden directories are invisible** — `vault.rs` (`list_notes`, folder listing, watcher), `mcp-server/projects.ts` (`walkMarkdownFiles`)
   - Any directory starting with `.` (`.helm-history`, `.git`) is skipped by the scanner, the watcher, and the MCP walk; `assets/` is skipped as a note folder.
 - **File watcher, one per vault** — `vault.rs` (`watch_vault`, `unwatch_vault`), `src/hooks/useVault.ts`
@@ -94,7 +94,7 @@ Areas:
   - Enter or the check button commits; Escape cancels; an empty or unchanged title is ignored.
   - Switching notes drops an in-progress edit.
   - A title-only change goes through `renameNote` (file rename plus wiki-link rewrite), not a plain write.
-  - A title whose file name is already another note's path in the same folder is refused, and the heading title returns to what it was.
+  - A title whose file name is already another note's path in the same folder is refused before the heading changes, so a queued header save cannot write that title.
 - **Archived badge** — shown when `archived: true`.
 - **Action row** — icon buttons: copy path (`uil:copy`), pin to side (`uil:columns`), history (`uil:history`), export PDF (`uil:file-export`), the Rich/Markdown toggle, archive (`uil:archive`), delete (`uil:trash-alt`), and the Properties toggle (`uil:info-circle`).
   - Every icon button has an `aria-label` and a tooltip.

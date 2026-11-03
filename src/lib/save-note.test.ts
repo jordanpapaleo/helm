@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useGitSyncStore } from "../store/git-sync";
 import { useNoteStore } from "../store/notes";
+import { useToastStore } from "../store/toast";
 import type { Note } from "../types/note";
 import { saveNoteContent } from "./save-note";
 import { tauriCommands } from "./tauri-commands";
@@ -14,6 +15,75 @@ vi.mock("./tauri-commands", () => ({
   },
 }));
 
+function makeNote(): Note {
+  return {
+    id: "01FAILEDSAVE000000000001",
+    filePath: "/vault/failed-save.md",
+    fileName: "failed-save.md",
+    content: "Note A body",
+    vaultId: "v1",
+    frontmatter: {
+      id: "01FAILEDSAVE000000000001",
+      title: "Note A",
+      created: "2026-07-01T00:00:00Z",
+      updated: "2026-07-01T00:00:00Z",
+      tags: [],
+      urgent: false,
+      important: false,
+      state: "Prepare",
+      blocked: false,
+      links: [],
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+  useToastStore.setState({ toasts: [] });
+  useGitSyncStore.setState({
+    byVaultId: {},
+    barrierPaths: [],
+    heldNoteIds: [],
+    heldDrafts: {},
+  });
+  useNoteStore.getState().setNotes([]);
+  useNoteStore.setState({
+    vaults: [{ id: "v1", name: "Vault", path: "/vault" }],
+    activeVaultId: "v1",
+  });
+});
+
+describe("saveNoteContent", () => {
+  it("leaves the note unsaved when the write fails and retries it next time", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const note = makeNote();
+      useNoteStore.getState().setNotes([note]);
+      vi.mocked(tauriCommands.writeNote).mockRejectedValueOnce(new Error("disk full"));
+
+      const first = await saveNoteContent(note, "Note A body edited");
+
+      expect(first).toBe("failed");
+      expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
+      expect(tauriCommands.snapshotNote).toHaveBeenCalledTimes(1);
+      expect(useNoteStore.getState().notes[0].content).toBe("Note A body");
+      expect(useNoteStore.getState().notes[0].frontmatter.updated).toBe("2026-07-01T00:00:00Z");
+      expect(useToastStore.getState().toasts.map((toast) => toast.message)).toContain(
+        "Failed to save note: disk full",
+      );
+
+      const second = await saveNoteContent(useNoteStore.getState().notes[0], "Note A body edited");
+
+      expect(second).toBe("saved");
+      expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2);
+      expect(useNoteStore.getState().notes[0].content).toBe("Note A body edited");
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+});
+
 const VAULT = "/vault/notes";
 const ASSET = `${VAULT}/assets/pic.png`;
 
@@ -21,7 +91,7 @@ function image(path: string): string {
   return `![pic](http://asset.localhost${path})`;
 }
 
-function makeNote(content: string): Note {
+function assetNote(content: string): Note {
   return {
     id: "01JPMXYZ123",
     filePath: `${VAULT}/page.md`,
@@ -43,17 +113,8 @@ function makeNote(content: string): Note {
 }
 
 describe("saveNoteContent asset deletion", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useGitSyncStore.setState({
-      barrierPaths: [],
-      heldNoteIds: [],
-      heldDrafts: {},
-    });
-  });
-
   async function save(before: string, after: string) {
-    const note = makeNote(before);
+    const note = assetNote(before);
     useNoteStore.setState({
       notes: [note],
       duplicateGroups: [],
@@ -97,10 +158,10 @@ describe("saveNoteContent asset deletion", () => {
 
   it("treats backslash as a separator only on a Windows asset path", async () => {
     const vault = "C:\\Users\\me\\notes";
-    const removed = makeNote(
+    const removed = assetNote(
       "![pic](http://asset.localhost/C:%5CUsers%5Cme%5Cnotes%5Cassets%5Cpic.png)\n",
     );
-    const traversal = makeNote(
+    const traversal = assetNote(
       "![x](http://asset.localhost/C:%5CUsers%5Cme%5Cnotes%5Cassets%5C..%5C..%5Csecret.png)\n",
     );
     useNoteStore.setState({

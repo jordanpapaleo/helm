@@ -125,6 +125,9 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // saves from external file changes (e.g. from Claude Code or MCP server).
     const lastSavedContentRef = useRef(note.content);
     const dirtyRef = useRef(false);
+    // Bumped on every save attempt. Only the latest attempt may clear dirty:
+    // an older write finishing later must not mark a newer edit as saved.
+    const saveTokenRef = useRef(0);
 
     // vaultPath is needed inside handlePaste but must not be captured in the memoized
     // extensions array — keep it in a ref so handlePaste always reads the current value.
@@ -497,18 +500,49 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     const triggerSave = useCallback(() => {
       if (!editor) return;
       const md = getEditorMarkdown(editor);
+      const noteId = note.id;
+      const token = ++saveTokenRef.current;
       const vaultPath =
         useNoteStore.getState().vaults.find((vault) => vault.id === note.vaultId)?.path ?? null;
-      if (useGitSyncStore.getState().isWriteBlocked(note.id, vaultPath)) {
+      if (useGitSyncStore.getState().isWriteBlocked(noteId, vaultPath)) {
         dirtyRef.current = true;
-        useGitSyncStore.getState().preserveHeldDraft(note.id, md);
+        useGitSyncStore.getState().preserveHeldDraft(noteId, md);
         return;
       }
-      lastSavedContentRef.current = md; // mark as our own save so the file watcher doesn't reload
-      dirtyRef.current = false;
-      useGitSyncStore.getState().clearHeldDraft(note.id);
-      useGitSyncStore.getState().releaseNote(note.id);
-      return onSave(md);
+      // Remember this markdown before the write so a successful store update
+      // is not treated as an external change. The note stays dirty until that
+      // write has landed; clearing it here dropped the edit when writeNote failed.
+      lastSavedContentRef.current = md;
+      useGitSyncStore.getState().clearHeldDraft(noteId);
+      useGitSyncStore.getState().releaseNote(noteId);
+
+      const settle = () => {
+        if (token !== saveTokenRef.current || loadedNoteIdRef.current !== noteId) return;
+        if (editor.isDestroyed) return;
+        const latest = useNoteStore.getState().notes.find((item) => item.id === noteId);
+        const landed =
+          latest !== undefined && normalizeContent(latest.content) === normalizeContent(md);
+        const editorMovedOn = normalizeContent(getEditorMarkdown(editor)) !== normalizeContent(md);
+        if (!landed || editorMovedOn) {
+          dirtyRef.current = true;
+          // A failed write must not keep the unsaved markdown as the last
+          // flush, or the next file echo holds the note and blocks the retry.
+          if (!landed && lastSavedContentRef.current === md) {
+            lastSavedContentRef.current = latest?.content ?? lastSavedContentRef.current;
+          }
+          return;
+        }
+        dirtyRef.current = false;
+      };
+
+      let pending: Promise<unknown>;
+      try {
+        pending = Promise.resolve(onSave(md));
+      } catch {
+        settle();
+        return;
+      }
+      return pending.then(settle, settle);
     }, [editor, note.id, note.vaultId, onSave]);
 
     // Auto-save 1s after the user stops typing

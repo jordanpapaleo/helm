@@ -127,19 +127,28 @@ function PinnedNoteBody({
     }
     const vaultPath =
       useNoteStore.getState().vaults.find((vault) => vault.id === current.vaultId)?.path ?? null;
-    if (!useGitSyncStore.getState().isWriteBlocked(id, vaultPath)) {
+    const blocked = useGitSyncStore.getState().isWriteBlocked(id, vaultPath);
+    const previousSaved = lastSavedRef.current;
+    if (!blocked) {
       // Set before the store update so the echo of our own save is not treated
       // as an external rewrite that should replace the caret.
       lastSavedRef.current = markdown;
-      // A blocked autosave keeps the text as a held draft. Once a later edit
-      // actually writes, that draft is stale: remounting prefers it over the
-      // file and a blur would save it back, dropping the newer text.
-      const store = useGitSyncStore.getState();
-      store.clearHeldDraft(id);
-      store.releaseNote(id);
-      heldByUs.current = false;
     }
-    return saveNoteContent(current, markdown);
+    return saveNoteContent(current, markdown).then((outcome) => {
+      if (outcome === "saved") {
+        // Drop the held draft only after the write lands. Clearing it earlier
+        // lets the pane treat the still-old file as an external change and
+        // put the draft back. A failed write must keep it so the next save retries.
+        const store = useGitSyncStore.getState();
+        store.clearHeldDraft(id);
+        store.releaseNote(id);
+        heldByUs.current = false;
+      } else if (outcome === "failed" && lastSavedRef.current === markdown) {
+        lastSavedRef.current = previousSaved;
+        editingRef.current = true;
+      }
+      return outcome;
+    });
   }, []);
 
   useLayoutEffect(() => {

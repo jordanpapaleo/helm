@@ -18,7 +18,7 @@ import { mergeTagsOnSave } from "./tags";
 import { tauriCommands } from "./tauri-commands";
 import { nowTimestamp } from "./timestamps";
 
-export type SaveNoteResult = "unchanged" | "blocked" | "saved";
+export type SaveNoteResult = "unchanged" | "blocked" | "failed" | "saved";
 
 const reportedSyncHolds = new Set<string>();
 
@@ -172,12 +172,15 @@ async function persistNoteContent(
       updated: nowTimestamp(),
     },
   };
-  useNoteStore.getState().updateNote(updated);
   try {
     await tauriCommands.writeNote(path, serializeNote(updated));
   } catch (e) {
+    // Leave the store on the previous body. Updating it here would make the
+    // next save look unchanged, so the failed write would never be retried.
     reportError("Failed to save note", e);
+    return "failed";
   }
+  useNoteStore.getState().updateNote(updated);
 
   // Delete asset files removed from this note since the last save. Only paths
   // inside this vault's assets directory are eligible; anything else is ignored.

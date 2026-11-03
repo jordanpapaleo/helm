@@ -1,11 +1,14 @@
-import { act, render } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
+import { act, fireEvent, render } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { saveNoteContent } from "../../lib/save-note";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
+import { useToastStore } from "../../store/toast";
 import type { Note } from "../../types/note";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
 
@@ -250,5 +253,66 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
     });
     expect(onSave).toHaveBeenCalled();
     expect(onSave.mock.calls.at(-1)?.[0]).toContain("edited");
+  });
+
+  it("keeps the edit when the write fails and retries it on the next save", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useToastStore.setState({ toasts: [] });
+    const note = makeNote();
+    useNoteStore.setState({
+      notes: [note],
+      vaults: [{ id: "v1", name: "Vault", path: "/vault" }],
+      activeVaultId: "v1",
+    });
+    let writeAttempts = 0;
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command !== "write_note") return undefined;
+      writeAttempts += 1;
+      if (writeAttempts === 1) throw new Error("disk full");
+      return undefined;
+    });
+
+    const ref = createRef<NoteEditorHandle>();
+    const onSave = async (content: string): Promise<void> => {
+      const current = useNoteStore.getState().notes.find((item) => item.id === note.id) ?? note;
+      await saveNoteContent(current, content);
+    };
+    try {
+      const { rerender } = render(<NoteEditor ref={ref} note={note} onSave={onSave} />);
+      act(() => {
+        ref.current?.getEditor()?.commands.insertContent(" edited");
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(writeAttempts).toBe(1);
+      expect(useNoteStore.getState().notes[0].content).toBe("Note A body");
+      expect(useToastStore.getState().toasts.map((toast) => toast.message)).toContain(
+        "Failed to save note: disk full",
+      );
+      expect(ref.current?.getEditor()?.getText()).toContain("edited");
+
+      // The file on disk is still the previous body. A dirty editor must keep
+      // the unsaved text instead of adopting that file.
+      rerender(
+        <NoteEditor ref={ref} note={{ ...note, content: "Note A body\n" }} onSave={onSave} />,
+      );
+      expect(ref.current?.getEditor()?.getText()).toContain("edited");
+      expect(useGitSyncStore.getState().isHeld(note.id)).toBe(false);
+
+      const surface = document.querySelector(".ProseMirror");
+      expect(surface).toBeTruthy();
+      await act(async () => {
+        fireEvent.blur(surface as Element);
+      });
+
+      expect(writeAttempts).toBe(2);
+      expect(useNoteStore.getState().notes[0].content).toContain("edited");
+    } finally {
+      vi.mocked(invoke).mockReset();
+      vi.mocked(invoke).mockResolvedValue(undefined);
+      vi.restoreAllMocks();
+    }
   });
 });

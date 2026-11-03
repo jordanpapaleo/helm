@@ -155,7 +155,8 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - The previous file is snapshotted before every write.
   - Tags are merged, not recomputed (`mergeTagsOnSave`).
   - `[[wiki]]` titles become `links` ids (self excluded; empty removes the key).
-  - Image assets removed from the body are deleted only when the file is inside that vault's `assets/` directory. An `asset.localhost` URL pointing anywhere else is left on disk.
+  - Image assets removed from the body are deleted only when the file is inside that vault's `assets/` directory, and only after the write lands. An `asset.localhost` URL pointing anywhere else is left on disk. A failed write deletes nothing.
+  - A failed write does not update the store, leaves the rich editor dirty, toasts via `reportError`, and is retried on the next save.
   - A sync-blocked note keeps the draft in the editor, writes nothing, and toasts once.
 - **Locked note is read-only** — `editor.setEditable(!locked)`; markdown textarea `readOnly`; block commands, wrap shortcuts, and Replace refuse.
 - **Deleted note is read-only** — the editor gets `locked` while viewing Trash.
@@ -185,6 +186,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - Clean editor plus a different file adopts the file; dirty editor plus a different file holds the draft; switching notes keeps a held draft.
 - **Pinned-note pane** — `src/components/layout/PinnedNoteView.tsx`
   - Edits a pinned note with the same save path but no header, wiki popup, or image paste; follows the main editor's live draft when both show the same note.
+  - A held draft is dropped only after that save writes. A failed write keeps the draft and retries next time.
 
 ## 5. Sidebar and layout
 

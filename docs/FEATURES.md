@@ -160,7 +160,7 @@ The graph shows every visible note in the vault (it is not limited to a project)
 | `team` | string[]? | Optional list of responsible team members |
 | `links` | string[]? | Array of ULID references to linked notes (from `[[wiki links]]`) |
 | `locked` | boolean? | If true, note is read-only in the editor; delete and archive are hidden |
-| `pinned` | boolean? | If true, note floats to the top of all lists |
+| `pinned` | boolean? | If true, note floats to the top of the note list |
 | `archived` | boolean? | If true, the note is hidden from discovery views. Absent or false means active |
 | `unmanaged` | boolean? | If true, the note stays off Kanban, Eisenhower, and the briefing, and its workflow fields are cleared |
 | `template` | boolean? | If true, the note is offered in New Note menus |
@@ -191,7 +191,7 @@ All settings except sync are persisted to localStorage and applied immediately o
 
 ### Pinned & Locked Notes
 
-**Pinned notes** float to the top of the note list while **Settings → General → Pinned notes float to top** is on (the default). With it off, the note list sorts by date only. Other lists (Dashboard, boards) do not float pinned notes. Set via the `pinned` frontmatter field.
+**Pinned notes** always float to the top of the note list; there is no setting to turn this off. Other lists (Dashboard, boards) do not float pinned notes. Set via the `pinned` frontmatter field.
 
 **Locked notes** are read-only in the editor:
 - Content and frontmatter cannot be edited (except unlocking)

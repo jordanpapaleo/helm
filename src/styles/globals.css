@@ -77,6 +77,17 @@
      Using base-content directly gives full contrast in both light and dark without looking
      like a "special" token. Overridable per-theme if a subtler value is preferred. */
   --color-syntax-punctuation: var(--color-base-content);
+
+  /* DaisyUI structural tokens. Theme blocks only set colors. Without these,
+     toggles, joins, buttons, dropdowns, and badges collapse: border width,
+     corner radius, depth, and noise all read these variables with no fallback.
+     --radius-field rounds joins and buttons; --radius-box rounds dropdown panels. */
+  --border: 1px;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --depth: 1;
+  --noise: 0;
 }
 
 input[type="range"] {
@@ -367,14 +378,23 @@ input[type="checkbox"]:not(.toggle):not(ul[data-type="taskList"] li > label inpu
   accent-color: var(--color-accent);
 }
 
-/* Helm themes supply color tokens only. DaisyUI toggles also size and
-   round themselves from these structural tokens; without them the control
-   collapses. Scoped to the toggle so other components stay as they are. */
-.toggle {
-  --border: 1px;
-  --radius-selector: 0.5rem;
-  --depth: 1;
-  --noise: 0;
+/* Editor-mode join sits in a gray rounded tray. The selected side is a white
+   raised pill; the other side is plain text on the tray. */
+.note-heading-mode .btn {
+  --btn-shadow: 0 0 0 0 transparent;
+  border-radius: 9999px;
+}
+.note-heading-mode .btn[aria-pressed="false"] {
+  --btn-bg: transparent;
+  --btn-fg: var(--color-text-muted);
+  --btn-border: transparent;
+  box-shadow: none;
+}
+.note-heading-mode .btn[aria-pressed="true"] {
+  --btn-bg: var(--color-base-100);
+  --btn-fg: var(--color-base-content);
+  --btn-border: transparent;
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--color-base-content) 18%, transparent);
 }
 
 /* Same gap as .toggle: DaisyUI rounds the status dot with --radius-selector
@@ -420,6 +440,13 @@ ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
   border-top: none;
   border-left: none;
   transform: rotate(45deg) translate(-1px, -1px);
+}
+
+/* The stock select is clamp()'d to 20rem. Size it to the state name. */
+.note-heading-state.select {
+  width: auto;
+  min-width: 7.5rem;
+  field-sizing: content;
 }
 ul[data-type="taskList"] li > div {
   flex: 1;

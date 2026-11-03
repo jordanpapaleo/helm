@@ -16,7 +16,17 @@ import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent, serializeNote } from "../../lib/note-parser";
-import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import {
+  enqueueNoteWrite,
+  forgetScheduledPath,
+  rememberNotePath,
+  resolveNoteWritePath,
+} from "../../lib/note-write-path";
+import {
+  flushPendingSaves,
+  registerSaveFlusher,
+  unregisterSaveFlusher,
+} from "../../lib/pending-saves";
 import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { saveNoteContent } from "../../lib/save-note";
@@ -31,7 +41,7 @@ import { useSettingsStore } from "../../store/settings";
 import { reportError } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
-import type { NoteFrontmatter } from "../../types/note";
+import type { Note, NoteFrontmatter } from "../../types/note";
 import { DashboardView } from "../../views/DashboardView";
 import { EisenhowerView } from "../../views/EisenhowerView";
 import { GraphView } from "../../views/GraphView";
@@ -182,11 +192,7 @@ export const MarkdownTextarea = forwardRef<
     const next = val.slice(0, start) + prefix + selected + suffix + val.slice(end);
     dirtyRef.current = true;
     setValue(next);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveTimer.current = null;
-      commitSave(next);
-    }, 1000);
+    scheduleBodySave(next);
 
     // Restore selection inside the wrapping characters
     requestAnimationFrame(() => {
@@ -200,16 +206,27 @@ export const MarkdownTextarea = forwardRef<
     const next = e.target.value;
     dirtyRef.current = true;
     setValue(next);
+    scheduleBodySave(next);
+  };
+
+  function scheduleBodySave(next: string) {
+    if (saveTimer.current === null) {
+      const path = useNoteStore
+        .getState()
+        .notes.find((note) => note.id === noteIdRef.current)?.filePath;
+      if (path) rememberNotePath(noteIdRef.current, path);
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
       commitSave(next);
     }, 1000);
-  };
+  }
 
   useEffect(
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      forgetScheduledPath(noteIdRef.current);
     },
     [],
   );
@@ -385,64 +402,116 @@ export const MarkdownTextarea = forwardRef<
   );
 });
 
+function noteWithFrontmatter(note: Note, updates: Partial<NoteFrontmatter>): Note {
+  const titleOnly = typeof updates.title === "string" && Object.keys(updates).length === 1;
+  // An empty tag list is a real edit. Reading a note unions frontmatter with
+  // inline `#tag`s, so a tag left in the body would be parsed back in and the
+  // last one would look like it could not be removed. Strip only the tags
+  // the field dropped; a child the field still lists stays in the body.
+  const content = Array.isArray(updates.tags)
+    ? dropRemovedInlineTags(note.content, note.frontmatter.tags, updates.tags)
+    : note.content;
+  return {
+    ...note,
+    content,
+    frontmatter: {
+      ...note.frontmatter,
+      ...updates,
+      ...(titleOnly ? {} : { updated: nowTimestamp() }),
+    },
+  };
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/** Put this edit back if a later edit has not already replaced it. */
+function revertFrontmatterWrite(
+  noteId: string,
+  before: Note,
+  applied: Note,
+  updates: Partial<NoteFrontmatter>,
+) {
+  const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
+  if (!current) return;
+  const frontmatter = { ...current.frontmatter };
+  let restore = false;
+  for (const key of Object.keys(updates) as (keyof NoteFrontmatter)[]) {
+    if (sameValue(current.frontmatter[key], applied.frontmatter[key])) {
+      frontmatter[key] = before.frontmatter[key];
+      restore = true;
+    }
+  }
+  let content = current.content;
+  if (current.content === applied.content && current.content !== before.content) {
+    content = before.content;
+    restore = true;
+  }
+  if (restore && current.frontmatter.updated === applied.frontmatter.updated) {
+    frontmatter.updated = before.frontmatter.updated;
+  }
+  if (restore) {
+    useNoteStore.getState().updateNote({ ...current, content, frontmatter });
+  }
+}
+
 /**
- * Apply one header edit after any earlier edit for this panel has finished.
- * renameNote keeps the note it was given until both disk steps finish, then
- * replaces the store entry with that snapshot. A checkbox click during the
- * rename used to write the old path and title, and the snapshot then dropped
- * the checkbox. Waiting lets the checkbox save onto the renamed note.
+ * Write one header edit after any earlier edit for this note has finished.
+ * The store already shows the edit. The write overwrites a file that exists:
+ * the path captured when the edit was queued, or a later path the rename or
+ * the watcher has already created. It never creates a second file at a slug
+ * that is not on disk yet.
  */
 async function persistFrontmatterChange(
   noteId: string,
   updates: Partial<NoteFrontmatter>,
+  before: Note,
+  applied: Note,
+  enqueuedPath: string,
 ): Promise<void> {
-  const note = useNoteStore.getState().notes.find((item) => item.id === noteId);
-  if (!note) return;
-  if (note.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) return;
-  const vaultPath = useNoteStore.getState().vaults.find((vault) => vault.id === note.vaultId)?.path;
-  if (useGitSyncStore.getState().isWriteBlocked(noteId, vaultPath ?? null)) return;
+  const vaultPath = useNoteStore
+    .getState()
+    .vaults.find((vault) => vault.id === before.vaultId)?.path;
 
   if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
     try {
-      await useNoteStore.getState().renameNote(note, updates.title);
+      // Body keystrokes still inside the debounce window land on the file
+      // that exists, then the rename moves that file.
+      await flushPendingSaves();
+      await useNoteStore.getState().renameNote(before, updates.title);
     } catch (error) {
       reportError("Failed to rename note", error);
+      revertFrontmatterWrite(noteId, before, applied, updates);
     }
     return;
   }
 
   const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
   if (!current) return;
-  // An empty tag list is a real edit. Reading a note unions frontmatter with
-  // inline `#tag`s, so a tag left in the body would be parsed back in and the
-  // last one would look like it could not be removed. Strip only the tags
-  // the field dropped; a child the field still lists stays in the body.
-  const content = Array.isArray(updates.tags)
-    ? dropRemovedInlineTags(current.content, current.frontmatter.tags, updates.tags)
-    : current.content;
-  const updated = {
-    ...current,
-    content,
-    frontmatter: {
-      ...current.frontmatter,
-      ...updates,
-      updated: nowTimestamp(),
-    },
-  };
-  useNoteStore.getState().updateNote(updated);
+  const path = await resolveNoteWritePath(noteId, enqueuedPath);
+  if (!path) {
+    reportError("Failed to save frontmatter", new Error("The note file is not on disk"));
+    revertFrontmatterWrite(noteId, before, applied, updates);
+    return;
+  }
+  const fileName = path.split("/").pop() ?? current.fileName;
+  const target = path === current.filePath ? current : { ...current, filePath: path, fileName };
+  if (target !== current) useNoteStore.getState().updateNote(target);
   // A tag edit can delete body text, including a list or task line that held
   // only that tag. Snapshot the file that is still on disk before overwriting
   // it. The snapshot is awaited so it lands first, and a failure must not block
   // the write. Frontmatter-only edits leave the body alone and skip this.
-  if (content !== current.content && vaultPath) {
-    await tauriCommands.snapshotNote(vaultPath, current.id, current.filePath).catch(() => {
+  if (target.content !== before.content && vaultPath) {
+    await tauriCommands.snapshotNote(vaultPath, target.id, path).catch(() => {
       /* snapshotting must never block a save */
     });
   }
   try {
-    await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
+    await tauriCommands.writeNote(path, serializeNote(target));
   } catch (error) {
     reportError("Failed to save frontmatter", error);
+    revertFrontmatterWrite(noteId, before, applied, updates);
   }
 }
 
@@ -456,12 +525,19 @@ function viewingDeletedNote(): boolean {
 
 export function MainPanel() {
   const { activeView, markdownMode, setMarkdownMode, toggleMarkdownMode, navigate } = useUIStore();
-  const { notes, vaults, selectedNoteId, removeNote, selectNote, addNote } = useNoteStore();
+  const notes = useNoteStore((state) => state.notes);
+  const vaults = useNoteStore((state) => state.vaults);
+  const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
+  const removeNote = useNoteStore((state) => state.removeNote);
+  const selectNote = useNoteStore((state) => state.selectNote);
+  const addNote = useNoteStore((state) => state.addNote);
+  const liveNote = useNoteStore((state) =>
+    state.selectedNoteId ? state.notes.find((note) => note.id === state.selectedNoteId) : undefined,
+  );
   const trashItems = useTrashStore((state) => state.items);
   const { settings } = useSettingsStore();
   const enableProjects = settings.enableProjects;
   const projects = useProjectStore((state) => state.projects);
-  const liveNote = notes.find((n) => n.id === selectedNoteId);
   const deletedItem = liveNote
     ? undefined
     : trashItems.find((item) => item.note.id === selectedNoteId);
@@ -476,8 +552,6 @@ export function MainPanel() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const { job: pdfJob, start: startPdfExport, handleReady: handlePdfReady } = usePdfExport();
   const markdownTextareaRef = useRef<MarkdownTextareaHandle>(null);
-  // Header edits (title rename, then a checkbox in the same click) must not overlap.
-  const frontmatterWrites = useRef(Promise.resolve());
   // Cursor and scroll position handed from the outgoing surface to the incoming
   // one across a markdown/editor toggle, tagged with the note it came from so a
   // note switch can never resurrect a stale position.
@@ -613,12 +687,28 @@ export function MainPanel() {
   function handleFrontmatterChange(updates: Partial<NoteFrontmatter>): Promise<void> {
     if (!selectedNote || viewingDeleted) return Promise.resolve();
     const noteId = selectedNote.id;
-    const run = frontmatterWrites.current.then(() => persistFrontmatterChange(noteId, updates));
-    frontmatterWrites.current = run.then(
-      () => undefined,
-      () => undefined,
+    const before = useNoteStore.getState().notes.find((item) => item.id === noteId);
+    if (!before) return Promise.resolve();
+    if (before.frontmatter.locked && Object.keys(updates).some((key) => key !== "locked")) {
+      return Promise.resolve();
+    }
+    const vaultPath = useNoteStore
+      .getState()
+      .vaults.find((vault) => vault.id === before.vaultId)?.path;
+    if (useGitSyncStore.getState().isWriteBlocked(noteId, vaultPath ?? null)) {
+      return Promise.resolve();
+    }
+
+    // Paint the control in this click. The disk write stays on the note's queue
+    // and is bound to the path that exists now, so a later slug in the store
+    // cannot create a second file.
+    const applied = noteWithFrontmatter(before, updates);
+    const enqueuedPath = before.filePath;
+    useNoteStore.getState().updateNote(applied);
+
+    return enqueueNoteWrite(noteId, () =>
+      persistFrontmatterChange(noteId, updates, before, applied, enqueuedPath),
     );
-    return run;
   }
 
   async function handleArchiveToggle() {

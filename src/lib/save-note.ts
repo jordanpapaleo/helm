@@ -8,6 +8,12 @@ import {
   normalizeContent,
   serializeNote,
 } from "./note-parser";
+import {
+  enqueueNoteWrite,
+  immediateNoteWritePath,
+  resolveNoteWritePath,
+  takeScheduledPath,
+} from "./note-write-path";
 import { mergeTagsOnSave } from "./tags";
 import { tauriCommands } from "./tauri-commands";
 import { nowTimestamp } from "./timestamps";
@@ -53,6 +59,7 @@ function extractAssetPaths(content: string): Set<string> {
  * edit cannot drift from the primary save path.
  */
 export async function saveNoteContent(note: Note, content: string): Promise<SaveNoteResult> {
+  const enqueuedPath = takeScheduledPath(note.id, note.filePath);
   const vaultPath =
     useNoteStore.getState().vaults.find((vault) => vault.id === note.vaultId)?.path ?? null;
   if (useGitSyncStore.getState().isWriteBlocked(note.id, vaultPath)) {
@@ -67,11 +74,34 @@ export async function saveNoteContent(note: Note, content: string): Promise<Save
   // so a strict === would let those phantom saves through.
   if (normalizeContent(content) === normalizeContent(note.content)) return "unchanged";
 
+  return enqueueNoteWrite(note.id, () => persistNoteContent(note, content, enqueuedPath));
+}
+
+async function persistNoteContent(
+  note: Note,
+  content: string,
+  enqueuedPath: string,
+): Promise<SaveNoteResult> {
+  const latest = useNoteStore.getState().notes.find((item) => item.id === note.id) ?? note;
+  const vaultPath =
+    useNoteStore.getState().vaults.find((vault) => vault.id === latest.vaultId)?.path ?? null;
+  if (normalizeContent(content) === normalizeContent(latest.content)) return "unchanged";
+
+  // The store path may already be a slug nothing has created. Overwrite the
+  // file that exists, and never call write_note on a path that is not one.
+  const path =
+    immediateNoteWritePath(latest.id, enqueuedPath) ??
+    (await resolveNoteWritePath(latest.id, enqueuedPath));
+  if (!path) {
+    reportError("Failed to save note", new Error("The note file is not on disk"));
+    return "blocked";
+  }
+
   // Time machine: snapshot the current on-disk content before overwriting.
   // Rust coalesces rapid autosaves (min 5 min between snapshots) and prunes
   // old versions, so this is safe to fire on every save.
   if (vaultPath) {
-    tauriCommands.snapshotNote(vaultPath, note.id, note.filePath).catch(() => {
+    tauriCommands.snapshotNote(vaultPath, latest.id, path).catch(() => {
       /* snapshotting must never block a save */
     });
   }
@@ -83,8 +113,8 @@ export async function saveNoteContent(note: Note, content: string): Promise<Save
   // tags the user actually removed. See mergeTagsOnSave.
   const notes = useNoteStore.getState().notes;
   const mergedTags = mergeTagsOnSave(
-    note.frontmatter.tags,
-    extractInlineTags(note.content),
+    latest.frontmatter.tags,
+    extractInlineTags(latest.content),
     extractInlineTags(content),
   );
   const wikiTitles = extractWikiLinks(content);
@@ -93,13 +123,15 @@ export async function saveNoteContent(note: Note, content: string): Promise<Save
       (title) =>
         notes.find((item) => item.frontmatter.title.toLowerCase() === title.toLowerCase())?.id,
     )
-    .filter((id): id is string => id !== undefined && id !== note.id);
+    .filter((id): id is string => id !== undefined && id !== latest.id);
 
   const updated = {
-    ...note,
+    ...latest,
+    filePath: path,
+    fileName: path.split("/").pop() ?? latest.fileName,
     content,
     frontmatter: {
-      ...note.frontmatter,
+      ...latest.frontmatter,
       tags: mergedTags,
       links: linkedIds.length > 0 ? linkedIds : undefined,
       updated: nowTimestamp(),
@@ -107,17 +139,17 @@ export async function saveNoteContent(note: Note, content: string): Promise<Save
   };
   useNoteStore.getState().updateNote(updated);
   try {
-    await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
+    await tauriCommands.writeNote(path, serializeNote(updated));
   } catch (e) {
     reportError("Failed to save note", e);
   }
 
   // Delete any asset files removed from this note since the last save
-  const oldPaths = extractAssetPaths(note.content);
+  const oldPaths = extractAssetPaths(latest.content);
   const newPaths = extractAssetPaths(content);
-  for (const path of oldPaths) {
-    if (!newPaths.has(path)) {
-      tauriCommands.deleteAsset(path).catch(() => {
+  for (const assetPath of oldPaths) {
+    if (!newPaths.has(assetPath)) {
+      tauriCommands.deleteAsset(assetPath).catch(() => {
         /* already gone, ignore */
       });
     }

@@ -18,6 +18,7 @@ import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-pos
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
+import { forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { NOTE_CONTENT_STYLE } from "../../lib/settings";
@@ -111,6 +112,8 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     notesRef.current = notes;
     const noteIdRef = useRef(note.id);
     noteIdRef.current = note.id;
+    const filePathRef = useRef(note.filePath);
+    filePathRef.current = note.filePath;
     // The note whose body is currently loaded. Updated only when that body is
     // replaced, so leaving a note can still see the id render has already moved.
     const loadedNoteIdRef = useRef(note.id);
@@ -371,6 +374,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       if (!editor) return;
       const previous = loadedNoteIdRef.current;
       if (previous !== note.id) {
+        forgetScheduledPath(previous);
         const store = useGitSyncStore.getState();
         if (
           store.isHeld(previous) ||
@@ -514,6 +518,12 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         dirtyRef.current = true;
         notifyEditorDraft(noteIdRef.current);
         if (!autoSaveRef.current) return;
+        if (saveTimeoutRef.current === null) {
+          const path =
+            useNoteStore.getState().notes.find((item) => item.id === noteIdRef.current)?.filePath ??
+            filePathRef.current;
+          rememberNotePath(noteIdRef.current, path);
+        }
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {
           saveTimeoutRef.current = null;
@@ -523,7 +533,12 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
       editor.on("update", handler);
       return () => {
         editor.off("update", handler);
-        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+          // The keystroke never flushed, so the path captured for it is stale.
+          forgetScheduledPath(noteIdRef.current);
+        }
       };
     }, [editor, triggerSave]);
 

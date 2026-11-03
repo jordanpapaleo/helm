@@ -1,11 +1,12 @@
 import { Icon } from "@iconify/react";
+import { memo } from "react";
 import { pinNoteToSide, unpinNoteFromSide, usePinnedPanelStore } from "../../store/pinned-panel";
 
 /**
  * Pins the given note into the right panel. `noteId` is the note this control
  * acts on — the open note in the editor, which can differ from the tab on screen.
  */
-export function PinToSideButton({
+export const PinToSideButton = memo(function PinToSideButton({
   noteId,
   variant,
 }: {
@@ -17,8 +18,8 @@ export function PinToSideButton({
   const className =
     variant === "toolbar"
       ? "workspace-toolbar-button"
-      : `btn btn-ghost btn-sm btn-square hover:opacity-100 ${
-          pinned ? "text-[var(--color-primary)] opacity-100" : "opacity-60"
+      : `btn btn-ghost btn-sm btn-square ${
+          pinned ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)]"
         }`;
   return (
     <button
@@ -34,7 +35,12 @@ export function PinToSideButton({
         else pinNoteToSide(noteId);
       }}
     >
-      <Icon icon="uil:columns" className="h-4 w-4" aria-hidden="true" />
+      <Icon
+        id={variant === "editor" ? "note-heading-pin-to-side" : "toolbar-pin-to-side"}
+        icon="uil:columns"
+        className="h-4 w-4"
+        aria-hidden="true"
+      />
     </button>
   );
-}
+});

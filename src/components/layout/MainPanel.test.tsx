@@ -1,8 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, Profiler } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useVault } from "../../hooks/useVault";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
-import { parseNote } from "../../lib/note-parser";
+import { parseNote, serializeNote } from "../../lib/note-parser";
+import { flushPendingSaves } from "../../lib/pending-saves";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { todayDate } from "../../lib/timestamps";
@@ -10,6 +12,7 @@ import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
 import { useSettingsStore } from "../../store/settings";
+import { useToastStore } from "../../store/toast";
 import { useTrashStore } from "../../store/trash";
 import { useUIStore } from "../../store/ui";
 import type { Note, VaultConfig } from "../../types/note";
@@ -25,6 +28,11 @@ vi.mock("../../lib/tauri-commands", () => ({
     readNote: vi.fn().mockResolvedValue(""),
     renameNote: vi.fn().mockResolvedValue(undefined),
     savePdfDialog: vi.fn().mockResolvedValue(null),
+    getVaults: vi.fn().mockResolvedValue([]),
+    listNotes: vi.fn().mockResolvedValue([]),
+    listFolders: vi.fn().mockResolvedValue([]),
+    listProjectFiles: vi.fn().mockResolvedValue([]),
+    watchVault: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -82,6 +90,20 @@ function setup(note: Note, markdownMode: boolean) {
   });
   useUIStore.setState({ activeView: "notes", markdownMode });
   return render(<MainPanel />);
+}
+
+function HeaderEchoHarness({ onUpdate }: { onUpdate: () => void }) {
+  useVault();
+  return (
+    <Profiler
+      id="header"
+      onRender={(_id, phase) => {
+        if (phase === "update" || phase === "nested-update") onUpdate();
+      }}
+    >
+      <MainPanel />
+    </Profiler>
+  );
 }
 
 describe("MainPanel.handleSave — no-op when content is unchanged", () => {
@@ -177,6 +199,176 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     expect(stamp.slice(0, 10)).toBe(todayDate());
     expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
   });
+
+  it("updates urgent before the heading write resolves", async () => {
+    let releaseWrite: () => void = () => {};
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(() => writeGate);
+
+    setup(makeNote(), true);
+    const urgent = screen.getByRole("button", { name: "Urgent" });
+    const important = screen.getByRole("button", { name: "Important" });
+    expect(urgent).toHaveAttribute("aria-pressed", "false");
+
+    try {
+      fireEvent.click(urgent);
+
+      expect(urgent).toHaveAttribute("aria-pressed", "true");
+      expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
+
+      fireEvent.click(important);
+      expect(important).toHaveAttribute("aria-pressed", "true");
+      expect(useNoteStore.getState().notes[0].frontmatter.important).toBe(true);
+
+      releaseWrite();
+      await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
+      expect(urgent).toHaveAttribute("aria-pressed", "true");
+      expect(important).toHaveAttribute("aria-pressed", "true");
+    } finally {
+      releaseWrite();
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
+  it("reverts urgent and reports the error when the heading write fails", async () => {
+    vi.mocked(tauriCommands.writeNote).mockRejectedValueOnce(new Error("disk full"));
+    setup(makeNote(), true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute("aria-pressed", "true");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+    expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(false);
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("Failed to save frontmatter")),
+    ).toBe(true);
+  });
+
+  it("keeps a properties edit on screen while the write is still running", async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(tauriCommands.writeNote).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    );
+    try {
+      const note = makeNote();
+      note.frontmatter.deadline = "2026-04-01";
+      note.frontmatter.state = "Prepare";
+      setup(note, true);
+
+      fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+      const deadline = screen.getByLabelText("deadline");
+      const headerState = screen.getByRole("combobox", { name: "State" });
+      const panelState = screen.getByRole("combobox", { name: "state" });
+
+      fireEvent.change(deadline, { target: { value: "2026-05-02" } });
+      fireEvent.blur(deadline);
+      expect((deadline as HTMLInputElement).value).toBe("2026-05-02");
+      expect(useNoteStore.getState().notes[0].frontmatter.deadline).toBe("2026-05-02");
+
+      fireEvent.change(panelState, { target: { value: "Done" } });
+      expect(headerState).toHaveValue("Done");
+      expect(panelState).toHaveValue("Done");
+      expect((deadline as HTMLInputElement).value).toBe("2026-05-02");
+      expect(useNoteStore.getState().notes[0].frontmatter.state).toBe("Done");
+
+      await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+      expect(screen.getByLabelText("deadline")).toHaveValue("2026-05-02");
+      expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("Done");
+
+      pending[0]?.();
+      await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
+      pending[1]?.();
+      await waitFor(() => expect(useNoteStore.getState().notes[0].frontmatter.state).toBe("Done"));
+
+      expect(screen.getByLabelText("deadline")).toHaveValue("2026-05-02");
+      expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("Done");
+      expect(screen.getByRole("combobox", { name: "state" })).toHaveValue("Done");
+      expect(useNoteStore.getState().notes[0].frontmatter.deadline).toBe("2026-05-02");
+    } finally {
+      for (const resolve of pending) resolve();
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
+  it("does not commit the header when the watcher reloads identical content", async () => {
+    const base = makeNote();
+    const raw = serializeNote(base);
+    const parsed = parseNote(raw, base.filePath);
+    const echoed: Note = {
+      ...parsed,
+      id: base.id,
+      vaultId: VAULT.id,
+      frontmatter: { ...parsed.frontmatter, id: base.id },
+    };
+    const handlers = new Map<string, Array<(event: { payload: unknown }) => Promise<void>>>();
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      const key = String(event);
+      const list = handlers.get(key) ?? [];
+      list.push(handler as (event: { payload: unknown }) => Promise<void>);
+      handlers.set(key, list);
+      return () => {};
+    });
+    vi.mocked(tauriCommands.getVaults).mockResolvedValue([VAULT]);
+    vi.mocked(tauriCommands.readNote).mockResolvedValue(raw);
+
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, defaultNoteView: "markdown" },
+    });
+    useNoteStore.setState({
+      notes: [echoed],
+      selectedNoteId: echoed.id,
+      vaults: [VAULT],
+      activeVaultId: VAULT.id,
+    });
+    useUIStore.setState({ activeView: "notes", markdownMode: true });
+
+    let commits = 0;
+    const view = render(
+      <HeaderEchoHarness
+        onUpdate={() => {
+          commits += 1;
+        }}
+      />,
+    );
+    try {
+      await waitFor(() => expect(handlers.get("vault-changed")?.length).toBeGreaterThan(0));
+      const icons = [...document.querySelectorAll('[data-testid="note-heading"] svg')];
+      expect(icons.length).toBeGreaterThan(0);
+      commits = 0;
+
+      const reload = handlers.get("vault-changed") ?? [];
+      for (let i = 0; i < 50; i++) {
+        await act(async () => {
+          await Promise.all(reload.map((handler) => handler({ payload: [echoed.filePath] })));
+        });
+      }
+
+      expect(commits).toBe(0);
+      expect(useNoteStore.getState().notes[0]).toBe(echoed);
+      const after = [...document.querySelectorAll('[data-testid="note-heading"] svg')];
+      expect(after).toHaveLength(icons.length);
+      expect(after.every((node, index) => node === icons[index])).toBe(true);
+    } finally {
+      view.unmount();
+      vi.mocked(listen).mockReset();
+      vi.mocked(listen).mockResolvedValue(() => {});
+      vi.mocked(tauriCommands.readNote).mockReset();
+      vi.mocked(tauriCommands.readNote).mockResolvedValue("");
+      vi.mocked(tauriCommands.getVaults).mockResolvedValue([]);
+    }
+  });
 });
 
 describe("MainPanel.handleSave — tags are merged, not recomputed", () => {
@@ -260,14 +452,10 @@ describe("MainPanel properties — removing the last tag", () => {
     vi.clearAllMocks();
   });
 
-  async function clearTags() {
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    fireEvent.change(input, { target: { value: "" } });
+  async function removeTag(name: string) {
     await act(async () => {
-      fireEvent.blur(input);
+      fireEvent.click(screen.getByRole("button", { name: `Remove tag ${name}` }));
     });
-    return input;
   }
 
   it("saves an empty tag list when the last tag is cleared", async () => {
@@ -275,9 +463,9 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    const input = await clearTags();
+    await removeTag("work");
 
-    expect(input).toHaveValue("");
+    expect(screen.queryByText("#work")).not.toBeInTheDocument();
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
     expect(useNoteStore.getState().notes[0].content).toBe("Plan today");
     expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
@@ -294,7 +482,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
     vi.mocked(tauriCommands.writeNote).mockClear();
 
     const body = screen.getByDisplayValue("Plan today");
@@ -313,14 +501,9 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work", "home"];
     setup(note, true);
 
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    fireEvent.change(input, { target: { value: "home" } });
-    await act(async () => {
-      fireEvent.blur(input);
-    });
+    await removeTag("work");
 
-    expect(input).toHaveValue("home");
+    expect(screen.getByText("#home")).toBeInTheDocument();
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual(["home"]);
     expect(useNoteStore.getState().notes[0].content).toBe("Plan and #home today");
     const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
@@ -332,7 +515,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
 
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
     expect(useNoteStore.getState().notes[0].content).toBe("No inline tag here");
@@ -355,7 +538,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
 
     expect(useNoteStore.getState().notes[0].content).toBe("- [x] keep");
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
@@ -369,7 +552,7 @@ describe("MainPanel properties — removing the last tag", () => {
     note.frontmatter.tags = ["work"];
     setup(note, true);
 
-    await clearTags();
+    await removeTag("work");
 
     expect(useNoteStore.getState().notes[0].content).toBe("- keep");
     expect(useNoteStore.getState().notes[0].frontmatter.tags).toEqual([]);
@@ -1006,8 +1189,7 @@ describe("MainPanel title rename", () => {
     note.frontmatter = { ...note.frontmatter, tags: ["ai-skills/skill"] };
     setup(note, true);
 
-    expect(screen.queryByText("#ai-skills/skill")).not.toBeInTheDocument();
-    expect(screen.queryByText("ai-skills/skill")).not.toBeInTheDocument();
+    expect(screen.getByText("#ai-skills/skill")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
     const input = screen.getByRole("textbox", { name: "Note title" });
@@ -1106,6 +1288,164 @@ describe("MainPanel title rename", () => {
     expect(useNoteStore.getState().notes[0].frontmatter.title).toBe("Test Note");
     expect(useNoteStore.getState().notes[0].id).toBe(note.id);
     expect(screen.getByRole("heading", { name: "Test Note" })).toBeInTheDocument();
+  });
+});
+
+describe("MainPanel note file identity", () => {
+  const original = "/vault/01kx1aket8krs5hvrjsjrwc8rz.md";
+  const slug = "/vault/compass.md";
+
+  function installFiles(paths: string[]) {
+    const files = new Map(paths.map((path) => [path, "body"]));
+    vi.mocked(tauriCommands.readNote).mockImplementation(async (path: string) => {
+      const body = files.get(path);
+      if (body === undefined) throw new Error(`missing ${path}`);
+      return body;
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (path: string, content: string) => {
+      files.set(path, content);
+    });
+    return files;
+  }
+
+  afterEach(() => {
+    vi.mocked(tauriCommands.readNote).mockResolvedValue("");
+    vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    vi.mocked(tauriCommands.renameNote).mockResolvedValue(undefined);
+  });
+
+  it("leaves one file when a queued urgent toggle races a rename", async () => {
+    const files = installFiles([original]);
+    let releaseRename: () => void = () => {};
+    const renameGate = new Promise<void>((resolve) => {
+      releaseRename = resolve;
+    });
+    // The store adopts the slug when renameNote resolves. This gate resolves
+    // without moving the original, which is the window that created compass.md.
+    vi.mocked(tauriCommands.renameNote).mockImplementation(async () => {
+      await renameGate;
+    });
+
+    const note = makeNote({
+      filePath: original,
+      fileName: "01kx1aket8krs5hvrjsjrwc8rz.md",
+    });
+    note.frontmatter = { ...note.frontmatter, title: "Note" };
+    setup(note, true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    const input = screen.getByRole("textbox", { name: "Note title" });
+    fireEvent.change(input, { target: { value: "Compass" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(tauriCommands.renameNote).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    releaseRename();
+
+    await waitFor(() => {
+      expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
+      expect(useNoteStore.getState().notes[0].frontmatter.title).toBe("Compass");
+    });
+    expect([...files.keys()]).toEqual([original]);
+    expect(files.get(original)).toContain("urgent: true");
+    expect(files.get(original)).not.toContain("deadline:");
+    expect(files.has(slug)).toBe(false);
+  });
+
+  it("does not create a slug file when a watcher retargets a pending save", async () => {
+    const files = installFiles([original]);
+    let releaseWrite: () => void = () => {};
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let writes = 0;
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (path: string, content: string) => {
+      writes += 1;
+      if (writes === 1) await writeGate;
+      files.set(path, content);
+    });
+
+    const note = makeNote({
+      filePath: original,
+      fileName: "01kx1aket8krs5hvrjsjrwc8rz.md",
+    });
+    setup(note, true);
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    await waitFor(() => expect(writes).toBe(1));
+
+    const current = useNoteStore.getState().notes[0];
+    await act(async () => {
+      useNoteStore.getState().updateNote({
+        ...current,
+        filePath: slug,
+        fileName: "compass.md",
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Important" }));
+    releaseWrite();
+
+    await waitFor(() => expect(writes).toBe(2));
+    expect([...files.keys()]).toEqual([original]);
+    expect(files.get(original)).toContain("important: true");
+    expect(files.has(slug)).toBe(false);
+    expect(useNoteStore.getState().notes[0].filePath).toBe(original);
+  });
+
+  it("writes a pending body save to the original file when the watcher changes the path", async () => {
+    const files = installFiles([original]);
+    const note = makeNote({
+      filePath: original,
+      fileName: "01kx1aket8krs5hvrjsjrwc8rz.md",
+      content: "Test content",
+    });
+    setup(note, true);
+    const box = document.querySelector("textarea");
+    if (!box) throw new Error("missing markdown box");
+    fireEvent.change(box, { target: { value: "Test content\u00a0" } });
+
+    const current = useNoteStore.getState().notes[0];
+    await act(async () => {
+      useNoteStore.getState().updateNote({
+        ...current,
+        filePath: slug,
+        fileName: "compass.md",
+      });
+    });
+    await act(async () => {
+      await flushPendingSaves();
+    });
+
+    expect([...files.keys()]).toEqual([original]);
+    expect(files.get(original)).toContain("\u00a0");
+    expect(files.has(slug)).toBe(false);
+    expect(useNoteStore.getState().notes[0].filePath).toBe(original);
+  });
+
+  it("does not serialize a cleared deadline or team", async () => {
+    installFiles(["/vault/test.md"]);
+    const note = makeNote();
+    note.frontmatter = {
+      ...note.frontmatter,
+      deadline: "2026-04-01",
+      team: "Ada" as unknown as string[],
+    };
+    setup(note, true);
+    vi.mocked(tauriCommands.writeNote).mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+
+    const deadline = screen.getByLabelText("deadline");
+    fireEvent.change(deadline, { target: { value: "" } });
+    fireEvent.blur(deadline);
+    const team = screen.getByLabelText("team");
+    fireEvent.change(team, { target: { value: "" } });
+    fireEvent.blur(team);
+
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
+    const yaml = vi.mocked(tauriCommands.writeNote).mock.calls.at(-1)?.[1] ?? "";
+    expect(yaml).not.toContain("deadline:");
+    expect(yaml).not.toContain("team:");
+    expect(useNoteStore.getState().notes[0].frontmatter.deadline).toBeUndefined();
+    expect(useNoteStore.getState().notes[0].frontmatter.team).toBeUndefined();
   });
 });
 

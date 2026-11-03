@@ -6,6 +6,7 @@ import { NOTE_STATES } from "../../lib/constants";
 import { DEFAULT_LAYOUT } from "../../lib/workspace-layout";
 import { useLayoutStore } from "../../store/layout";
 import { usePinnedPanelStore, WRITER_TAB } from "../../store/pinned-panel";
+import { useToastStore } from "../../store/toast";
 import type { NoteFrontmatter } from "../../types/note";
 import { PropertyPanel } from "./PropertyPanel";
 
@@ -113,7 +114,7 @@ describe("PropertyPanel title", () => {
 });
 
 describe("PropertyPanel header tags", () => {
-  it("does not render tag chips in the header", () => {
+  it("renders tag chips on the header and the same tags in the properties field", () => {
     render(
       <PropertyPanel
         frontmatter={makeFrontmatter({ tags: ["ai-skills/skill", "work"] })}
@@ -121,12 +122,15 @@ describe("PropertyPanel header tags", () => {
       />,
     );
 
-    expect(screen.queryByText("#ai-skills/skill")).not.toBeInTheDocument();
-    expect(screen.queryByText("#work")).not.toBeInTheDocument();
-    expect(screen.queryByText("ai-skills/skill")).not.toBeInTheDocument();
+    expect(screen.getByText("#ai-skills/skill")).toBeInTheDocument();
+    expect(screen.getByText("#work")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add tag" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    expect(screen.getByDisplayValue("ai-skills/skill, work")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getByRole("textbox", { name: "tags" })).toHaveValue(
+      "ai-skills/skill, work",
+    );
   });
 });
 
@@ -134,25 +138,62 @@ describe("PropertyPanel unmanaged notes", () => {
   it("shows the workflow controls for a managed note", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter()} onChange={vi.fn()} />);
 
-    expect(screen.getByText("State")).toBeInTheDocument();
-    expect(screen.getByLabelText("Urgent")).toBeInTheDocument();
-    expect(screen.getByLabelText("Important")).toBeInTheDocument();
-    expect(screen.getByLabelText("Blocked")).toBeInTheDocument();
+    const metaRow = screen.getByTestId("note-heading-meta-row");
+    expect(metaRow).toContainElement(screen.getByRole("combobox", { name: "State" }));
+    expect(screen.getByRole("combobox", { name: "State" })).toHaveValue("Prepare");
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+      "data-icon",
+      "uil:clock",
+    );
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
+    expect(screen.getByRole("button", { name: "Important" })).toHaveAttribute(
+      "data-icon",
+      "uil:star",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getByRole("combobox", { name: "state" })).toHaveValue("Prepare");
+    expect(within(panel).getByRole("checkbox", { name: "urgent" })).not.toBeChecked();
+    expect(within(panel).getByRole("checkbox", { name: "important" })).not.toBeChecked();
+    expect(within(panel).getByRole("checkbox", { name: "blocked" })).not.toBeChecked();
   });
 
-  it("hides State / Urgent / Important / Blocked when the note is unmanaged", () => {
-    render(<PropertyPanel frontmatter={makeFrontmatter({ unmanaged: true })} onChange={vi.fn()} />);
+  it("hides state, urgent, and important when the note is unmanaged", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({
+          unmanaged: true,
+          state: "Doing",
+          urgent: true,
+          important: true,
+          blocked: true,
+        })}
+        onChange={vi.fn()}
+      />,
+    );
 
-    expect(screen.queryByText("State")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Urgent")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Important")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Blocked")).not.toBeInTheDocument();
+    const metaRow = screen.getByTestId("note-heading-meta-row");
+    expect(screen.queryByRole("combobox", { name: "State" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Urgent" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Important" })).not.toBeInTheDocument();
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Locked" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Template" }));
+    expect(screen.getByRole("button", { name: "Unmanaged" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Properties" })).toBeEnabled();
 
-    // Everything else in the metadata row stays put.
-    expect(screen.getByLabelText("Pinned")).toBeInTheDocument();
-    expect(screen.getByLabelText("Locked")).toBeInTheDocument();
-    expect(screen.getByLabelText("Unmanaged")).toBeInTheDocument();
-    expect(screen.getByText("Properties")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).queryByRole("combobox", { name: "state" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("checkbox", { name: "urgent" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("checkbox", { name: "important" })).not.toBeInTheDocument();
+    expect(within(panel).getByRole("checkbox", { name: "blocked" })).toBeChecked();
+    expect(within(panel).getByRole("checkbox", { name: "unmanaged" })).toBeChecked();
+    expect(within(panel).getByRole("textbox", { name: "tags" })).toBeInTheDocument();
   });
 
   it("clears the workflow fields in a single onChange when Unmanaged is switched on", () => {
@@ -169,7 +210,7 @@ describe("PropertyPanel unmanaged notes", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Unmanaged"));
+    fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({
@@ -190,40 +231,62 @@ describe("PropertyPanel unmanaged notes", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Unmanaged"));
+    fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ unmanaged: false });
   });
 
-  it("shows a cleared state as None instead of Prepare", () => {
+  it("renders state and urgency on row 2 when the note has no state", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ state: "", urgent: false, important: false, tags: [] })}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const metaRow = screen.getByTestId("note-heading-meta-row");
+    const state = screen.getByRole("combobox", { name: "State" });
+    expect(metaRow).toContainElement(state);
+    expect(state).toHaveValue("");
+    expect(state).toHaveDisplayValue("State");
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Urgent" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Important" }));
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Pinned" }));
+    expect(metaRow).toContainElement(screen.getByRole("switch", { name: "Locked" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Template" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Unmanaged" }));
+    expect(metaRow).toContainElement(screen.getByRole("button", { name: "Add tag" }));
+  });
+
+  it("shows a cleared state as the State placeholder instead of Prepare", () => {
     // A note that was unmanaged and got flipped back to managed still has state: "".
     render(<PropertyPanel frontmatter={makeFrontmatter({ state: "" })} onChange={vi.fn()} />);
 
-    const button = screen.getByRole("button", { name: "State" });
-    expect(button).toHaveTextContent("None");
-    expect(button).not.toHaveTextContent("Prepare");
+    const select = screen.getByRole("combobox", { name: "State" });
+    expect(select).toHaveValue("");
+    expect(select).toHaveDisplayValue("State");
+    expect(select).not.toHaveDisplayValue("Prepare");
   });
 
-  it("opens state choices as a menu and applies the chosen state", () => {
+  it("applies a state from the DaisyUI select", () => {
     const onChange = vi.fn();
     render(
       <PropertyPanel frontmatter={makeFrontmatter({ state: "Prepare" })} onChange={onChange} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "State" }));
-    const menu = screen.getByRole("menu", { name: "Note state" });
-    expect(menu.className).toContain("fixed");
+    const select = screen.getByRole("combobox", { name: "State" });
+    expect(select.className).toContain("select");
+    expect(select.className).toContain("select-sm");
     expect(
-      within(menu)
-        .getAllByRole("menuitemradio")
-        .map((item) => item.textContent),
-    ).toEqual(["None", ...NOTE_STATES]);
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["State", ...NOTE_STATES]);
 
-    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Done" }));
+    fireEvent.change(select, { target: { value: "Done" } });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ state: "Done" });
-    expect(screen.queryByRole("menu", { name: "Note state" })).not.toBeInTheDocument();
   });
 });
 
@@ -263,20 +326,22 @@ describe("PropertyPanel template flag", () => {
       <PropertyPanel frontmatter={makeFrontmatter()} onChange={onChange} />,
     );
 
-    fireEvent.click(screen.getByLabelText("Template"));
+    fireEvent.click(screen.getByRole("button", { name: "Template" }));
     expect(onChange).toHaveBeenCalledWith({ template: true });
 
     rerender(
       <PropertyPanel frontmatter={makeFrontmatter({ template: true })} onChange={onChange} />,
     );
-    fireEvent.click(screen.getByLabelText("Template"));
+    fireEvent.click(screen.getByRole("button", { name: "Template" }));
     expect(onChange).toHaveBeenLastCalledWith({ template: false });
   });
 
-  it("does not surface template as an extra frontmatter field", () => {
+  it("shows template once, as the frontmatter toggle", () => {
     render(<PropertyPanel frontmatter={makeFrontmatter({ template: true })} onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    expect(screen.queryByText("template")).not.toBeInTheDocument();
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getAllByText("template")).toHaveLength(1);
+    expect(within(panel).getByRole("checkbox", { name: "template" })).toBeChecked();
   });
 });
 
@@ -379,80 +444,274 @@ describe("PropertyPanel archive", () => {
   });
 });
 
-function rowOf(element: HTMLElement): HTMLElement {
-  const row = element.parentElement;
-  if (!row) throw new Error("expected the header control to sit in a row");
-  return row;
-}
-
-const HEADER_ACTIONS = [
+const TITLE_ROW_ACTIONS = [
   "Copy file path",
   "Pin to side",
   "Note history",
   "Export to PDF",
-  "Switch to Markdown",
+  "Rich text",
+  "Markdown",
   "Archive note",
   "Delete note",
+  "Properties",
 ] as const;
 
 describe("PropertyPanel header layout", () => {
-  function renderCrowdedHeader() {
-    render(
+  function renderHeader(
+    frontmatter: Partial<NoteFrontmatter> = {},
+    handlers: {
+      onChange?: (updates: Partial<NoteFrontmatter>) => void;
+      onToggleMarkdown?: () => void;
+    } = {},
+  ) {
+    const onChange = handlers.onChange ?? vi.fn();
+    const onToggleMarkdown = handlers.onToggleMarkdown ?? vi.fn();
+    const view = render(
       <PropertyPanel
         frontmatter={makeFrontmatter({
-          title: "A long title that would crowd the action icons",
+          title: "Command",
+          state: "Maintain",
+          urgent: false,
+          important: true,
+          tags: ["ai-skills/command"],
+          ...frontmatter,
         })}
-        filePath="/vault/rule.md"
-        onChange={vi.fn()}
+        filePath="/vault/command.md"
+        onChange={onChange}
         onDelete={vi.fn()}
         onArchive={vi.fn()}
-        onToggleMarkdown={vi.fn()}
+        onToggleMarkdown={onToggleMarkdown}
         onShowHistory={vi.fn()}
         onExportPdf={vi.fn()}
       />,
     );
+    return { onChange, onToggleMarkdown, ...view };
   }
 
-  it("puts the action icons on their own line under the title", () => {
-    renderCrowdedHeader();
+  it("lays the open note out as a title row and a metadata row", () => {
+    renderHeader();
 
-    const titleRow = rowOf(
-      screen.getByRole("heading", { name: "A long title that would crowd the action icons" }),
-    );
-    const buttons = HEADER_ACTIONS.map((name) => screen.getByRole("button", { name }));
-    const actionRow = rowOf(buttons[0]);
-
-    expect(actionRow).not.toBe(titleRow);
+    const titleRow = screen.getByTestId("note-heading-title-row");
+    const metaRow = screen.getByTestId("note-heading-meta-row");
     expect(
-      titleRow.compareDocumentPosition(actionRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+      titleRow.compareDocumentPosition(metaRow) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
-    for (const button of buttons) {
-      expect(actionRow).toContainElement(button);
-      expect(titleRow).not.toContainElement(button);
+    expect(titleRow).toContainElement(screen.getByRole("heading", { name: "Command" }));
+    expect(titleRow).toContainElement(screen.getByRole("button", { name: "Edit title" }));
+    for (const name of TITLE_ROW_ACTIONS) {
+      expect(titleRow).toContainElement(screen.getByRole("button", { name }));
     }
 
-    const labels = [...actionRow.querySelectorAll("button")].map(
+    const labels = [...screen.getByTestId("note-heading-actions").querySelectorAll("button")].map(
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
     );
-    expect(labels).toEqual([...HEADER_ACTIONS]);
+    expect(labels).toEqual([...TITLE_ROW_ACTIONS]);
+    expect(screen.getByRole("button", { name: "Copy file path" }).className).toContain("btn-ghost");
+    expect(screen.getByRole("button", { name: "Edit title" }).className).toContain("btn-ghost");
+    const properties = screen.getByRole("button", { name: "Properties" });
+    expect(titleRow).toContainElement(properties);
+    expect(metaRow).not.toContainElement(properties);
+    expect(properties).toHaveAttribute("aria-pressed", "false");
+    expect(properties).toHaveAttribute("data-icon", "uil:info-circle");
+    expect(properties).toHaveAttribute("title", "Properties");
+    expect(titleRow.className).toContain("justify-between");
+    expect(titleRow.className).toContain("items-center");
+    expect(metaRow.className).toContain("justify-start");
+    expect(metaRow.className).toContain("items-center");
+    expect(screen.getByTestId("note-heading-actions").className).toContain("items-center");
+    expect(screen.getByRole("heading", { name: "Command" }).parentElement?.className).not.toContain(
+      "flex-1",
+    );
 
-    const locked = screen.getByLabelText("Locked");
-    expect(titleRow).not.toContainElement(locked);
-    expect(actionRow).not.toContainElement(locked);
+    const state = screen.getByRole("combobox", { name: "State" });
+    expect(metaRow).toContainElement(state);
+    expect(state).toHaveValue("Maintain");
+    expect(state.className).toContain("select");
+    expect(state.className).not.toContain("rounded-full");
+
+    const urgent = screen.getByRole("button", { name: "Urgent" });
+    const important = screen.getByRole("button", { name: "Important" });
+    expect(metaRow).toContainElement(urgent);
+    expect(metaRow).toContainElement(important);
+    expect(urgent).toHaveAttribute("title", "Urgent");
+    expect(urgent).toHaveAttribute("aria-pressed", "false");
+    expect(urgent).toHaveAttribute("data-icon", "uil:clock");
+    expect(important).toHaveAttribute("title", "Important");
+    expect(important).toHaveAttribute("aria-pressed", "true");
+    expect(important).toHaveAttribute("data-icon", "uil:star");
+    const rich = screen.getByRole("button", { name: "Rich text" });
+    const markdown = screen.getByRole("button", { name: "Markdown" });
+    expect(rich.className).toContain("join-item");
+    expect(rich.parentElement?.className).toContain("join");
+    expect(rich.parentElement?.className).toContain("note-heading-mode");
+    expect(rich).toHaveAttribute("aria-pressed", "true");
+    expect(rich).toHaveAttribute("title", "Rich text");
+    expect(rich).toHaveAttribute("data-icon", "uil:file-alt");
+    expect(rich).not.toHaveTextContent("Rich");
+    expect(markdown.className).toContain("join-item");
+    expect(markdown).toHaveAttribute("aria-pressed", "false");
+    expect(markdown).toHaveAttribute("title", "Switch to Markdown");
+    expect(markdown).toHaveAttribute("data-icon", "uil:brackets-curly");
+    expect(markdown).not.toHaveTextContent("Markdown");
+
+    const archive = screen.getByRole("button", { name: "Archive note" });
+    const deleteNote = screen.getByRole("button", { name: "Delete note" });
+    const info = screen.getByRole("button", { name: "Properties" });
     expect(
-      actionRow.compareDocumentPosition(locked) & Node.DOCUMENT_POSITION_FOLLOWING,
+      archive.compareDocumentPosition(deleteNote) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    expect(
+      deleteNote.compareDocumentPosition(info) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const titleDividers = within(titleRow).getAllByTestId("heading-divider");
+    expect(titleDividers).toHaveLength(3);
+    for (const divider of [
+      ...titleDividers,
+      ...within(metaRow).getAllByTestId("heading-divider"),
+    ]) {
+      expect(divider.className).toContain("self-center");
+    }
+    expect(within(metaRow).getAllByTestId("heading-divider")).toHaveLength(2);
+
+    const pinned = screen.getByRole("switch", { name: "Pinned" });
+    expect(metaRow).toContainElement(pinned);
+    expect(pinned).toHaveAttribute("data-icon", "uil:map-pin");
+    const locked = screen.getByRole("switch", { name: "Locked" });
+    expect(metaRow).toContainElement(locked);
+    expect(locked).toHaveAttribute("data-icon", "uil:unlock");
+    const template = screen.getByRole("button", { name: "Template" });
+    const unmanaged = screen.getByRole("button", { name: "Unmanaged" });
+    expect(metaRow).toContainElement(template);
+    expect(metaRow).toContainElement(unmanaged);
+    expect(template).toHaveAttribute("title", "Template");
+    expect(template).toHaveAttribute("aria-pressed", "false");
+    expect(template).toHaveAttribute("data-icon", "uil:clipboard-notes");
+    expect(unmanaged).toHaveAttribute("title", "Unmanaged");
+    expect(unmanaged).toHaveAttribute("aria-pressed", "false");
+    expect(unmanaged).toHaveAttribute("data-icon", "uil:eye-slash");
+    const tag = screen.getByText("#ai-skills/command");
+    expect(tag.closest(".badge")).not.toBeNull();
+    expect(metaRow).toContainElement(tag);
+    const addTag = screen.getByRole("button", { name: "Add tag" });
+    expect(metaRow).toContainElement(addTag);
+    expect(addTag.className).not.toContain("badge");
+    expect(addTag.className).not.toContain("rounded-full");
+    expect(titleRow).not.toContainElement(state);
+  });
+
+  it("toggles urgent and important independently from the heading icons", () => {
+    const onChange = vi.fn();
+    renderHeader({}, { onChange });
+
+    fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Important" }));
+
+    expect(onChange).toHaveBeenNthCalledWith(1, { urgent: true });
+    expect(onChange).toHaveBeenNthCalledWith(2, { important: false });
+    expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Important" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("toggles template and unmanaged from the heading and the properties panel", () => {
+    const onChange = vi.fn();
+    renderHeader(
+      {
+        state: "Doing",
+        urgent: true,
+        important: true,
+        blocked: true,
+        template: false,
+        unmanaged: false,
+      },
+      { onChange },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Template" }));
+    expect(onChange).toHaveBeenCalledWith({ template: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
+    expect(onChange).toHaveBeenCalledWith({
+      unmanaged: true,
+      state: "",
+      urgent: false,
+      important: false,
+      blocked: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getByRole("checkbox", { name: "template" })).not.toBeChecked();
+    expect(within(panel).getByRole("checkbox", { name: "unmanaged" })).not.toBeChecked();
+  });
+
+  it("opens the properties editor from the info icon", () => {
+    renderHeader({ deadline: "2026-04-01", team: ["Ada"] });
+
+    expect(screen.queryByRole("region", { name: "Properties" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Note info" })).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Properties" });
+    fireEvent.click(toggle);
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(panel).getByText("Path").parentElement).toHaveTextContent("/vault/command.md");
+    expect(within(panel).queryByRole("textbox", { name: "Path" })).not.toBeInTheDocument();
+    expect(within(panel).getByText("01JPMXYZ123")).toBeInTheDocument();
+    expect(within(panel).getByLabelText("deadline")).toHaveValue("2026-04-01");
+    expect(within(panel).getByLabelText("team")).toHaveValue("Ada");
+
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("region", { name: "Properties" })).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("switches editor mode from the unselected Rich or Markdown segment", () => {
+    const onToggleMarkdown = vi.fn();
+    const view = renderHeader({}, { onToggleMarkdown });
+
+    expect(screen.getByRole("button", { name: "Rich text" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Markdown" })).toHaveAttribute(
+      "title",
+      "Switch to Markdown",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
+    expect(onToggleMarkdown).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    expect(onToggleMarkdown).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter()}
+        markdownMode
+        onChange={vi.fn()}
+        onToggleMarkdown={onToggleMarkdown}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Rich text" })).toHaveAttribute(
+      "title",
+      "Switch to editor",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    expect(onToggleMarkdown).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
+    expect(onToggleMarkdown).toHaveBeenCalledTimes(2);
   });
 
   it("keeps every action keyboard accessible with its existing label", async () => {
     const user = userEvent.setup();
-    renderCrowdedHeader();
+    renderHeader();
 
-    // Action buttons sit between the title and the metadata controls.
     screen.getByLabelText("State").focus();
 
-    for (const name of [...HEADER_ACTIONS].reverse()) {
+    for (const name of [...TITLE_ROW_ACTIONS].reverse()) {
       await user.tab({ shift: true });
       const button = screen.getByRole("button", { name });
       expect(button).toHaveFocus();
@@ -462,28 +721,20 @@ describe("PropertyPanel header layout", () => {
 });
 
 describe("PropertyPanel tags", () => {
-  function openTags(frontmatter = makeFrontmatter({ tags: ["work"] })) {
+  it("removes the last tag from its chip", () => {
     const onChange = vi.fn();
-    render(<PropertyPanel frontmatter={frontmatter} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    return { input, onChange };
-  }
+    render(<PropertyPanel frontmatter={makeFrontmatter({ tags: ["work"] })} onChange={onChange} />);
 
-  it("commits an empty list when the last tag is cleared", () => {
-    const { input, onChange } = openTags();
-    expect(input).toHaveValue("work");
+    fireEvent.click(screen.getByRole("button", { name: "Remove tag work" }));
 
-    fireEvent.change(input, { target: { value: "" } });
-    fireEvent.blur(input);
-
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ tags: [] });
   });
 
-  it("stays empty after the empty list is saved", async () => {
+  it("adds a tag from the header control and strips a leading hash", async () => {
     const user = userEvent.setup();
     function Harness() {
-      const [tags, setTags] = useState(["work"]);
+      const [tags, setTags] = useState<string[]>([]);
       return (
         <PropertyPanel
           frontmatter={makeFrontmatter({ tags })}
@@ -494,13 +745,248 @@ describe("PropertyPanel tags", () => {
       );
     }
     render(<Harness />);
-    await user.click(screen.getByRole("button", { name: /Properties/ }));
-    const input = screen.getByPlaceholderText("work, work/project");
-    await user.clear(input);
-    await user.tab();
 
-    expect(input).toHaveValue("");
-    await user.click(screen.getByRole("button", { name: /Properties/ }));
-    expect(screen.queryByText("#work")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    const input = screen.getByRole("textbox", { name: "New tag" });
+    await user.type(input, "#ai-skills/command{Enter}");
+
+    expect(screen.getByText("#ai-skills/command")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "New tag" })).not.toBeInTheDocument();
+  });
+
+  it("saves the next tag on blur after Escape cancelled the previous entry", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [tags, setTags] = useState<string[]>([]);
+      return (
+        <PropertyPanel
+          frontmatter={makeFrontmatter({ tags })}
+          onChange={(updates) => {
+            if (Array.isArray(updates.tags)) setTags(updates.tags);
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    const cancelled = screen.getByRole("textbox", { name: "New tag" });
+    await user.type(cancelled, "discard-me");
+    // keyDown alone does not blur. Unmounting the focused field must not
+    // leave the next entry unable to save on blur.
+    fireEvent.keyDown(cancelled, { key: "Escape" });
+    expect(screen.queryByText("#discard-me")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "New tag" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    const next = screen.getByRole("textbox", { name: "New tag" });
+    await user.type(next, "kept");
+    fireEvent.blur(next);
+
+    expect(screen.getByText("#kept")).toBeInTheDocument();
+  });
+});
+
+describe("PropertyPanel frontmatter values", () => {
+  function openPanel(frontmatter: Partial<NoteFrontmatter> = {}) {
+    const onChange = vi.fn();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter(frontmatter)}
+        filePath="/vault/command.md"
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    return { onChange, panel: screen.getByRole("region", { name: "Properties" }) };
+  }
+
+  it("renders custom keys that are not part of the known frontmatter", () => {
+    const { panel } = openPanel({
+      owner: "Ada",
+      score: 3,
+      meta: { lane: "now" },
+    });
+
+    expect(within(panel).getByText("owner")).toBeInTheDocument();
+    expect(within(panel).getByRole("textbox", { name: "owner" })).toHaveValue("Ada");
+    expect(within(panel).getByRole("textbox", { name: "score" })).toHaveValue("3");
+    expect(within(panel).getByRole("textbox", { name: "meta" })).toHaveValue(
+      JSON.stringify({ lane: "now" }),
+    );
+  });
+
+  it("round-trips boolean, array, number, and date values", () => {
+    const { onChange, panel } = openPanel({
+      deadline: "2026-04-01",
+      team: ["Ada"],
+      score: 3,
+    });
+
+    fireEvent.click(within(panel).getByRole("checkbox", { name: "blocked" }));
+    expect(onChange).toHaveBeenCalledWith({ blocked: true });
+
+    const team = within(panel).getByRole("textbox", { name: "team" });
+    fireEvent.change(team, { target: { value: "Ada, Grace" } });
+    fireEvent.blur(team);
+    expect(onChange).toHaveBeenCalledWith({ team: ["Ada", "Grace"] });
+
+    const score = within(panel).getByRole("textbox", { name: "score" });
+    fireEvent.change(score, { target: { value: "4" } });
+    fireEvent.keyDown(score, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith({ score: 4 });
+    expect(onChange.mock.calls.some((call) => typeof call[0].score === "number")).toBe(true);
+
+    const deadline = within(panel).getByLabelText("deadline");
+    fireEvent.change(deadline, { target: { value: "2026-05-02" } });
+    fireEvent.blur(deadline);
+    expect(onChange).toHaveBeenCalledWith({ deadline: "2026-05-02" });
+  });
+
+  it("drops a cleared deadline and team instead of saving blank strings", () => {
+    const { onChange, panel } = openPanel({
+      deadline: "2026-04-01",
+      team: "Ada" as unknown as string[],
+    });
+
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+    fireEvent.change(deadline, { target: { value: "  " } });
+    fireEvent.blur(deadline);
+    expect(onChange).toHaveBeenCalledWith({ deadline: undefined });
+
+    const team = within(panel).getByRole("textbox", { name: "team" });
+    fireEvent.change(team, { target: { value: "" } });
+    fireEvent.blur(team);
+    expect(onChange).toHaveBeenCalledWith({ team: undefined });
+  });
+
+  it("leaves a deadline that is already an empty string", () => {
+    const { onChange, panel } = openPanel({ deadline: "" });
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+    fireEvent.change(deadline, { target: { value: "" } });
+    fireEvent.blur(deadline);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("shows YYYY-MM-DD on an empty deadline text field", () => {
+    const { panel } = openPanel({ deadline: "" });
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+
+    expect(deadline).toHaveAttribute("type", "text");
+    expect(deadline).toHaveAttribute("placeholder", "YYYY-MM-DD");
+    expect(deadline).toHaveValue("");
+  });
+
+  it("rejects a deadline that is not a real YYYY-MM-DD date", () => {
+    useToastStore.setState({ toasts: [] });
+    const { onChange, panel } = openPanel({ deadline: "" });
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+
+    fireEvent.change(deadline, { target: { value: "04/01/2026" } });
+    fireEvent.blur(deadline);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(deadline).toHaveValue("");
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("Could not save deadline")),
+    ).toBe(true);
+  });
+
+  it("shows the stored timestamp format on other date fields", () => {
+    useToastStore.setState({ toasts: [] });
+    const { onChange, panel } = openPanel({
+      deadline: "2026-04-01",
+      reviewed: "2026-07-31T18:23:05Z",
+    });
+
+    const deadline = within(panel).getByRole("textbox", { name: "deadline" });
+    expect(deadline).toHaveAttribute("type", "text");
+    expect(deadline).toHaveAttribute("placeholder", "YYYY-MM-DD");
+
+    const reviewed = within(panel).getByRole("textbox", { name: "reviewed" });
+    expect(reviewed).toHaveAttribute("type", "text");
+    expect(reviewed).toHaveAttribute("placeholder", "YYYY-MM-DDTHH:mm:ssZ");
+    expect(reviewed).toHaveValue("2026-07-31T18:23:05Z");
+
+    fireEvent.change(reviewed, { target: { value: "tomorrow" } });
+    fireEvent.blur(reviewed);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(reviewed).toHaveValue("2026-07-31T18:23:05Z");
+
+    fireEvent.change(reviewed, { target: { value: "2026-08-01T09:00:00Z" } });
+    fireEvent.blur(reviewed);
+    expect(onChange).toHaveBeenCalledWith({ reviewed: "2026-08-01T09:00:00Z" });
+  });
+
+  it("leaves id, created, updated, and path as text", () => {
+    const { panel } = openPanel();
+
+    expect(within(panel).queryByRole("textbox", { name: "id" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("textbox", { name: "created" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("textbox", { name: "updated" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("textbox", { name: "Path" })).not.toBeInTheDocument();
+    expect(within(panel).getByText("01JPMXYZ123")).toBeInTheDocument();
+    expect(within(panel).getByText("/vault/command.md")).toBeInTheDocument();
+    expect(within(panel).getAllByTitle("2026-07-10")).toHaveLength(2);
+  });
+
+  it("disables every properties input when the note is locked", () => {
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ locked: true, deadline: "2026-04-01", score: 3 })}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+
+    for (const control of panel.querySelectorAll("input, select, textarea")) {
+      expect(control).toBeDisabled();
+    }
+    expect(screen.getByRole("switch", { name: "Locked" })).toBeEnabled();
+    expect(screen.getByRole("switch", { name: "Locked" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("rejects an invalid object and keeps the stored value", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyPanel
+        frontmatter={makeFrontmatter({ meta: { lane: "now" } })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const meta = screen.getByRole("textbox", { name: "meta" });
+    fireEvent.change(meta, { target: { value: "{not json" } });
+    fireEvent.blur(meta);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(meta).toHaveValue(JSON.stringify({ lane: "now" }));
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("Could not save meta")),
+    ).toBe(true);
+  });
+
+  it("keeps the header state select in step with the properties select", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PropertyPanel frontmatter={makeFrontmatter({ state: "Prepare" })} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const header = screen.getByRole("combobox", { name: "State" });
+    const panelState = screen.getByRole("combobox", { name: "state" });
+
+    fireEvent.change(panelState, { target: { value: "Done" } });
+    expect(onChange).toHaveBeenCalledWith({ state: "Done" });
+
+    rerender(
+      <PropertyPanel frontmatter={makeFrontmatter({ state: "Done" })} onChange={onChange} />,
+    );
+    expect(header).toHaveValue("Done");
+    expect(panelState).toHaveValue("Done");
   });
 });

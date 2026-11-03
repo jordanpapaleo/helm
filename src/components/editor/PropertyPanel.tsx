@@ -1,17 +1,12 @@
 import { Icon } from "@iconify/react";
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import matter from "gray-matter";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import { isArchived } from "../../lib/archive";
 import { NOTE_STATES, UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { resolveOutgoingLinks } from "../../lib/note-links";
 import { formatTimestamp } from "../../lib/timestamps";
 import { useNoteStore } from "../../store/notes";
+import { reportError } from "../../store/toast";
 import type { NoteFrontmatter, NoteState } from "../../types/note";
 import { PinToSideButton } from "../layout/PinToSideButton";
 
@@ -34,28 +29,161 @@ interface PropertyPanelProps {
   readOnly?: boolean;
 }
 
-// Fields handled explicitly — excluded from the "extra fields" section
-const KNOWN_FIELDS = new Set([
-  "id",
+/** Shown as text. Path is rendered beside these but is not a frontmatter key. */
+const READ_ONLY_KEYS = new Set(["id", "created", "updated"]);
+
+/**
+ * Workflow fields hidden for an unmanaged note. State, urgent, and important
+ * leave the heading and the properties editor. Blocked stays in Properties.
+ */
+const UNMANAGED_HIDDEN_KEYS = new Set(["state", "urgent", "important"]);
+
+/** Known keys keep a stable order. Anything else follows in file order. */
+const KNOWN_ORDER = [
   "title",
-  "created",
-  "updated",
-  "tags",
+  "state",
   "urgent",
   "important",
-  "state",
   "blocked",
+  "pinned",
+  "locked",
+  "template",
+  "unmanaged",
+  "archived",
   "deadline",
   "team",
+  "tags",
   "links",
-  "locked",
-  "pinned",
-  "archived",
-  "unmanaged",
   "kanbanOrder",
   "eisenhowerOrder",
-  "template",
-]);
+];
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+/** Helm stores timestamps as UTC seconds with a trailing Z. */
+const STORED_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const DATE_PLACEHOLDER = "YYYY-MM-DD";
+const DATETIME_PLACEHOLDER = "YYYY-MM-DDTHH:mm:ssZ";
+
+type ValueKind =
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "array"
+  | "state"
+  | "number"
+  | "string"
+  | "object";
+
+function valueKind(key: string, value: unknown): ValueKind {
+  if (key === "state") return "state";
+  // deadline stays a calendar date even when the value is blank, so the
+  // empty field can show YYYY-MM-DD instead of a generic text box.
+  if (key === "deadline") return "date";
+  if (typeof value === "boolean") return "boolean";
+  if (typeof value === "number") return "number";
+  if (Array.isArray(value)) return "array";
+  if (value !== null && typeof value === "object") return "object";
+  if (typeof value === "string" && DATE_ONLY.test(value)) return "date";
+  if (typeof value === "string" && DATE_TIME.test(value)) return "datetime";
+  return "string";
+}
+
+function isCalendarDate(value: string): boolean {
+  if (!DATE_ONLY.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
+function editableKeys(frontmatter: NoteFrontmatter): string[] {
+  const hideWorkflow = frontmatter.unmanaged === true;
+  const keys = Object.keys(frontmatter).filter(
+    (key) => !READ_ONLY_KEYS.has(key) && !(hideWorkflow && UNMANAGED_HIDDEN_KEYS.has(key)),
+  );
+  const known = KNOWN_ORDER.filter((key) => keys.includes(key));
+  const rest = keys.filter((key) => !KNOWN_ORDER.includes(key));
+  return [...known, ...rest];
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function listText(value: unknown[]): string {
+  return value.map((item) => String(item)).join(", ");
+}
+
+function parseList(text: string, current: unknown[]): unknown[] {
+  const parts = text
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const numeric = current.length > 0 && current.every((item) => typeof item === "number");
+  if (!numeric) return parts;
+  if (parts.some((part) => part.trim() === "" || !Number.isFinite(Number(part)))) {
+    throw new Error("Enter numbers separated by commas");
+  }
+  return parts.map((part) => Number(part));
+}
+
+function parseNumber(text: string): number {
+  const trimmed = text.trim();
+  if (trimmed === "" || !Number.isFinite(Number(trimmed))) {
+    throw new Error("Enter a number");
+  }
+  return Number(trimmed);
+}
+
+function commitDate(draft: string): string {
+  const trimmed = draft.trim();
+  if (trimmed === "") return "";
+  if (!isCalendarDate(trimmed)) throw new Error(`Enter a date as ${DATE_PLACEHOLDER}`);
+  return trimmed;
+}
+
+function commitDatetime(draft: string, current: string): string {
+  const trimmed = draft.trim();
+  if (trimmed === "" || trimmed === current) return trimmed === "" ? "" : current;
+  if (!STORED_DATETIME.test(trimmed) || !isCalendarDate(trimmed.slice(0, 10))) {
+    throw new Error(`Enter a time as ${DATETIME_PLACEHOLDER}`);
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Enter a time as ${DATETIME_PLACEHOLDER}`);
+  }
+  return trimmed;
+}
+
+function parseObject(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Enter a JSON or YAML object");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    try {
+      parsed = matter(`---\n${trimmed}\n---\n`).data;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "invalid YAML";
+      throw new Error(detail);
+    }
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Enter a JSON or YAML object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function displayText(kind: ValueKind, value: unknown): string {
+  if (kind === "array" && Array.isArray(value)) return listText(value);
+  if (kind === "object") return JSON.stringify(value);
+  if (kind === "datetime" && typeof value === "string") return value;
+  if (kind === "number") return String(value ?? "");
+  return typeof value === "string" ? value : value == null ? "" : String(value);
+}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -66,221 +194,399 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function TeamInput({
+function StateSelect({
   value,
   onChange,
-}: {
-  value: string[] | undefined;
-  onChange: (u: Partial<NoteFrontmatter>) => void;
-}) {
-  const [draft, setDraft] = useState(value?.join(", ") ?? "");
-  useEffect(() => {
-    setDraft(value?.join(", ") ?? "");
-  }, [value]);
-  return (
-    <Row label="Team">
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() =>
-          onChange({
-            team: draft.trim()
-              ? draft
-                  .split(",")
-                  .map((t) => t.trim())
-                  .filter(Boolean)
-              : undefined,
-          })
-        }
-        placeholder="CE, RL, …"
-        className="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]/50"
-      />
-    </Row>
-  );
-}
-
-const STATE_CHOICES: Array<{ value: NoteState; label: string }> = [
-  { value: "", label: "None" },
-  ...NOTE_STATES.map((state) => ({ value: state as NoteState, label: state })),
-];
-
-const menuItemClass =
-  "flex w-full items-center px-3 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-accent)]";
-
-/**
- * Workflow state as a normal menu. A daisyUI `<select class="select">` opts into
- * `appearance: base-select`, and that picker anchors to the wrong box — it paints
- * over the note title instead of opening under the control.
- */
-function StateMenu({
-  value,
-  onChange,
+  label = "State",
+  className = "select select-sm note-heading-state",
+  disabled = false,
 }: {
   value: NoteState;
   onChange: (state: NoteState) => void;
+  label?: string;
+  className?: string;
+  disabled?: boolean;
 }) {
-  const menuId = useId();
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ left: 0, top: 0 });
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    if (!open || !buttonRef.current || !menuRef.current) return;
-    const trigger = buttonRef.current.getBoundingClientRect();
-    const menu = menuRef.current.getBoundingClientRect();
-    const margin = 4;
-    const spaceBelow = window.innerHeight - trigger.bottom - margin;
-    const top =
-      spaceBelow >= menu.height || spaceBelow >= trigger.top
-        ? trigger.bottom + margin
-        : Math.max(margin, trigger.top - menu.height - margin);
-    const left = Math.max(margin, Math.min(trigger.left, window.innerWidth - menu.width - margin));
-    setPos({ left, top });
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const selected = menuRef.current?.querySelector<HTMLElement>('[aria-checked="true"]');
-    const first = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"]');
-    (selected ?? first)?.focus();
-
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
-      setOpen(false);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-      buttonRef.current?.focus();
-    }
-    function onScroll() {
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onScroll);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onScroll);
-      window.removeEventListener("scroll", onScroll, true);
-    };
-  }, [open]);
-
-  function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    const items = [
-      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
-    ];
-    if (items.length === 0) return;
-    const index = items.indexOf(document.activeElement as HTMLButtonElement);
-    if (
-      event.key !== "ArrowDown" &&
-      event.key !== "ArrowUp" &&
-      event.key !== "Home" &&
-      event.key !== "End"
-    ) {
-      return;
-    }
-    event.preventDefault();
-    const current = index === -1 ? (event.key === "ArrowUp" ? 0 : -1) : index;
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? items.length - 1
-          : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-    items[next]?.focus();
-  }
-
-  function choose(state: NoteState) {
-    onChange(state);
-    setOpen(false);
-    buttonRef.current?.focus();
-  }
-
   return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-label="State"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        className="btn btn-ghost btn-sm h-auto min-h-0 gap-1 px-2 py-0.5 font-normal"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{value || "None"}</span>
-        <Icon icon="uil:angle-down" className="h-4 w-4 opacity-70" aria-hidden="true" />
-      </button>
-      {open && (
-        <div
-          ref={menuRef}
-          id={menuId}
-          role="menu"
-          aria-label="Note state"
-          className="fixed z-50 min-w-[10rem] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-xl"
-          style={{ left: pos.left, top: pos.top }}
-          onKeyDown={onMenuKeyDown}
-        >
-          {STATE_CHOICES.map((choice) => (
-            <button
-              key={choice.label}
-              type="button"
-              role="menuitemradio"
-              aria-checked={value === choice.value}
-              className={`${menuItemClass} ${value === choice.value ? "bg-[var(--color-bg)]" : ""}`}
-              onClick={() => choose(choice.value)}
-            >
-              {choice.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </>
+    <select
+      aria-label={label}
+      className={className}
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value as NoteState)}
+    >
+      <option value="">State</option>
+      {NOTE_STATES.map((state) => (
+        <option key={state} value={state}>
+          {state}
+        </option>
+      ))}
+    </select>
   );
 }
 
-function TagsInput({
+function FieldText({ value }: { value: string }) {
+  return value ? (
+    <span className="text-[var(--color-text)]">{value}</span>
+  ) : (
+    <span className="text-[var(--color-text-muted)]">—</span>
+  );
+}
+
+function DraftInput({
+  label,
+  text,
+  placeholder,
+  disabled,
+  mono = false,
+  onCommit,
+}: {
+  label: string;
+  text: string;
+  placeholder?: string;
+  disabled: boolean;
+  mono?: boolean;
+  /** Return false to reject the draft and restore the stored value. */
+  onCommit: (draft: string) => boolean;
+}) {
+  const [draft, setDraft] = useState(text);
+  useEffect(() => {
+    setDraft(text);
+  }, [text]);
+
+  function commit() {
+    if (disabled) return;
+    if (!onCommit(draft)) setDraft(text);
+  }
+
+  return (
+    <input
+      aria-label={label}
+      type="text"
+      inputMode={placeholder ? "numeric" : undefined}
+      spellCheck={placeholder ? false : undefined}
+      placeholder={placeholder}
+      disabled={disabled}
+      value={draft}
+      className={`input input-sm w-full max-w-md placeholder:text-[var(--color-text-muted)] ${mono ? "font-mono text-xs" : ""}`}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        commit();
+      }}
+    />
+  );
+}
+
+function FrontmatterValue({
+  fieldKey,
+  value,
+  disabled,
+  onChange,
+}: {
+  fieldKey: string;
+  value: unknown;
+  disabled: boolean;
+  onChange: (updates: Partial<NoteFrontmatter>) => void;
+}) {
+  const kind = valueKind(fieldKey, value);
+  const text = displayText(kind, value);
+
+  function commitParsed(next: unknown): boolean {
+    if (sameValue(next, value)) return true;
+    onChange({ [fieldKey]: next });
+    return true;
+  }
+
+  function commitText(draft: string): boolean {
+    try {
+      // A cleared field is removed. Writing "" created deadline: '' and team: ''
+      // on disk. A key that already holds "" stays that way.
+      if ((kind === "string" || kind === "date" || kind === "datetime") && draft.trim() === "") {
+        return commitParsed(value === "" ? "" : undefined);
+      }
+      if (kind === "number") return commitParsed(parseNumber(draft));
+      if (kind === "date") return commitParsed(commitDate(draft));
+      if (kind === "datetime") {
+        return commitParsed(commitDatetime(draft, typeof value === "string" ? value : ""));
+      }
+      if (kind === "array") {
+        return commitParsed(parseList(draft, Array.isArray(value) ? value : []));
+      }
+      if (kind === "object") return commitParsed(parseObject(draft));
+      return commitParsed(draft);
+    } catch (error) {
+      reportError(`Could not save ${fieldKey}`, error);
+      return false;
+    }
+  }
+
+  if (kind === "boolean") {
+    return (
+      <input
+        type="checkbox"
+        className="toggle toggle-sm"
+        aria-label={fieldKey}
+        checked={value === true}
+        disabled={disabled}
+        onChange={(event) => onChange({ [fieldKey]: event.target.checked })}
+      />
+    );
+  }
+
+  if (kind === "state") {
+    return (
+      <StateSelect
+        label="state"
+        className="select select-sm w-full max-w-md"
+        value={(typeof value === "string" ? value : "") as NoteState}
+        disabled={disabled}
+        onChange={(state) => onChange({ state })}
+      />
+    );
+  }
+
+  return (
+    <DraftInput
+      label={fieldKey}
+      text={text}
+      mono={kind === "object" || kind === "datetime"}
+      placeholder={
+        kind === "date" ? DATE_PLACEHOLDER : kind === "datetime" ? DATETIME_PLACEHOLDER : undefined
+      }
+      disabled={disabled}
+      onCommit={commitText}
+    />
+  );
+}
+
+/** Stable icon ids. Iconify otherwise mints new ids and replaces the svg on every render. */
+const HeadingIcon = memo(function HeadingIcon({
+  icon,
+  id,
+  className = "h-4 w-4",
+}: {
+  icon: string;
+  id: string;
+  className?: string;
+}) {
+  return <Icon id={id} icon={icon} className={className} aria-hidden="true" />;
+});
+
+function iconButtonClass(tone: "default" | "active" | "danger" = "default"): string {
+  const color =
+    tone === "active"
+      ? "text-[var(--color-accent)]"
+      : tone === "danger"
+        ? "text-[var(--color-text-muted)] hover:text-[var(--color-error)]"
+        : "text-[var(--color-text-muted)]";
+  return `btn btn-ghost btn-sm btn-square ${color}`;
+}
+
+function HeadingDivider() {
+  return (
+    <span
+      data-testid="heading-divider"
+      aria-hidden="true"
+      className="inline-block h-4 w-px shrink-0 self-center bg-base-300"
+    />
+  );
+}
+
+function JoinToggle({
+  label,
+  segments,
+}: {
+  label: string;
+  segments: Array<{
+    label: string;
+    pressed: boolean;
+    title?: string;
+    icon?: string;
+    onClick: () => void;
+  }>;
+}) {
+  return (
+    <fieldset className="join note-heading-mode m-0 inline-flex h-8 items-center rounded-full border-0 bg-base-200 p-0.5 [min-inline-size:0]">
+      <legend className="sr-only">{label}</legend>
+      {segments.map((segment) => (
+        <button
+          key={segment.label}
+          type="button"
+          aria-label={segment.label}
+          aria-pressed={segment.pressed}
+          title={segment.title ?? segment.label}
+          data-icon={segment.icon}
+          data-selected={segment.pressed ? "true" : "false"}
+          className="btn btn-sm join-item h-7 min-h-0 rounded-full px-2 font-medium"
+          onClick={segment.onClick}
+        >
+          {segment.icon ? (
+            <HeadingIcon
+              icon={segment.icon}
+              id={`note-heading-mode-${segment.label.replace(/\s+/g, "-").toLowerCase()}`}
+              className="h-4 w-4"
+            />
+          ) : (
+            segment.label
+          )}
+        </button>
+      ))}
+    </fieldset>
+  );
+}
+
+const FlagSwitch = memo(
+  function FlagSwitch({
+    label,
+    pressed,
+    icon,
+    onToggle,
+    indicator = "switch",
+    controls,
+  }: {
+    label: string;
+    pressed: boolean;
+    icon: string;
+    onToggle: () => void;
+    /** Pin and lock stay switches. The other heading toggles report aria-pressed. */
+    indicator?: "switch" | "pressed";
+    /** When set, the button also exposes aria-expanded for the controlled panel. */
+    controls?: string;
+  }) {
+    const pressedProps =
+      indicator === "switch"
+        ? ({ role: "switch", "aria-checked": pressed } as const)
+        : ({ "aria-pressed": pressed } as const);
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        data-icon={icon}
+        aria-expanded={controls ? pressed : undefined}
+        aria-controls={controls}
+        className={iconButtonClass(pressed ? "active" : "default")}
+        onClick={onToggle}
+        {...pressedProps}
+      >
+        <HeadingIcon icon={icon} id={`note-heading-${label}`} />
+      </button>
+    );
+  },
+  (prev, next) =>
+    prev.label === next.label &&
+    prev.pressed === next.pressed &&
+    prev.icon === next.icon &&
+    prev.controls === next.controls &&
+    (prev.indicator ?? "switch") === (next.indicator ?? "switch"),
+);
+
+function HeaderTags({
   value,
   onChange,
 }: {
   value: string[];
   onChange: (u: Partial<NoteFrontmatter>) => void;
 }) {
-  const [draft, setDraft] = useState(value.join(", "));
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const skipCommit = useRef(false);
+
   useEffect(() => {
-    setDraft(value.join(", "));
-  }, [value]);
+    if (!adding) return;
+    inputRef.current?.focus();
+  }, [adding]);
+
+  function commit() {
+    const next = draft.trim().replace(/^#/, "");
+    setDraft("");
+    setAdding(false);
+    if (!next || value.includes(next)) return;
+    onChange({ tags: [...value, next] });
+  }
+
   return (
-    <Row label="Tags">
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() =>
-          onChange({
-            tags: draft.trim()
-              ? draft
-                  .split(",")
-                  .map((t) => t.trim().replace(/^#/, ""))
-                  .filter(Boolean)
-              : [],
-          })
-        }
-        placeholder="work, work/project"
-        className="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]/50 text-sm"
-      />
-    </Row>
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
+      {value.map((tag) => (
+        <span key={tag} className="badge badge-ghost gap-1 font-normal">
+          <span>#{tag}</span>
+          <button
+            type="button"
+            aria-label={`Remove tag ${tag}`}
+            title={`Remove tag ${tag}`}
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
+            onClick={() => onChange({ tags: value.filter((item) => item !== tag) })}
+          >
+            <HeadingIcon icon="uil:times" id={`note-heading-tag-${tag}`} className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <input
+          ref={inputRef}
+          aria-label="New tag"
+          value={draft}
+          placeholder="tag"
+          className="w-28 border-b border-[var(--color-border)] bg-transparent px-1 py-0.5 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            if (skipCommit.current) {
+              skipCommit.current = false;
+              return;
+            }
+            commit();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              skipCommit.current = true;
+              setDraft("");
+              setAdding(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          aria-label="Add tag"
+          className="inline-flex items-center gap-1 px-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          onClick={() => {
+            skipCommit.current = false;
+            setAdding(true);
+          }}
+        >
+          <HeadingIcon icon="uil:plus" id="note-heading-add-tag" className="h-3 w-3" />
+          Tag
+        </button>
+      )}
+    </div>
   );
 }
 
-export function PropertyPanel({
+function sameHeadingProps(prev: PropertyPanelProps, next: PropertyPanelProps): boolean {
+  return (
+    prev.frontmatter === next.frontmatter &&
+    prev.content === next.content &&
+    prev.filePath === next.filePath &&
+    prev.readOnly === next.readOnly &&
+    prev.markdownMode === next.markdownMode &&
+    prev.exportingPdf === next.exportingPdf &&
+    (prev.onDelete === undefined) === (next.onDelete === undefined) &&
+    (prev.onArchive === undefined) === (next.onArchive === undefined) &&
+    (prev.onToggleMarkdown === undefined) === (next.onToggleMarkdown === undefined) &&
+    (prev.onShowHistory === undefined) === (next.onShowHistory === undefined) &&
+    (prev.onExportPdf === undefined) === (next.onExportPdf === undefined)
+  );
+}
+
+export const PropertyPanel = memo(function PropertyPanel({
   frontmatter,
   content,
   filePath,
@@ -300,6 +606,7 @@ export function PropertyPanel({
   const [titleDraft, setTitleDraft] = useState(frontmatter.title);
   const editingTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const propertiesId = useId();
   const canEditTitle = !readOnly && !frontmatter.locked;
 
   // Drop an in-progress edit when the open note changes, even if the titles match.
@@ -355,407 +662,309 @@ export function PropertyPanel({
       setTimeout(() => setCopied(false), 1500);
     });
   }
-  const { notes } = useNoteStore();
-  const linkBody = content ?? notes.find((n) => n.id === frontmatter.id)?.content ?? "";
-  const outgoingLinks = resolveOutgoingLinks(
-    { id: frontmatter.id, content: linkBody, frontmatter },
-    notes,
-  );
+  // A string selector so an unrelated note reload does not redraw the header
+  // when the resolved titles stay the same. Resolution matches the graph and
+  // the footer: saved ids plus [[wiki links]] in the body.
+  const linkSummary = useNoteStore((state) => {
+    const linkBody = content ?? state.notes.find((n) => n.id === frontmatter.id)?.content ?? "";
+    return resolveOutgoingLinks({ id: frontmatter.id, content: linkBody, frontmatter }, state.notes)
+      .map((link) => {
+        const title = state.notes.find((note) => note.id === link.id)?.frontmatter.title ?? link.id;
+        return `${link.id}\t${title}`;
+      })
+      .join("\n");
+  });
+  const outgoingLinks = linkSummary
+    ? linkSummary.split("\n").map((row) => {
+        const tab = row.indexOf("\t");
+        return { id: row.slice(0, tab), title: row.slice(tab + 1) };
+      })
+    : [];
 
   const unmanaged = frontmatter.unmanaged ?? false;
   const archived = isArchived(frontmatter);
-
-  // Extra unknown fields beyond the known set
-  const extraFields = Object.entries(frontmatter).filter(([k]) => !KNOWN_FIELDS.has(k));
+  const fieldsDisabled = readOnly || frontmatter.locked === true;
 
   return (
-    <div className="border-b border-base-300 px-12 py-4 space-y-3">
-      {/* Title row stays clear of the action icons. */}
-      <div className="flex min-w-0 items-center gap-2">
-        {editingTitle ? (
-          <>
-            <input
-              ref={titleInputRef}
-              aria-label="Note title"
-              className="min-w-[8ch] max-w-[calc(100%-2.75rem)] rounded-md border border-base-300 bg-transparent px-2 text-3xl font-bold text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
-              style={{ width: `${Math.max(titleDraft.length + 1, 8)}ch` }}
-              value={titleDraft}
-              placeholder="Untitled"
-              autoComplete="off"
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={(e) => commitTitle(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitTitle(e.currentTarget.value);
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelTitleEdit();
-                }
-              }}
-            />
-            <button
-              type="button"
-              aria-label="Save title"
-              title="Save title"
-              className="btn btn-ghost btn-sm btn-square shrink-0 text-[var(--color-accent)]"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => commitTitle(titleDraft)}
-            >
-              <Icon icon="uil:check" className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </>
-        ) : (
-          <>
-            <h1 className="min-w-0 break-words text-3xl font-bold leading-tight text-[var(--color-text)]">
-              {frontmatter.title || "Untitled"}
-            </h1>
-            {canEditTitle && (
+    <div className="space-y-3 border-b border-base-300 px-12 py-4" data-testid="note-heading">
+      <div
+        data-testid="note-heading-title-row"
+        className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          {editingTitle ? (
+            <>
+              <input
+                ref={titleInputRef}
+                aria-label="Note title"
+                className="min-w-[8ch] max-w-[calc(100%-2.75rem)] rounded-md border border-base-300 bg-transparent px-2 text-3xl font-bold text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+                style={{ width: `${Math.max(titleDraft.length + 1, 8)}ch` }}
+                value={titleDraft}
+                placeholder="Untitled"
+                autoComplete="off"
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={(e) => commitTitle(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitTitle(e.currentTarget.value);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelTitleEdit();
+                  }
+                }}
+              />
               <button
                 type="button"
-                aria-label="Edit title"
-                title="Edit title"
-                className="btn btn-ghost btn-sm btn-square shrink-0 opacity-60 hover:opacity-100 focus-visible:opacity-100"
-                onClick={beginTitleEdit}
+                aria-label="Save title"
+                title="Save title"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--color-accent)] hover:bg-[var(--color-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => commitTitle(titleDraft)}
               >
-                <Icon icon="uil:pen" className="h-4 w-4" aria-hidden="true" />
+                <HeadingIcon icon="uil:check" id="note-heading-save-title" />
               </button>
-            )}
-          </>
-        )}
-        {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
-      </div>
-
-      {/* Same actions as before, on their own line under the title. */}
-      <div className="flex flex-wrap items-center gap-1">
-        {filePath && (
-          <button
-            type="button"
-            onClick={copyPath}
-            title="Copy file path"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            {copied ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4 text-green-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            )}
-          </button>
-        )}
-        <PinToSideButton noteId={frontmatter.id} variant="editor" />
-        {onShowHistory && (
-          <button
-            type="button"
-            onClick={onShowHistory}
-            title="Note history"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-          </button>
-        )}
-        {onExportPdf && (
-          <button
-            type="button"
-            onClick={onExportPdf}
-            disabled={exportingPdf}
-            aria-label="Export to PDF"
-            title="Export to PDF (⇧⌘E)"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            <Icon icon="uil:file-export" className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-        {onToggleMarkdown && (
-          <button
-            type="button"
-            onClick={onToggleMarkdown}
-            title={markdownMode ? "Switch to editor" : "Switch to Markdown"}
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            {markdownMode ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <polyline points="4 7 4 4 20 4 20 7" />
-                <line x1="9" y1="20" x2="15" y2="20" />
-                <line x1="12" y1="4" x2="12" y2="20" />
-              </svg>
-            )}
-          </button>
-        )}
-        {onArchive && (
-          <button
-            type="button"
-            onClick={onArchive}
-            title={archived ? "Unarchive note" : "Archive note"}
-            aria-label={archived ? "Unarchive note" : "Archive note"}
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100"
-          >
-            <Icon icon="uil:archive" className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-        {onDelete && (
-          <button
-            type="button"
-            onClick={onDelete}
-            title="Delete note"
-            className="btn btn-ghost btn-sm btn-square opacity-60 hover:opacity-100 hover:text-error"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14H6L5 6" />
-              <path d="M10 11v6M14 11v6" />
-              <path d="M9 6V4h6v2" />
-            </svg>
-          </button>
-        )}
-      </div>
-
-      {/* Compact metadata row. The Properties button stays outside the disabled
-          fieldset so a deleted note can still be inspected. */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-        <fieldset
-          disabled={readOnly}
-          className="m-0 flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 border-0 p-0"
-        >
-          {/* Workflow fields are meaningless for unmanaged notes — hidden and cleared */}
-          {!unmanaged && (
+            </>
+          ) : (
             <>
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--color-text-muted)]">State</span>
-                <StateMenu value={frontmatter.state} onChange={(state) => onChange({ state })} />
-              </div>
-
-              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-                <input
-                  type="checkbox"
-                  checked={frontmatter.urgent}
-                  onChange={(e) => onChange({ urgent: e.target.checked })}
-                  className="rounded accent-[var(--color-accent)]"
-                />
-                Urgent
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-                <input
-                  type="checkbox"
-                  checked={frontmatter.important}
-                  onChange={(e) => onChange({ important: e.target.checked })}
-                  className="rounded accent-[var(--color-accent)]"
-                />
-                Important
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-                <input
-                  type="checkbox"
-                  checked={frontmatter.blocked}
-                  onChange={(e) => onChange({ blocked: e.target.checked })}
-                  className="rounded accent-[var(--color-accent)]"
-                />
-                Blocked
-              </label>
+              <h1 className="min-w-0 break-words text-3xl font-bold leading-tight text-[var(--color-text)]">
+                {frontmatter.title || "Untitled"}
+              </h1>
+              {canEditTitle && (
+                <button
+                  type="button"
+                  aria-label="Edit title"
+                  title="Edit title"
+                  className="btn btn-ghost btn-xs btn-square shrink-0 text-[var(--color-text-muted)]"
+                  onClick={beginTitleEdit}
+                >
+                  <HeadingIcon icon="uil:pen" id="note-heading-edit-title" />
+                </button>
+              )}
             </>
           )}
+          {archived && <span className="badge badge-ghost badge-sm shrink-0">Archived</span>}
+        </div>
 
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={frontmatter.pinned ?? false}
-              onChange={(e) => onChange({ pinned: e.target.checked })}
-              className="rounded accent-[var(--color-accent)]"
-            />
-            Pinned
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={frontmatter.locked ?? false}
-              onChange={(e) => onChange({ locked: e.target.checked })}
-              className="rounded accent-[var(--color-accent)]"
-            />
-            Locked
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={unmanaged}
-              onChange={(e) =>
-                // Clearing rides along in the same update so it is one write, not five.
-                onChange(
-                  e.target.checked
-                    ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS }
-                    : { unmanaged: false },
-                )
-              }
-              className="rounded accent-[var(--color-accent)]"
-            />
-            Unmanaged
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer opacity-70 hover:opacity-100">
-            <input
-              type="checkbox"
-              checked={frontmatter.template ?? false}
-              onChange={(e) => onChange({ template: e.target.checked })}
-              className="rounded accent-[var(--color-accent)]"
-            />
-            Template
-          </label>
-        </fieldset>
-
-        {/* Expand toggle */}
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="btn btn-ghost btn-xs ml-auto gap-1"
+        <div
+          data-testid="note-heading-actions"
+          className="flex shrink-0 flex-wrap items-center gap-1"
         >
-          Properties
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            aria-hidden="true"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
+          {filePath && (
+            <button
+              type="button"
+              onClick={copyPath}
+              aria-label="Copy file path"
+              title="Copy file path"
+              className={iconButtonClass(copied ? "active" : "default")}
+            >
+              <HeadingIcon icon={copied ? "uil:check" : "uil:copy"} id="note-heading-copy" />
+            </button>
+          )}
+          <PinToSideButton noteId={frontmatter.id} variant="editor" />
+          {onShowHistory && (
+            <button
+              type="button"
+              onClick={onShowHistory}
+              aria-label="Note history"
+              title="Note history"
+              className={iconButtonClass()}
+            >
+              <HeadingIcon icon="uil:history" id="note-heading-history" />
+            </button>
+          )}
+          {onExportPdf && (
+            <button
+              type="button"
+              onClick={onExportPdf}
+              disabled={exportingPdf}
+              aria-label="Export to PDF"
+              title="Export to PDF (⇧⌘E)"
+              className={iconButtonClass()}
+            >
+              <HeadingIcon icon="uil:file-export" id="note-heading-export" />
+            </button>
+          )}
+          {onToggleMarkdown && (
+            <>
+              <HeadingDivider />
+              <JoinToggle
+                label="Editor mode"
+                segments={[
+                  {
+                    label: "Rich text",
+                    icon: "uil:file-alt",
+                    pressed: markdownMode !== true,
+                    title: markdownMode ? "Switch to editor" : "Rich text",
+                    onClick: () => {
+                      if (markdownMode) onToggleMarkdown();
+                    },
+                  },
+                  {
+                    label: "Markdown",
+                    icon: "uil:brackets-curly",
+                    pressed: markdownMode === true,
+                    title: markdownMode ? "Markdown" : "Switch to Markdown",
+                    onClick: () => {
+                      if (!markdownMode) onToggleMarkdown();
+                    },
+                  },
+                ]}
+              />
+            </>
+          )}
+          {(onArchive || onDelete) && <HeadingDivider />}
+          {onArchive && (
+            <button
+              type="button"
+              onClick={onArchive}
+              title={archived ? "Unarchive note" : "Archive note"}
+              aria-label={archived ? "Unarchive note" : "Archive note"}
+              className={iconButtonClass()}
+            >
+              <HeadingIcon icon="uil:archive" id="note-heading-archive" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="Delete note"
+              title="Delete note"
+              className={iconButtonClass("danger")}
+            >
+              <HeadingIcon icon="uil:trash-alt" id="note-heading-delete" />
+            </button>
+          )}
+          <HeadingDivider />
+          <FlagSwitch
+            label="Properties"
+            pressed={expanded}
+            icon="uil:info-circle"
+            indicator="pressed"
+            controls={propertiesId}
+            onToggle={() => setExpanded((open) => !open)}
+          />
+        </div>
       </div>
 
-      {/* Expanded frontmatter panel */}
-      {expanded && (
+      <div
+        data-testid="note-heading-meta-row"
+        className="flex min-w-0 flex-wrap items-center justify-start gap-2"
+      >
         <fieldset
           disabled={readOnly}
-          className="m-0 min-w-0 rounded-lg border border-base-300 bg-base-200/50 px-4 py-2 text-sm"
+          className="m-0 flex min-w-0 flex-wrap items-center justify-start gap-2 border-0 p-0"
         >
-          <Row label="ID">
+          {/* State, Urgent, and Important leave the heading when the note is
+              unmanaged. Blocked stays in Properties and has no header toggle. */}
+          {!unmanaged && (
+            <>
+              <StateSelect value={frontmatter.state} onChange={(state) => onChange({ state })} />
+              <FlagSwitch
+                label="Urgent"
+                pressed={frontmatter.urgent}
+                icon="uil:clock"
+                indicator="pressed"
+                onToggle={() => onChange({ urgent: !frontmatter.urgent })}
+              />
+              <FlagSwitch
+                label="Important"
+                pressed={frontmatter.important}
+                icon="uil:star"
+                indicator="pressed"
+                onToggle={() => onChange({ important: !frontmatter.important })}
+              />
+              <HeadingDivider />
+            </>
+          )}
+          <FlagSwitch
+            label="Pinned"
+            pressed={frontmatter.pinned ?? false}
+            icon="uil:map-pin"
+            onToggle={() => onChange({ pinned: !(frontmatter.pinned ?? false) })}
+          />
+          <FlagSwitch
+            label="Locked"
+            pressed={frontmatter.locked ?? false}
+            icon={frontmatter.locked ? "uil:lock" : "uil:unlock"}
+            onToggle={() => onChange({ locked: !(frontmatter.locked ?? false) })}
+          />
+          <FlagSwitch
+            label="Template"
+            pressed={frontmatter.template ?? false}
+            icon="uil:clipboard-notes"
+            indicator="pressed"
+            onToggle={() => onChange({ template: !(frontmatter.template ?? false) })}
+          />
+          <FlagSwitch
+            label="Unmanaged"
+            pressed={unmanaged}
+            icon="uil:eye-slash"
+            indicator="pressed"
+            onToggle={() =>
+              onChange(
+                unmanaged ? { unmanaged: false } : { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS },
+              )
+            }
+          />
+          <HeadingDivider />
+          <HeaderTags key={frontmatter.id} value={frontmatter.tags} onChange={onChange} />
+        </fieldset>
+      </div>
+
+      {expanded && (
+        <section
+          id={propertiesId}
+          data-testid="note-properties"
+          aria-label="Properties"
+          className="min-w-0 rounded-lg border border-base-300 bg-base-200/50 px-4 py-2 text-sm"
+        >
+          <Row label="Path">
+            <FieldText value={filePath ?? ""} />
+          </Row>
+          <Row label="id">
             <span className="font-mono text-xs text-[var(--color-text-muted)]">
               {frontmatter.id}
             </span>
           </Row>
-
-          {/* Stored as UTC; shown in the reader's local time. A legacy
-              date-only value renders as just a date — no invented midnight. */}
-          <Row label="Created">
+          <Row label="created">
             <span className="text-[var(--color-text-muted)]" title={frontmatter.created}>
               {formatTimestamp(frontmatter.created)}
             </span>
           </Row>
-
-          <Row label="Updated">
+          <Row label="updated">
             <span className="text-[var(--color-text-muted)]" title={frontmatter.updated}>
               {formatTimestamp(frontmatter.updated)}
             </span>
           </Row>
-
-          <Row label="Deadline">
-            <input
-              type="date"
-              value={frontmatter.deadline ?? ""}
-              onChange={(e) => onChange({ deadline: e.target.value || undefined })}
-              className="bg-transparent text-[var(--color-text)] outline-none [color-scheme:dark]"
-            />
-          </Row>
-
-          <TeamInput value={frontmatter.team} onChange={onChange} />
-          <TagsInput value={frontmatter.tags} onChange={onChange} />
-
+          <fieldset disabled={fieldsDisabled} className="m-0 min-w-0 border-0 p-0">
+            {editableKeys(frontmatter).map((key) => (
+              <Row key={key} label={key}>
+                <FrontmatterValue
+                  fieldKey={key}
+                  value={frontmatter[key]}
+                  disabled={fieldsDisabled}
+                  onChange={onChange}
+                />
+              </Row>
+            ))}
+          </fieldset>
           <Row label="Links">
             {outgoingLinks.length > 0 ? (
               <div className="flex flex-wrap gap-1">
-                {outgoingLinks.map((link) => {
-                  const title = notes.find((n) => n.id === link.id)?.frontmatter.title ?? link.id;
-                  return (
-                    <span key={link.id} className="badge badge-ghost badge-sm">
-                      {title}
-                    </span>
-                  );
-                })}
+                {outgoingLinks.map((link) => (
+                  <span key={link.id} className="badge badge-ghost badge-sm">
+                    {link.title}
+                  </span>
+                ))}
               </div>
             ) : (
-              <em className="text-xs text-[var(--color-text-muted)]/50">
-                use [[Note Title]] in body
-              </em>
+              <span className="text-[var(--color-text-muted)]">—</span>
             )}
           </Row>
-
-          {/* Extra / custom fields */}
-          {extraFields.map(([key, value]) => (
-            <Row key={key} label={key}>
-              <input
-                type="text"
-                value={String(value ?? "")}
-                onChange={(e) => onChange({ [key]: e.target.value })}
-                className="w-full bg-transparent text-[var(--color-text)] outline-none"
-              />
-            </Row>
-          ))}
-        </fieldset>
+        </section>
       )}
     </div>
   );
-}
+}, sameHeadingProps);

@@ -183,7 +183,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 
 ## 5. Sidebar and layout
 
-`src/components/layout/LeftColumn.tsx`, `NoteListPanel.tsx`, `AppShell.tsx`, `AppToolbar.tsx`, `CollapsedSidebar.tsx`, `RightPanel.tsx`, `src/lib/note-list.ts`, `src/lib/workspace-layout.ts`, `src/store/ui.ts`, `src/store/layout.ts`.
+`src/components/layout/LeftColumn.tsx`, `NoteListPanel.tsx`, `AppShell.tsx`, `AppToolbar.tsx`, `CollapsedSidebar.tsx`, `RightPanel.tsx`, `src/components/QuickOpen.tsx`, `src/lib/note-list.ts`, `src/lib/quick-open.ts`, `src/lib/workspace-layout.ts`, `src/store/ui.ts`, `src/store/layout.ts`.
 
 - **Views nav** — Dashboard, Eisenhower, Kanban, Link (graph); also on the collapsed icon rail.
 - **Vaults** — add, remove (confirm; disk untouched), select.
@@ -204,6 +204,15 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - Archived notes hidden unless the setting is on; a search also returns scoped archived and Trash matches, marked.
   - Search matches title, tags, or body; each grouping keeps its own query.
   - Rows show up to 3 tags, a pin icon, an Archived badge, and the date.
+  - Clicking a row opens it through `openNote` in `src/store/ui.ts`: Notes view, current grouping kept, one Back/Forward entry.
+- **Go to Note (⌘P / Ctrl+P)** — `QuickOpen.tsx`, `quickOpenResults` and `quickOpenFolder` in `src/lib/quick-open.ts`
+  - File ▸ Go to Note… carries the `CmdOrCtrl+P` accelerator and emits `quick-open` to the main window only; a capture-phase `keydown` listener also catches it, so it works while the editor has focus and the webview never prints. Opening is idempotent.
+  - Uses the store's `searchIndex`: title matches first, then tag/body matches, prefix plus `fuzzy: 0.2`, max 50; an empty query lists the 20 most recently updated notes.
+  - Archived notes only when **Show archived notes** is on; Trash never; unmanaged notes and templates included.
+  - Rows show title, folder (vault name at the root, vault-prefixed with several vaults), state for managed notes, first tag, Archived badge.
+  - ↑/↓ wrap, Enter or click opens, Escape or backdrop closes and restores focus; Tab stays in the dialog.
+  - Opens through the same `openNote` as the note list; from Trash it switches to All Notes so the live note shows.
+  - Main window only; the capture window has no palette.
 - **Note list context menu** — `NoteListPanel.tsx`
   - Always: Pin/Unpin, Rename, Lock/Unlock, Mark Managed/Unmanaged, Copy path, Export PDF, Add to/Unpin from Right panel, Move to….
   - Mark Unmanaged clears `state`, `urgent`, `important`, `blocked`; Mark Managed only flips the flag.
@@ -361,7 +370,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Archive** — sets `archived: true` in place; file, id, content, tags, links, history, and workflow fields are untouched; Unarchive sets `false`.
   - Only `archived === true` counts as archived.
   - Refused for locked notes (header and note-list menu).
-  - **Show archived notes** (default off) hides archived notes from lists, counts, tags, boards, graph, dashboard, briefing, and wiki autocomplete.
+  - **Show archived notes** (default off) hides archived notes from lists, counts, tags, boards, graph, dashboard, briefing, wiki autocomplete, and Go to Note.
   - The Archive grouping always lists archived notes; list search always finds them, marked Archived.
   - Opening an archived note by id still works.
 

@@ -57,6 +57,7 @@ export const BUNDLED_ICON_NAMES = [
   "map-pin",
   "pen",
   "plus",
+  "search",
   "setting",
   "star",
   "sync",

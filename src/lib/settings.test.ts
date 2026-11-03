@@ -24,6 +24,14 @@ describe("note font", () => {
     expect(normalizeSettings({ noteFont: "comic-sans" }).noteFont).toBe("system");
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);
   });
+});
+
+describe("normalizeSettings", () => {
+  it("drops a saved key that is no longer a setting", () => {
+    const loaded = normalizeSettings({ pinnedNotesFloat: false, fontSize: 18 });
+    expect(loaded).not.toHaveProperty("pinnedNotesFloat");
+    expect(loaded).toEqual({ ...DEFAULT_SETTINGS, fontSize: 18 });
+  });
 
   it("applies the font as a note-text custom property", () => {
     applySettings({ ...DEFAULT_SETTINGS, noteFont: "mono" });

@@ -328,7 +328,7 @@ FRONTMATTER FIELDS
 • state: "Prepare" | "Doing" | "Maintain" | "Done" | "" (empty only when unmanaged: true)
 • blocked: boolean — note is blocked from progress
 • locked: boolean — note is read-only (only changeable in the Helm app)
-• pinned: boolean — floats to the top of lists when Helm's "Pinned notes float" setting is on (the default). It does not move the file or change state.
+• pinned: boolean — floats to the top of Helm's note list. It does not move the file or change state.
 • archived: boolean — true hides the note from default queries; absent or false means active. See ARCHIVED NOTES.
 • unmanaged: boolean — true with state "" keeps the note off Kanban, Eisenhower, and the briefing. Thinking and Context notes start this way.
 • template: boolean — when true, Helm lists this note in New Note menus. Absent means false. Notes in Trash are not offered.
@@ -467,7 +467,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           pinned: {
             type: "boolean",
             description:
-              "Filter by pinned. Pinned notes float to the top of Helm lists when Pinned notes float is on (the default).",
+              "Filter by pinned. Pinned notes float to the top of Helm's note list.",
           },
           locked: { type: "boolean", description: "Filter to locked (read-only) notes." },
           overdue: {
@@ -603,7 +603,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "boolean",
             default: false,
             description:
-              "Pin this note so it floats to the top of lists when Helm's Pinned notes float setting is on (the default).",
+              "Pin this note so it floats to the top of Helm's note list.",
           },
           deadline: { type: "string", description: "Due date in YYYY-MM-DD format." },
           team: {

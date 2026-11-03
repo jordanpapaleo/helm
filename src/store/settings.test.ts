@@ -23,7 +23,6 @@ describe("useSettingsStore", () => {
         DEFAULT_SETTINGS.autocompleteWikiLinks,
       );
       expect(result.current.settings.autoSaveOnEdit).toBe(DEFAULT_SETTINGS.autoSaveOnEdit);
-      expect(result.current.settings.pinnedNotesFloat).toBe(DEFAULT_SETTINGS.pinnedNotesFloat);
       expect(result.current.settings.showNoteCountOnTags).toBe(
         DEFAULT_SETTINGS.showNoteCountOnTags,
       );

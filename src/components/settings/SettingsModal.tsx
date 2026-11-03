@@ -288,11 +288,6 @@ function GeneralTab() {
         onChange={(v) => updateSettings({ autoSaveOnEdit: v })}
       />
       <ToggleRow
-        label="Pinned notes float to top"
-        checked={settings.pinnedNotesFloat}
-        onChange={(v) => updateSettings({ pinnedNotesFloat: v })}
-      />
-      <ToggleRow
         label="Show note count on tags"
         checked={settings.showNoteCountOnTags}
         onChange={(v) => updateSettings({ showNoteCountOnTags: v })}

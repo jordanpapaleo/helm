@@ -132,7 +132,7 @@ important: true
 state: Prepare           # Prepare | Doing | Maintain | Done
 blocked: false
 locked: false            # if true, MCP server refuses all writes
-pinned: false            # floats to the top of lists when Pinned notes float is on
+pinned: false            # floats to the top of the note list
 archived: false          # true hides the note from default queries; absent or false means active
 template: false          # true offers this note in New Note menus
 deadline: 2026-03-20     # YYYY-MM-DD — the only date-only field

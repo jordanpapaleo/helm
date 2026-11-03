@@ -53,12 +53,13 @@ describe("SettingsModal General tab toggles", () => {
     const rows: Array<{ name: string; checked: boolean }> = [
       { name: "Autocomplete WikiLinks", checked: true },
       { name: "Auto-save on edit", checked: true },
-      { name: "Pinned notes float to top", checked: true },
       { name: "Show note count on tags", checked: true },
       { name: "Show archived notes", checked: false },
       { name: "Enable Projects", checked: false },
       { name: "Default to Markdown view", checked: false },
     ];
+
+    expect(screen.queryByRole("checkbox", { name: /pinned notes float/i })).toBeNull();
 
     for (const row of rows) {
       const toggle = screen.getByRole("checkbox", { name: row.name });
@@ -72,7 +73,6 @@ describe("SettingsModal General tab toggles", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Autocomplete WikiLinks" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Auto-save on edit" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Pinned notes float to top" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show note count on tags" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show archived notes" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Enable Projects" }));
@@ -82,7 +82,6 @@ describe("SettingsModal General tab toggles", () => {
     expect(settings).toMatchObject({
       autocompleteWikiLinks: false,
       autoSaveOnEdit: false,
-      pinnedNotesFloat: false,
       showNoteCountOnTags: false,
       showArchivedNotes: true,
       enableProjects: true,
@@ -91,7 +90,6 @@ describe("SettingsModal General tab toggles", () => {
     expect(JSON.parse(localStorage.getItem("helm-settings") ?? "{}")).toMatchObject({
       autocompleteWikiLinks: false,
       autoSaveOnEdit: false,
-      pinnedNotesFloat: false,
       showNoteCountOnTags: false,
       showArchivedNotes: true,
       enableProjects: true,

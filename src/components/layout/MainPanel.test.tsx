@@ -147,6 +147,46 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     expect(useNoteStore.getState().notes[0].frontmatter.updated).toBe("2026-03-13");
   });
 
+  it("keeps an urgent toggle that lands while a body save is still writing", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writes: string[] = [];
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (_path, content) => {
+      writes.push(content);
+      if (writes.length === 1) await gate;
+    });
+    try {
+      setup(makeNote(), true);
+      fireEvent.change(screen.getByDisplayValue("Test content"), {
+        target: { value: "Test content edited" },
+      });
+      fireEvent.blur(screen.getByDisplayValue("Test content edited"));
+      await waitFor(() => expect(writes).toHaveLength(1));
+
+      fireEvent.click(screen.getByRole("button", { name: "Urgent" }));
+      expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      release();
+      await waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(2));
+      expect(useNoteStore.getState().notes[0].content).toContain("Test content edited");
+      expect(useNoteStore.getState().notes[0].frontmatter.urgent).toBe(true);
+      expect(screen.getByRole("button", { name: "Urgent" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(writes.at(-1)).toContain("urgent: true");
+      expect(writes.at(-1)).toContain("Test content edited");
+    } finally {
+      release();
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
   it("still saves and bumps `updated` for a genuine content edit", async () => {
     setup(makeNote(), true);
     const textarea = screen.getByDisplayValue("Test content");

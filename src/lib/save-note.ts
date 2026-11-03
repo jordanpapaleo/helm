@@ -10,6 +10,7 @@ import {
 } from "./note-parser";
 import {
   enqueueNoteWrite,
+  hasInflightNoteWrite,
   immediateNoteWritePath,
   resolveNoteWritePath,
   takeScheduledPath,
@@ -18,9 +19,86 @@ import { mergeTagsOnSave } from "./tags";
 import { tauriCommands } from "./tauri-commands";
 import { nowTimestamp } from "./timestamps";
 
-export type SaveNoteResult = "unchanged" | "blocked" | "saved";
+export type SaveNoteResult = "unchanged" | "blocked" | "failed" | "saved";
 
 const reportedSyncHolds = new Set<string>();
+
+/**
+ * Bodies this session has submitted and the editor has not yet observed.
+ * An earlier write finishing under a newer edit must not look like a sync
+ * conflict. The editor peeks, then drops the entry on a microtask so React
+ * StrictMode can run the effect twice and still see it.
+ */
+const localBodies = new Map<string, Set<string>>();
+
+function bodyKey(content: string): string {
+  return normalizeContent(content);
+}
+
+function addLocalBody(noteId: string, content: string) {
+  const key = bodyKey(content);
+  let bodies = localBodies.get(noteId);
+  if (!bodies) {
+    bodies = new Set();
+    localBodies.set(noteId, bodies);
+  }
+  bodies.add(key);
+}
+
+function dropLocalBody(noteId: string, content: string) {
+  const bodies = localBodies.get(noteId);
+  if (!bodies) return;
+  bodies.delete(bodyKey(content));
+  if (bodies.size === 0) localBodies.delete(noteId);
+}
+
+/** True when `content` is a body save from this session that the editor has not consumed. */
+export function isLocalBodyEcho(noteId: string, content: string): boolean {
+  return localBodies.get(noteId)?.has(bodyKey(content)) ?? false;
+}
+
+export function acknowledgeLocalBody(noteId: string, content: string): void {
+  dropLocalBody(noteId, content);
+}
+
+function sameList(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left && !right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
+}
+
+/**
+ * The body write finished. Keep frontmatter and body edits that landed in the
+ * store while `writeNote` was in flight; the snapshot this save started from
+ * does not include them.
+ */
+function reconcileSavedBody(started: Note, written: Note): Note {
+  const current = useNoteStore.getState().notes.find((item) => item.id === started.id);
+  if (!current) return written;
+  const content = current.content === started.content ? written.content : current.content;
+  const frontmatter = { ...current.frontmatter };
+  if (sameList(current.frontmatter.tags, started.frontmatter.tags)) {
+    frontmatter.tags = written.frontmatter.tags;
+  }
+  if (sameList(current.frontmatter.links, started.frontmatter.links)) {
+    frontmatter.links = written.frontmatter.links;
+  }
+  if (current.frontmatter.updated === started.frontmatter.updated) {
+    frontmatter.updated = written.frontmatter.updated;
+  }
+  const pathMoved = current.filePath !== started.filePath;
+  return {
+    ...current,
+    content,
+    filePath: pathMoved ? current.filePath : written.filePath,
+    fileName: pathMoved ? current.fileName : written.fileName,
+    frontmatter,
+  };
+}
 
 function reportSyncHold(noteId: string) {
   if (reportedSyncHolds.has(noteId)) return;
@@ -107,7 +185,15 @@ export async function saveNoteContent(note: Note, content: string): Promise<Save
   // touching disk so viewing a note never bumps `updated`. Edge newlines are
   // normalized away because gray-matter reintroduces a leading "\n" on parse,
   // so a strict === would let those phantom saves through.
-  if (normalizeContent(content) === normalizeContent(note.content)) return "unchanged";
+  // A write already in flight still has the old body in the store. An undo
+  // back to that text must be queued, or the in-flight write lands the edit
+  // and the undo never runs. The queued task compares again when it starts.
+  if (
+    !hasInflightNoteWrite(note.id) &&
+    normalizeContent(content) === normalizeContent(note.content)
+  ) {
+    return "unchanged";
+  }
 
   return enqueueNoteWrite(note.id, () => persistNoteContent(note, content, enqueuedPath));
 }
@@ -172,12 +258,17 @@ async function persistNoteContent(
       updated: nowTimestamp(),
     },
   };
-  useNoteStore.getState().updateNote(updated);
+  addLocalBody(latest.id, content);
   try {
     await tauriCommands.writeNote(path, serializeNote(updated));
   } catch (e) {
+    // Leave the store on the previous body. Updating it here would make the
+    // next save look unchanged, so the failed write would never be retried.
+    dropLocalBody(latest.id, content);
     reportError("Failed to save note", e);
+    return "failed";
   }
+  useNoteStore.getState().updateNote(reconcileSavedBody(latest, updated));
 
   // Delete asset files removed from this note since the last save. Only paths
   // inside this vault's assets directory are eligible; anything else is ignored.

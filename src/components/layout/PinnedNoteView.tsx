@@ -65,6 +65,8 @@ function PinnedNoteBody({
   const initialTextRef = useRef(live ?? held ?? saved);
   const appliedRef = useRef(initialTextRef.current);
   const lastSavedRef = useRef(saved);
+  /** Store body at the moment a save started. The effect runs before that write lands. */
+  const pendingBaselineRef = useRef<string | null>(null);
   const editingRef = useRef(false);
   const heldByUs = useRef(false);
   const applyingExternal = useRef(false);
@@ -129,7 +131,9 @@ function PinnedNoteBody({
       useNoteStore.getState().vaults.find((vault) => vault.id === current.vaultId)?.path ?? null;
     if (!useGitSyncStore.getState().isWriteBlocked(id, vaultPath)) {
       // Set before the store update so the echo of our own save is not treated
-      // as an external rewrite that should replace the caret.
+      // as an external rewrite that should replace the caret. The baseline is
+      // the body still in the store, so that gap is not an external write.
+      pendingBaselineRef.current = current.content;
       lastSavedRef.current = markdown;
       // A blocked autosave keeps the text as a held draft. Once a later edit
       // actually writes, that draft is stale: remounting prefers it over the
@@ -159,6 +163,11 @@ function PinnedNoteBody({
         flushedContent: lastSavedRef.current,
         incomingContent: saved,
       });
+      const saveNotLanded =
+        pendingBaselineRef.current !== null &&
+        normalizeContent(markdown) === normalizeContent(lastSavedRef.current) &&
+        normalizeContent(saved) === normalizeContent(pendingBaselineRef.current);
+      if (decision === "hold" && saveNotLanded) return;
       if (decision === "hold") {
         const store = useGitSyncStore.getState();
         store.preserveHeldDraft(note.id, markdown);
@@ -189,6 +198,8 @@ function PinnedNoteBody({
       appliedRef.current = live ?? held ?? saved;
       return;
     }
+
+    pendingBaselineRef.current = null;
 
     if (editingRef.current) {
       const caughtUp = live === undefined || normalizeContent(live) === normalizeContent(markdown);

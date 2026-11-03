@@ -169,6 +169,34 @@ describe("MainPanel.handleSave — no-op when content is unchanged", () => {
     expect(tauriCommands.snapshotNote).toHaveBeenCalledTimes(1);
   });
 
+  it("does not overwrite a newer on-disk body with the editor draft", async () => {
+    const note = makeNote({ content: "November body" });
+    note.frontmatter.updated = "2026-11-01T12:00:00Z";
+    const external = serializeNote({
+      ...note,
+      content: "External body from 15:09",
+      frontmatter: { ...note.frontmatter, updated: "2026-11-03T15:09:36Z" },
+    });
+    setup(note, true);
+    const textarea = screen.getByDisplayValue("November body");
+    fireEvent.change(textarea, { target: { value: "November body plus a stale edit" } });
+    vi.mocked(tauriCommands.readNote).mockResolvedValueOnce(external);
+
+    await act(async () => {
+      fireEvent.blur(textarea);
+    });
+
+    expect(tauriCommands.writeNote).not.toHaveBeenCalled();
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes[0].content).toContain("External body from 15:09");
+    expect(useNoteStore.getState().notes[0].content).not.toContain("stale edit");
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("This note changed on disk")),
+    ).toBe(true);
+  });
+
   it("publishes markdown keystrokes to the live draft before the save debounce", () => {
     setup(makeNote(), true);
     const seen: string[] = [];
@@ -522,7 +550,7 @@ describe("MainPanel properties — removing the last tag", () => {
     const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
     expect(serialized).toContain("tags: []");
     expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
-    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", note.id, note.filePath);
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
   });
 
   it("keeps a newer on-disk body when a header toggle saves", async () => {
@@ -548,8 +576,8 @@ describe("MainPanel properties — removing the last tag", () => {
       fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
     });
 
-    expect(order).toEqual(["snapshot", "write"]);
-    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", note.id, note.filePath);
+    expect(order).toEqual(["write"]);
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
     const written = String(vi.mocked(tauriCommands.writeNote).mock.calls[0]?.[1]);
     const saved = parseNote(written, note.filePath);
     expect(saved.content).toContain("External body from 15:09");

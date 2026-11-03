@@ -1,14 +1,40 @@
 import { type EventCallback, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { ulid } from "ulid";
+import { queueExistingNoteWrite } from "../lib/existing-note-write";
 import { noteVaultMutated, startupVault } from "../lib/git-sync-runtime";
-import { parseNote, serializeNote } from "../lib/note-parser";
+import { parseNote } from "../lib/note-parser";
 import { projectFromMetaFile } from "../lib/projects";
 import { tauriCommands } from "../lib/tauri-commands";
 import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
 import { useProjectStore } from "../store/projects";
 import type { Note, VaultConfig } from "../types/note";
+
+/** Fill id, title, created, and updated. Returns null when the file already has them. */
+function repairMissingFields(note: Note, now: string, preferredId: string): Note | null {
+  const fm = { ...note.frontmatter };
+  let dirty = false;
+  if (!fm.id) {
+    fm.id = preferredId;
+    dirty = true;
+  }
+  if (!fm.title) {
+    const base = note.filePath.split("/").pop()?.replace(/\.md$/i, "") ?? "Untitled";
+    fm.title = base.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    dirty = true;
+  }
+  if (!fm.created) {
+    fm.created = now;
+    dirty = true;
+  }
+  if (!fm.updated) {
+    fm.updated = now;
+    dirty = true;
+  }
+  if (!dirty) return null;
+  return { ...note, id: fm.id, frontmatter: fm };
+}
 
 /**
  * Repair missing required frontmatter fields in all notes in a vault.
@@ -44,11 +70,23 @@ async function repairVaultFrontmatter(vaultPath: string): Promise<void> {
 
     if (dirty) {
       const patched: Note = { ...note, id: fm.id, frontmatter: fm };
-      try {
-        await tauriCommands.writeNote(f.path, serializeNote(patched));
-      } catch {
+      // Re-read so a write that landed after list_notes is the base. The
+      // assigned id is reused when the file still has none.
+      await queueExistingNoteWrite({
+        noteId: fm.id,
+        enqueuedPath: f.path,
+        beforeUpdated: note.frontmatter.updated,
+        fallback: patched,
+        vaultPath,
+        pathSource: "exact",
+        preferDisk: true,
+        updateStore: false,
+        silent: true,
+        failureMessage: "Failed to repair note",
+        apply: (base) => repairMissingFields(base, now, fm.id),
+      }).catch(() => {
         // Non-fatal — skip unwritable files
-      }
+      });
     }
   }
 }
@@ -241,12 +279,28 @@ export function useVault() {
               // note has a stable identity from this point forward.
               if (!note.id) {
                 const newId = ulid();
-                note = {
+                const assigned: Note = {
                   ...note,
                   id: newId,
                   frontmatter: { ...note.frontmatter, id: newId },
                 };
-                tauriCommands.writeNote(filePath, serializeNote(note)).catch(() => {});
+                const result = await queueExistingNoteWrite({
+                  noteId: newId,
+                  enqueuedPath: filePath,
+                  beforeUpdated: note.frontmatter.updated,
+                  fallback: assigned,
+                  vaultPath: vault?.path ?? null,
+                  pathSource: "exact",
+                  preferDisk: true,
+                  updateStore: false,
+                  silent: true,
+                  failureMessage: "Failed to repair note",
+                  apply: (base) =>
+                    base.id
+                      ? null
+                      : { ...base, id: newId, frontmatter: { ...base.frontmatter, id: newId } },
+                }).catch(() => null);
+                note = result?.ok ? { ...result.note, vaultId: vault?.id ?? "" } : assigned;
               }
 
               await applyChangedFile(note);

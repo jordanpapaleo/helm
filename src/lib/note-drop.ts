@@ -2,7 +2,8 @@ import { useGitSyncStore } from "../store/git-sync";
 import { useNoteStore } from "../store/notes";
 import { reportError } from "../store/toast";
 import type { Note } from "../types/note";
-import { serializeNote } from "./note-parser";
+import { queueExistingNoteWrite } from "./existing-note-write";
+import { rememberExistingNotePath } from "./note-write-path";
 import { flushPendingSavesSettled } from "./pending-saves";
 import { isValidTagName, normalizeTagName } from "./tags";
 import { tauriCommands } from "./tauri-commands";
@@ -43,6 +44,7 @@ export async function moveNoteToFolder(note: Note, folderPath: string): Promise<
   if (newFilePath === current.filePath) return;
   try {
     await tauriCommands.renameNote(current.filePath, newFilePath);
+    rememberExistingNotePath(current.id, newFilePath);
     useNoteStore.getState().updateNote({
       ...current,
       filePath: newFilePath,
@@ -72,19 +74,22 @@ export async function addTagFromDrop(note: Note, tag: string): Promise<void> {
   }
   if (useGitSyncStore.getState().isWriteBlocked(current.id, vaultPathOf(current))) return;
   if ((current.frontmatter.tags ?? []).includes(name)) return;
-  const updated: Note = {
-    ...current,
-    content: current.content,
-    frontmatter: {
-      ...current.frontmatter,
-      tags: [...(current.frontmatter.tags ?? []), name],
-      updated: nowTimestamp(),
+  await queueExistingNoteWrite({
+    noteId: current.id,
+    enqueuedPath: current.filePath,
+    beforeUpdated: current.frontmatter.updated,
+    failureMessage: "Failed to add tag",
+    apply: (base) => {
+      if (base.frontmatter.locked) return null;
+      if ((base.frontmatter.tags ?? []).includes(name)) return null;
+      return {
+        ...base,
+        frontmatter: {
+          ...base.frontmatter,
+          tags: [...(base.frontmatter.tags ?? []), name],
+          updated: nowTimestamp(),
+        },
+      };
     },
-  };
-  try {
-    await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-    useNoteStore.getState().updateNote(updated);
-  } catch (error) {
-    reportError("Failed to add tag", error);
-  }
+  });
 }

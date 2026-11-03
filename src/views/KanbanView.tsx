@@ -14,11 +14,9 @@ import { useScopedWorkflowNotes } from "../hooks/useScopedWorkflowNotes";
 import { isArchived } from "../lib/archive";
 import { NOTE_STATES } from "../lib/constants";
 import { createNote } from "../lib/create-note";
-import { serializeNote } from "../lib/note-parser";
-import { tauriCommands } from "../lib/tauri-commands";
+import { queueExistingNoteWrite } from "../lib/existing-note-write";
 import { nowTimestamp } from "../lib/timestamps";
 import { useNoteStore } from "../store/notes";
-import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
 import type { Note, NoteState } from "../types/note";
 
@@ -223,20 +221,33 @@ export function KanbanView() {
         const note = byId.get(order[i]);
         if (!note) continue;
         if (note.frontmatter.state !== col || note.frontmatter.kanbanOrder !== i) {
+          const state = col as NoteState;
           const updated: Note = {
             ...note,
             frontmatter: {
               ...note.frontmatter,
-              state: col as NoteState,
+              state,
               kanbanOrder: i,
               updated: nowTimestamp(),
             },
           };
           updateNote(updated);
           writes.push(
-            tauriCommands.writeNote(updated.filePath, serializeNote(updated)).catch((e) => {
-              reportError("Failed to save note", e);
-            }),
+            queueExistingNoteWrite({
+              noteId: note.id,
+              enqueuedPath: note.filePath,
+              beforeUpdated: note.frontmatter.updated,
+              failureMessage: "Failed to save note",
+              apply: (base) => ({
+                ...base,
+                frontmatter: {
+                  ...base.frontmatter,
+                  state,
+                  kanbanOrder: i,
+                  updated: nowTimestamp(),
+                },
+              }),
+            }).then(() => undefined),
           );
         }
       }

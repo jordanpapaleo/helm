@@ -8,7 +8,8 @@ import { useNoteStore } from "../store/notes";
 import { reportError } from "../store/toast";
 import { useTrashStore } from "../store/trash";
 import type { Note } from "../types/note";
-import { parseNote, serializeNote } from "./note-parser";
+import { queueExistingNoteWrite } from "./existing-note-write";
+import { parseNote } from "./note-parser";
 import { flushPendingSavesSettled } from "./pending-saves";
 import { tauriCommands } from "./tauri-commands";
 import { nowTimestamp } from "./timestamps";
@@ -24,15 +25,29 @@ function withId(note: Note, id: string): Note {
 export async function giveNoteNewId(note: Note): Promise<Note | null> {
   try {
     await flushPendingSavesSettled();
-    const parsed = parseNote(await tauriCommands.readNote(note.filePath), note.filePath);
-    const fresh = withId({ ...parsed, vaultId: note.vaultId }, ulid());
-    const updated: Note = {
-      ...fresh,
-      frontmatter: { ...fresh.frontmatter, updated: nowTimestamp() },
-    };
-    await tauriCommands.writeNote(note.filePath, serializeNote(updated));
-    useNoteStore.getState().updateNote(updated);
-    return updated;
+    const fresh = ulid();
+    // The file at this path is the source of truth, including a duplicate copy
+    // that shares the keeper's id. The body is unchanged, so this is not a
+    // history snapshot.
+    const result = await queueExistingNoteWrite({
+      noteId: note.id,
+      enqueuedPath: note.filePath,
+      beforeUpdated: note.frontmatter.updated,
+      fallback: note,
+      pathSource: "exact",
+      preferDisk: true,
+      failureMessage: "Failed to give the note a new ID",
+      apply: (base) =>
+        withId(
+          {
+            ...base,
+            vaultId: note.vaultId,
+            frontmatter: { ...base.frontmatter, updated: nowTimestamp() },
+          },
+          fresh,
+        ),
+    });
+    return result.ok && result.wrote ? result.note : null;
   } catch (e) {
     reportError("Failed to give the note a new ID", e);
     return null;

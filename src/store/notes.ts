@@ -5,8 +5,10 @@
  */
 import { create } from "zustand";
 import { type DuplicateGroup, partitionDuplicateIds } from "../lib/duplicate-ids";
+import { commitExistingNote, queueExistingNoteWrite } from "../lib/existing-note-write";
 import { notesToRewrite, replaceWikiLinkTitle } from "../lib/note-links";
-import { serializeNote, slugify } from "../lib/note-parser";
+import { slugify } from "../lib/note-parser";
+import { rememberExistingNotePath } from "../lib/note-write-path";
 import { buildIndex, type NoteIndex, noteMatchesQuery, searchNotes } from "../lib/search";
 import {
   isValidTagName,
@@ -23,6 +25,11 @@ import type { Note, NoteFrontmatter, VaultConfig } from "../types/note";
 import { useProjectStore } from "./projects";
 import { reportError } from "./toast";
 import { useTrashStore } from "./trash";
+
+function sameTagList(left: string[] | undefined, right: string[]): boolean {
+  const current = left ?? [];
+  return current.length === right.length && current.every((tag, index) => tag === right[index]);
+}
 
 /**
  * A node in the hierarchical tag tree structure.
@@ -178,42 +185,41 @@ interface NoteStore {
 }
 
 /**
- * Write every rewritten note to disk, returning the ones that made it. A failed
- * write never aborts the batch — the remaining notes are still processed and
- * one toast summarizes the failures.
- *
- * Each note is snapshotted to `.helm-history/` before it is overwritten, the
- * same guarantee the editor's save path gives, so a bulk rewrite is always
- * recoverable from the time machine. The snapshot is awaited (it must land
- * before the overwrite) but never blocks the write: a failure is swallowed, and
- * a note whose vault path can't be resolved is simply written without one.
- * Rust coalesces to one snapshot per note per 5 minutes and prunes to 50.
+ * Rewrite every note through the shared overwrite path. A failed write never
+ * aborts the batch. `revise` runs on the store note, or on the disk note when
+ * that file is newer, so a stale body is not written back.
  * @internal
  */
 async function writeRewrittenNotes(
-  updates: Note[],
-  vaults: VaultConfig[],
+  sources: Note[],
+  revise: (note: Note) => Note | null,
   operation: string,
 ): Promise<Note[]> {
   const written: Note[] = [];
+  let failures = 0;
   let lastError: unknown;
-  for (const note of updates) {
-    const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path;
-    if (vaultPath) {
-      await tauriCommands.snapshotNote(vaultPath, note.id, note.filePath).catch(() => {
-        /* snapshotting must never block a save */
-      });
-    }
-    try {
-      await tauriCommands.writeNote(note.filePath, serializeNote(note));
-      written.push(note);
-    } catch (e) {
-      lastError = e;
+  for (const source of sources) {
+    const result = await queueExistingNoteWrite({
+      noteId: source.id,
+      enqueuedPath: source.filePath,
+      beforeUpdated: source.frontmatter.updated,
+      fallback: source,
+      updateStore: false,
+      silent: true,
+      failureMessage: operation,
+      apply: (base) => revise(base),
+    });
+    if (result.ok && result.wrote) written.push(result.note);
+    else if (!result.ok) {
+      failures += 1;
+      lastError = result.error;
     }
   }
-  const failed = updates.length - written.length;
-  if (failed > 0) {
-    reportError(`${operation}: ${failed} of ${updates.length} notes could not be saved`, lastError);
+  if (failures > 0) {
+    reportError(
+      `${operation}: ${failures} of ${sources.length} notes could not be saved`,
+      lastError,
+    );
   }
   return written;
 }
@@ -403,48 +409,75 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const folder = note.filePath.split("/").slice(0, -1).join("/");
     const newFileName = `${slugify(newTitle)}.md`;
     const newFilePath = `${folder}/${newFileName}`;
-    const updated: Note = {
-      ...note,
-      filePath: newFilePath,
-      fileName: newFileName,
-      frontmatter: { ...note.frontmatter, title: newTitle },
-    };
-    // Write the updated content to the old path first, then rename. Both steps
-    // are individually atomic, so a crash between them leaves a fully intact
-    // note (with a stale filename at worst) — never a truncated or missing file.
-    await tauriCommands.writeNote(note.filePath, serializeNote(updated));
+    // Write the new title to the old path first, then rename. Both steps are
+    // individually atomic, so a crash between them leaves a fully intact note
+    // (with a stale filename at worst) — never a truncated or missing file.
+    // Already on the note's queue when the header calls this, so the write
+    // must not queue again. A newer file keeps its body; only the title changes.
+    const result = await commitExistingNote({
+      noteId: note.id,
+      enqueuedPath: note.filePath,
+      beforeUpdated: note.frontmatter.updated,
+      fallback: note,
+      updateStore: false,
+      throwOnFailure: true,
+      failureMessage: "Failed to rename note",
+      apply: (base, fromDisk) => ({
+        ...(fromDisk ? base : note),
+        filePath: note.filePath,
+        fileName: note.fileName,
+        frontmatter: {
+          ...(fromDisk ? base.frontmatter : note.frontmatter),
+          title: newTitle,
+        },
+      }),
+    });
+    if (!result.ok || !result.wrote) return;
     await tauriCommands.renameNote(note.filePath, newFilePath);
+    rememberExistingNotePath(note.id, newFilePath);
     // A flag click during the rename already updated the store. Keep those
-    // fields and only apply the path and title from this rename. Wiki-link
-    // resolution below still uses the catalog captured before this write.
-    const latest = get().notes.find((item) => item.id === note.id) ?? updated;
+    // fields and only apply the path and title from this rename. A newer disk
+    // body replaces the stale one. Wiki-link resolution below still uses the
+    // catalog captured before this write.
+    const latest = get().notes.find((item) => item.id === note.id) ?? result.note;
+    const frontmatter: NoteFrontmatter = {
+      ...(result.fromDisk ? result.note.frontmatter : latest.frontmatter),
+      title: newTitle,
+    };
+    if (result.fromDisk) {
+      for (const key of Object.keys(latest.frontmatter) as (keyof NoteFrontmatter)[]) {
+        if (key === "title" || key === "updated") continue;
+        if (JSON.stringify(latest.frontmatter[key]) !== JSON.stringify(note.frontmatter[key])) {
+          frontmatter[key] = latest.frontmatter[key];
+        }
+      }
+    }
     get().updateNote({
       ...latest,
+      content: result.fromDisk ? result.note.content : latest.content,
       filePath: newFilePath,
       fileName: newFileName,
-      frontmatter: { ...latest.frontmatter, title: newTitle },
+      frontmatter,
     });
 
     // Rewrite [[Old Title]] only where that wiki link resolved to this note.
     // Locked notes are left untouched: no snapshot and no write. Saved link
     // ids stay in place either way.
     const stamp = nowTimestamp();
-    const rewrites = notesToRewrite(catalog, note.id, oldTitle).flatMap((item) => {
-      const content = replaceWikiLinkTitle(item.content, oldTitle, newTitle);
-      if (content === item.content) return [];
-      return [
-        {
-          ...item,
-          content,
-          frontmatter: { ...item.frontmatter, updated: stamp },
-        },
-      ];
-    });
+    const rewrites = notesToRewrite(catalog, note.id, oldTitle);
     if (rewrites.length === 0) return;
 
     const written = await writeRewrittenNotes(
       rewrites,
-      get().vaults,
+      (item) => {
+        const content = replaceWikiLinkTitle(item.content, oldTitle, newTitle);
+        if (content === item.content) return null;
+        return {
+          ...item,
+          content,
+          frontmatter: { ...item.frontmatter, updated: stamp },
+        };
+      },
       "Failed to update links after rename",
     );
     if (written.length === 0) return;
@@ -461,10 +494,12 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     await useProjectStore.getState().retarget(oldPath, newPath);
 
     const oldPrefix = `${oldPath}/`;
+    const moved: { id: string; path: string }[] = [];
     set((state) => {
       const files = allNotes(state).map((n) => {
         if (!n.filePath.startsWith(oldPrefix)) return n;
         const newFilePath = `${newPath}/${n.filePath.slice(oldPrefix.length)}`;
+        moved.push({ id: n.id, path: newFilePath });
         return {
           ...n,
           filePath: newFilePath,
@@ -480,6 +515,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       );
       return { ...derive(files), knownFolderPaths };
     });
+    for (const item of moved) rememberExistingNotePath(item.id, item.path);
   },
 
   renameTag: async (oldTagInput, newTagInput) => {
@@ -497,19 +533,21 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     }
 
     const stamp = nowTimestamp();
-    const updates = get()
-      .notes.filter((n) => noteMatchesTag(n, oldTag))
-      .map<Note>((n) => ({
-        ...n,
-        content: renameInlineTag(n.content, oldTag, newTag),
-        frontmatter: {
-          ...n.frontmatter,
-          tags: renameTagInList(n.frontmatter.tags ?? [], oldTag, newTag),
-          updated: stamp,
-        },
-      }));
-
-    const written = await writeRewrittenNotes(updates, get().vaults, `Failed to rename #${oldTag}`);
+    const sources = get().notes.filter((n) => noteMatchesTag(n, oldTag));
+    const written = await writeRewrittenNotes(
+      sources,
+      (n) => {
+        const content = renameInlineTag(n.content, oldTag, newTag);
+        const tags = renameTagInList(n.frontmatter.tags ?? [], oldTag, newTag);
+        if (content === n.content && sameTagList(n.frontmatter.tags, tags)) return null;
+        return {
+          ...n,
+          content,
+          frontmatter: { ...n.frontmatter, tags, updated: stamp },
+        };
+      },
+      `Failed to rename #${oldTag}`,
+    );
     if (written.length === 0) return;
     set((state) => derive(replaceByPath(allNotes(state), written)));
   },
@@ -519,19 +557,21 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     if (!tag) return;
 
     const stamp = nowTimestamp();
-    const updates = get()
-      .notes.filter((n) => noteMatchesTag(n, tag))
-      .map<Note>((n) => ({
-        ...n,
-        content: removeInlineTag(n.content, tag),
-        frontmatter: {
-          ...n.frontmatter,
-          tags: removeTagFromList(n.frontmatter.tags ?? [], tag),
-          updated: stamp,
-        },
-      }));
-
-    const written = await writeRewrittenNotes(updates, get().vaults, `Failed to delete #${tag}`);
+    const sources = get().notes.filter((n) => noteMatchesTag(n, tag));
+    const written = await writeRewrittenNotes(
+      sources,
+      (n) => {
+        const content = removeInlineTag(n.content, tag);
+        const tags = removeTagFromList(n.frontmatter.tags ?? [], tag);
+        if (content === n.content && sameTagList(n.frontmatter.tags, tags)) return null;
+        return {
+          ...n,
+          content,
+          frontmatter: { ...n.frontmatter, tags, updated: stamp },
+        };
+      },
+      `Failed to delete #${tag}`,
+    );
     if (written.length === 0) return;
     set((state) => derive(replaceByPath(allNotes(state), written)));
   },

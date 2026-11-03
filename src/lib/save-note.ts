@@ -2,18 +2,9 @@ import { useGitSyncStore } from "../store/git-sync";
 import { useNoteStore } from "../store/notes";
 import { reportError } from "../store/toast";
 import type { Note } from "../types/note";
-import {
-  extractInlineTags,
-  extractWikiLinks,
-  normalizeContent,
-  serializeNote,
-} from "./note-parser";
-import {
-  enqueueNoteWrite,
-  immediateNoteWritePath,
-  resolveNoteWritePath,
-  takeScheduledPath,
-} from "./note-write-path";
+import { commitExistingNote } from "./existing-note-write";
+import { extractInlineTags, extractWikiLinks, normalizeContent } from "./note-parser";
+import { enqueueNoteWrite, takeScheduledPath } from "./note-write-path";
 import { mergeTagsOnSave } from "./tags";
 import { tauriCommands } from "./tauri-commands";
 import { nowTimestamp } from "./timestamps";
@@ -21,6 +12,8 @@ import { nowTimestamp } from "./timestamps";
 export type SaveNoteResult = "unchanged" | "blocked" | "saved";
 
 const reportedSyncHolds = new Set<string>();
+/** Editor text we already refused because a newer body was on disk. */
+const keptDiskBodies = new Map<string, string>();
 
 function reportSyncHold(noteId: string) {
   if (reportedSyncHolds.has(noteId)) return;
@@ -73,6 +66,9 @@ export async function saveNoteContent(note: Note, content: string): Promise<Save
   // normalized away because gray-matter reintroduces a leading "\n" on parse,
   // so a strict === would let those phantom saves through.
   if (normalizeContent(content) === normalizeContent(note.content)) return "unchanged";
+  // Adopting the disk note updates the store. A second save of this same
+  // draft must not write it back over the body we just kept.
+  if (keptDiskBodies.get(note.id) === normalizeContent(content)) return "blocked";
 
   return enqueueNoteWrite(note.id, () => persistNoteContent(note, content, enqueuedPath));
 }
@@ -87,71 +83,64 @@ async function persistNoteContent(
     useNoteStore.getState().vaults.find((vault) => vault.id === latest.vaultId)?.path ?? null;
   if (normalizeContent(content) === normalizeContent(latest.content)) return "unchanged";
 
-  // The store path may already be a slug nothing has created. Overwrite the
-  // file that exists, and never call write_note on a path that is not one.
-  const path =
-    immediateNoteWritePath(latest.id, enqueuedPath) ??
-    (await resolveNoteWritePath(latest.id, enqueuedPath));
-  if (!path) {
-    reportError("Failed to save note", new Error("The note file is not on disk"));
-    return "blocked";
-  }
-
-  // Time machine: snapshot the current on-disk content before overwriting.
-  // Rust coalesces rapid autosaves (min 5 min between snapshots) and prunes
-  // old versions, so this is safe to fire on every save.
-  if (vaultPath) {
-    tauriCommands.snapshotNote(vaultPath, latest.id, path).catch(() => {
-      /* snapshotting must never block a save */
-    });
-  }
-
   // Tags are merged, never recomputed. Reading a note unions the frontmatter
   // list with the body's inline tags, so recomputing from the body alone
   // would delete every tag set from the property panel and never typed as
   // `#tag`. Comparing the pre-save body with the incoming one tells us which
   // tags the user actually removed. See mergeTagsOnSave.
-  const notes = useNoteStore.getState().notes;
-  const mergedTags = mergeTagsOnSave(
-    latest.frontmatter.tags,
-    extractInlineTags(latest.content),
-    extractInlineTags(content),
-  );
-  const wikiTitles = extractWikiLinks(content);
-  const linkedIds = wikiTitles
-    .map(
-      (title) =>
-        notes.find((item) => item.frontmatter.title.toLowerCase() === title.toLowerCase())?.id,
-    )
-    .filter((id): id is string => id !== undefined && id !== latest.id);
-
-  const updated = {
-    ...latest,
-    filePath: path,
-    fileName: path.split("/").pop() ?? latest.fileName,
-    content,
-    frontmatter: {
-      ...latest.frontmatter,
-      tags: mergedTags,
-      links: linkedIds.length > 0 ? linkedIds : undefined,
-      updated: nowTimestamp(),
+  const result = await commitExistingNote({
+    noteId: latest.id,
+    enqueuedPath,
+    beforeUpdated: latest.frontmatter.updated,
+    vaultPath,
+    refuseIfBodyDiffers: content,
+    mirrorBeforeWrite: true,
+    onDiskKept: () => {
+      keptDiskBodies.set(latest.id, normalizeContent(content));
     },
-  };
-  useNoteStore.getState().updateNote(updated);
-  try {
-    await tauriCommands.writeNote(path, serializeNote(updated));
-  } catch (e) {
-    reportError("Failed to save note", e);
+    failureMessage: "Failed to save note",
+    apply: (base) => {
+      const notes = useNoteStore.getState().notes;
+      const mergedTags = mergeTagsOnSave(
+        base.frontmatter.tags,
+        extractInlineTags(base.content),
+        extractInlineTags(content),
+      );
+      const wikiTitles = extractWikiLinks(content);
+      const linkedIds = wikiTitles
+        .map(
+          (title) =>
+            notes.find((item) => item.frontmatter.title.toLowerCase() === title.toLowerCase())?.id,
+        )
+        .filter((id): id is string => id !== undefined && id !== latest.id);
+      return {
+        ...base,
+        content,
+        frontmatter: {
+          ...base.frontmatter,
+          tags: mergedTags,
+          links: linkedIds.length > 0 ? linkedIds : undefined,
+          updated: nowTimestamp(),
+        },
+      };
+    },
+  });
+  if (!result.ok && (result.reason === "missing" || result.reason === "newer-body")) {
+    return "blocked";
   }
+  keptDiskBodies.delete(latest.id);
 
-  // Delete any asset files removed from this note since the last save
-  const oldPaths = extractAssetPaths(latest.content);
-  const newPaths = extractAssetPaths(content);
-  for (const assetPath of oldPaths) {
-    if (!newPaths.has(assetPath)) {
-      tauriCommands.deleteAsset(assetPath).catch(() => {
-        /* already gone, ignore */
-      });
+  // Delete any asset files removed from this note since the last save.
+  // A refused write left the file alone, so its images stay too.
+  if (result.ok && result.wrote) {
+    const oldPaths = extractAssetPaths(latest.content);
+    const newPaths = extractAssetPaths(content);
+    for (const assetPath of oldPaths) {
+      if (!newPaths.has(assetPath)) {
+        tauriCommands.deleteAsset(assetPath).catch(() => {
+          /* already gone, ignore */
+        });
+      }
     }
   }
   return "saved";

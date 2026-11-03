@@ -97,10 +97,9 @@ Areas:
   - Checking Unmanaged clears `state`, `urgent`, `important`, `blocked` in the same write (`UNMANAGED_CLEARED_FIELDS` in `src/lib/constants.ts`); unchecking only flips the flag.
 - **Locked note** — `MainPanel` (`persistFrontmatterChange`)
   - Every frontmatter write except `locked` itself is dropped while the note is locked.
-- **Frontmatter save** — `persistFrontmatterChange` in `MainPanel.tsx`
-  - Header and Properties writes snapshot the on-disk file before `writeNote`, including a toggle that does not change the body. The snapshot is awaited; a snapshot failure still saves.
-  - The queued write applies the edit to the latest store note. If the file's stored `updated` is newer than the store copy from before the click, the disk text is kept, the edit is saved on top of it, and a toast says the note changed on disk. A different note id at that path refuses the write.
-  - **Gap:** note-list Mark Unmanaged, Lock, and Archive (`NoteListPanel`) still write the in-memory note with no snapshot and no newer-disk check.
+- **Frontmatter save** — `persistFrontmatterChange` in `MainPanel.tsx`, `queueExistingNoteWrite` in `src/lib/existing-note-write.ts`
+  - Header, Properties, and note-list Pin, Lock, Mark Unmanaged, and Archive share one queued write. A frontmatter-only edit does not snapshot.
+  - The write uses the latest store note. If the file's stored `updated` is newer than the store copy from before the edit, the disk body is kept, the edit is saved on top of it, and a toast says the note changed on disk. A different note id at that path refuses the write.
   - Locked does not disable the header controls visually; only deleted notes set `readOnly`.
 - **Deleted note view** — `MainPanel`
   - A banner offers Restore and permanent Delete; all header fields are disabled (`readOnly`).
@@ -117,7 +116,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Deadline** — date input; clearing removes the key.
 - **Team** — comma list, saved on blur; empty removes the key.
 - **Tags** — comma list, saved on blur; leading `#` stripped; empty saves `[]`.
-  - Removing a tag here also removes its inline `#tag` from the body (`dropRemovedInlineTags` in `src/lib/tags.ts`). Every properties save snapshots the previous file first, including one that leaves the body alone (`MainPanel`).
+  - Removing a tag here also removes its inline `#tag` from the body (`dropRemovedInlineTags` in `src/lib/tags.ts`). That body change snapshots the previous file first. A tag edit that leaves the body alone does not.
 - **Links** — read-only titles from `resolveOutgoingLinks`, same as the graph and footer; empty shows a `[[Note Title]]` hint.
 - **Custom fields** — every frontmatter key not in `KNOWN_FIELDS` is editable as text; `kanbanOrder` and `eisenhowerOrder` are hidden.
 - **Disabled for deleted notes** — the whole panel is a disabled fieldset when `readOnly`.
@@ -132,7 +131,8 @@ The disclosure under the header in `PropertyPanel.tsx`.
   - Each surface registers with `pending-saves`.
 - **Save path** — `saveNoteContent` in `save-note.ts`, shared by the main and pinned editors.
   - Unchanged text (after `normalizeContent`) is not written and does not bump `updated`; opening a note never saves (`emitUpdate: false`).
-  - The previous file is snapshotted before every write.
+  - The previous file is snapshotted before a write that changes the body. A frontmatter-only save is not a history entry.
+  - If the file's `updated` is newer and its body differs from the draft, the save is refused, the disk text stays, and a toast says the note changed on disk.
   - Tags are merged, not recomputed (`mergeTagsOnSave`).
   - `[[wiki]]` titles become `links` ids (self excluded; empty removes the key).
   - Image assets removed from the body are deleted from `assets/`.
@@ -192,11 +192,12 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Note list context menu** — `NoteListPanel.tsx`
   - Always: Pin/Unpin, Rename, Lock/Unlock, Mark Managed/Unmanaged, Copy path, Export PDF, Add to/Unpin from Right panel, Move to….
   - Mark Unmanaged clears `state`, `urgent`, `important`, `blocked`; Mark Managed only flips the flag.
+  - Pin, Lock, Mark Unmanaged, and Archive use the queued existing-note write. They keep a newer on-disk body and do not snapshot.
   - Move to category only with projects on, for a project member that is not the main page.
   - Archive and Delete are omitted for locked notes, and their handlers refuse.
 - **Drag a note onto a folder or tag** — `src/lib/note-drop.ts`, `note-drag.ts`, `NoteDropSurface.tsx`
   - Folder drop renames the file into the folder after flushing pending saves; same folder is a no-op.
-  - Tag drop appends the frontmatter tag only; refused for locked or sync-blocked notes; invalid or duplicate tag is a no-op.
+  - Tag drop appends the frontmatter tag only; refused for locked or sync-blocked notes; invalid or duplicate tag is a no-op. It keeps a newer on-disk body and does not snapshot.
   - Vault rows accept drops only when that vault is active.
 - **Back/Forward** — view + note + grouping history, max 100, duplicates skipped; ⌘←/⌘→ outside text inputs.
 - **Panels** — `workspace-layout.ts`, `store/layout.ts`, `PanelSeparator.tsx`
@@ -232,7 +233,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
   - **Unmanaged notes never appear**, even with a matching state.
   - Archived notes hidden unless the setting is on.
   - With projects on and a project folder selected, only that project's notes show and the title names the project.
-- **Drag and drop** — writes `state`, `kanbanOrder`, and `updated`; cancel restores the previous order; order persists via `kanbanOrder`.
+- **Drag and drop** — writes `state`, `kanbanOrder`, and `updated`; cancel restores the previous order; order persists via `kanbanOrder`. The write is queued, keeps a newer on-disk body, and does not snapshot.
 - **Column +** — Blank/template menu; new note gets that column's state, in the project root when scoped.
 - **Cards** — click opens the note; badges for blocked, archived, and up to 2 tags.
 
@@ -243,7 +244,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **2×2 grid** — Do, Schedule, Delegate, Eliminate from `urgent` × `important`.
   - **Only managed notes in Prepare or Doing appear**; unmanaged, Maintain, and Done are excluded.
   - Archived and project scope as in Kanban.
-- **Drag and drop** — sets `urgent`/`important` and `eisenhowerOrder`; `updated` changes only when the quadrant changes.
+- **Drag and drop** — sets `urgent`/`important` and `eisenhowerOrder`; `updated` changes only when the quadrant changes. The write is queued, keeps a newer on-disk body, and does not snapshot.
 - **Quadrant +** — new note gets that quadrant's flags, in the project root when scoped.
 - **Cards** — blocked, archived, up to 3 tags; empty quadrant shows "Drop here".
 
@@ -255,7 +256,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Edges** — from `resolveOutgoingLinks` (frontmatter ids plus body wiki links; see [Links](#13-links)).
 - **Nodes** — size from link degree; color from state (unmanaged/empty state uses the accent); archived shown with a dashed ring and "(archived)".
 - **Interactions** — click opens the note; hover dims non-neighbors; labels appear above 0.7 zoom.
-  - Dragging a node onto another appends the target id to the source's `links`.
+  - Dragging a node onto another appends the target id to the source's `links`. Link edits are queued, keep a newer on-disk body, and do not snapshot.
   - Clicking an edge removes it only if it came from frontmatter `links`; wiki-only edges cannot be deleted here.
 - **Link style** — 1 px at 50% opacity at rest; thicker for neighbors and delete hover.
 
@@ -303,7 +304,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Tag tree** — null-prototype maps so tags like `constructor` or `__proto__` cannot break loading.
 - **Rename tag** — rewrites frontmatter and inline `#tags` (outside code) in every note, descendants included; rejects invalid names with a toast.
 - **Delete tag** — removes the tag and descendants from frontmatter and body.
-  - Each rewritten note is snapshotted first; one failed write does not stop the batch and one toast summarizes failures.
+  - A rewrite that changes the body is snapshotted first. One failed write does not stop the batch, and one toast summarizes failures.
   - Tag rename and delete do not skip locked notes (unlike title renames).
 - **Merge on save** — a tag is dropped only if it was inline before the edit and is gone after; frontmatter-only tags survive body edits.
 
@@ -324,7 +325,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 
 `src-tauri/src/vault.rs` (`snapshot_note`, `list_note_history`), `mcp-server/history.ts` (KEEP IN SYNC), `src/components/editor/NoteHistoryModal.tsx`.
 
-- **Snapshots** — `<vault>/.helm-history/<note-id>/<epoch-ms>.md`, taken before a content write and before a header or Properties frontmatter write.
+- **Snapshots** — `<vault>/.helm-history/<note-id>/<epoch-ms>.md`, taken only before a write that changes the note body. Header and Properties toggles, note-list Pin, Lock, Mark Unmanaged, and Archive, board drags, graph link edits, and tag drops do not snapshot.
   - Coalesced: no new snapshot if the newest is under 5 minutes old (`HISTORY_MIN_AGE_SECS = 300`, `HISTORY_MIN_AGE_MS = 300_000`).
   - Retention: the newest 50 are kept (`HISTORY_MAX_KEEP = 50`).
   - Note id must be non-empty ASCII alphanumeric; a missing source file is a silent no-op.

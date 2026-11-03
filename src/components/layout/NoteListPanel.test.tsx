@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bindNotePdfExport } from "../../hooks/usePdfExport";
-import { parseNote } from "../../lib/note-parser";
+import { parseNote, serializeNote } from "../../lib/note-parser";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -22,6 +22,8 @@ import { NoteListPanel } from "./NoteListPanel";
 vi.mock("../../lib/tauri-commands", () => ({
   tauriCommands: {
     writeNote: vi.fn().mockResolvedValue(undefined),
+    readNote: vi.fn().mockResolvedValue(""),
+    snapshotNote: vi.fn().mockResolvedValue(undefined),
     renameNote: vi.fn().mockResolvedValue(undefined),
     deleteNote: vi.fn().mockResolvedValue(undefined),
   },
@@ -126,6 +128,56 @@ describe("NoteListPanel — Mark Unmanaged", () => {
       expect(fm.important).toBe(true);
       expect(fm.blocked).toBe(true);
     });
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
+  });
+
+  it("keeps a newer on-disk body when marking unmanaged and does not snapshot", async () => {
+    const note = makeNote();
+    note.frontmatter.updated = "2026-11-01T12:00:00Z";
+    note.content = "November body";
+    resetStores(note);
+    const external = serializeNote({
+      ...note,
+      content: "External body from 15:09",
+      frontmatter: { ...note.frontmatter, updated: "2026-11-03T15:09:36Z" },
+    });
+    vi.mocked(tauriCommands.readNote).mockResolvedValueOnce(external);
+    render(<NoteListPanel />);
+
+    fireEvent.contextMenu(screen.getByText("Note"));
+    fireEvent.click(screen.getByText("Mark Unmanaged"));
+
+    await waitFor(() => {
+      const saved = useNoteStore.getState().notes[0];
+      expect(saved.frontmatter.unmanaged).toBe(true);
+      expect(saved.content).toContain("External body from 15:09");
+    });
+    const written = String(vi.mocked(tauriCommands.writeNote).mock.calls[0]?.[1]);
+    expect(written).toContain("External body from 15:09");
+    expect(written).not.toContain("November body");
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("This note changed on disk")),
+    ).toBe(true);
+  });
+
+  it("does not snapshot pin or archive", async () => {
+    resetStores(makeNote({ title: "Open" }));
+    render(<NoteListPanel />);
+
+    fireEvent.contextMenu(screen.getByText("Open"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1));
+
+    fireEvent.contextMenu(screen.getByText("Open"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(tauriCommands.writeNote).toHaveBeenCalledTimes(2));
+
+    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
+    expect(useNoteStore.getState().notes[0].frontmatter.pinned).toBe(true);
+    expect(useNoteStore.getState().notes[0].frontmatter.archived).toBe(true);
   });
 });
 

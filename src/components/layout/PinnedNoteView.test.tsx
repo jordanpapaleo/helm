@@ -268,7 +268,9 @@ it("saves on blur when auto-save is off", async () => {
     await vi.advanceTimersByTimeAsync(1500);
   });
   expect(tauriCommands.writeNote).not.toHaveBeenCalled();
-  fireEvent.blur(editor.view.dom);
+  await act(async () => {
+    fireEvent.blur(editor.view.dom);
+  });
   expect(tauriCommands.writeNote).toHaveBeenCalledTimes(1);
   expect(vi.mocked(tauriCommands.writeNote).mock.calls[0][1]).toContain("later");
 });
@@ -310,7 +312,9 @@ it("drops a recovered held draft once a later edit saves", async () => {
   expect(restored.getText()).toContain("draft-b");
 
   const writes = vi.mocked(tauriCommands.writeNote).mock.calls.length;
-  fireEvent.blur(restored.view.dom);
+  await act(async () => {
+    fireEvent.blur(restored.view.dom);
+  });
   expect(tauriCommands.writeNote).toHaveBeenCalledTimes(writes);
   expect(vi.mocked(tauriCommands.writeNote).mock.calls[0][1]).toContain("draft-b");
 });

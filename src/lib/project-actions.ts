@@ -7,6 +7,7 @@ import { occupiedNotePaths, useNoteStore } from "../store/notes";
 import { useProjectStore } from "../store/projects";
 import type { Note, NoteFrontmatter } from "../types/note";
 import { serializeNote } from "./note-parser";
+import { rememberExistingNotePath } from "./note-write-path";
 import {
   type CreateProjectInput,
   collectFolderPaths,
@@ -164,6 +165,7 @@ export async function moveNoteToCategory(
   if (!plan.ok) throw new Error(plan.error);
   if (plan.to === plan.from) return note;
   await tauriCommands.renameNote(plan.from, plan.to);
+  rememberExistingNotePath(note.id, plan.to);
   const moved: Note = {
     ...note,
     filePath: plan.to,

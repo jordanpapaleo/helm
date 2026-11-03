@@ -1,6 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import matter from "gray-matter";
 import {
   forwardRef,
   useCallback,
@@ -15,14 +14,10 @@ import { bindNotePdfExport, usePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
+import { commitExistingNote } from "../../lib/existing-note-write";
 import { decideEditorSync } from "../../lib/git-sync";
-import { normalizeContent, parseNote, serializeNote } from "../../lib/note-parser";
-import {
-  enqueueNoteWrite,
-  forgetScheduledPath,
-  rememberNotePath,
-  resolveNoteWritePath,
-} from "../../lib/note-write-path";
+import { normalizeContent, serializeNote } from "../../lib/note-parser";
+import { enqueueNoteWrite, forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
 import {
   flushPendingSaves,
   registerSaveFlusher,
@@ -34,7 +29,7 @@ import { saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
-import { normalizeTimestamp, nowTimestamp } from "../../lib/timestamps";
+import { nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
 import { occupiedNotePaths, useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
@@ -457,22 +452,6 @@ function revertFrontmatterWrite(
   }
 }
 
-/** `updated` as stored in the file, ignoring the clock parseNote fills in when it is absent. */
-function fileUpdated(raw: string): string | undefined {
-  try {
-    return normalizeTimestamp(matter(raw).data.updated);
-  } catch {
-    return undefined;
-  }
-}
-
-function stampMillis(value: string | undefined): number | undefined {
-  if (!value) return undefined;
-  const iso = value.length === 10 ? `${value}T00:00:00Z` : value;
-  const time = Date.parse(iso);
-  return Number.isNaN(time) ? undefined : time;
-}
-
 /**
  * Write one header edit after any earlier edit for this note has finished.
  * The store already shows the edit. The write overwrites a file that exists:
@@ -480,8 +459,8 @@ function stampMillis(value: string | undefined): number | undefined {
  * the watcher has already created. It never creates a second file at a slug
  * that is not on disk yet.
  *
- * Every overwrite snapshots the file still on disk first, including a
- * frontmatter-only toggle. The previous bytes are what history has to keep.
+ * Already inside the note's queue, so this calls `commitExistingNote` and
+ * does not queue again.
  */
 async function persistFrontmatterChange(
   noteId: string,
@@ -490,10 +469,6 @@ async function persistFrontmatterChange(
   applied: Note,
   enqueuedPath: string,
 ): Promise<void> {
-  const vaultPath = useNoteStore
-    .getState()
-    .vaults.find((vault) => vault.id === before.vaultId)?.path;
-
   if (typeof updates.title === "string" && Object.keys(updates).length === 1) {
     try {
       // Body keystrokes still inside the debounce window land on the file
@@ -507,71 +482,40 @@ async function persistFrontmatterChange(
     return;
   }
 
-  const current = useNoteStore.getState().notes.find((item) => item.id === noteId);
-  if (!current) return;
-  const path = await resolveNoteWritePath(noteId, enqueuedPath);
-  if (!path) {
-    reportError("Failed to save frontmatter", new Error("The note file is not on disk"));
-    revertFrontmatterWrite(noteId, before, applied, updates);
-    return;
-  }
-  const fileName = path.split("/").pop() ?? current.fileName;
-  let target = path === current.filePath ? current : { ...current, filePath: path, fileName };
-
-  // The click already painted this edit onto whatever the store held. If a
-  // newer file is on disk — the installed app, or any other writer — that
-  // text is the base. This edit is applied on top of it.
-  let raw: string | undefined;
-  try {
-    raw = await tauriCommands.readNote(path);
-  } catch {
-    raw = undefined;
-  }
-  const diskMillis = raw === undefined ? undefined : stampMillis(fileUpdated(raw));
-  const storeMillis = stampMillis(before.frontmatter.updated);
-  if (
-    raw !== undefined &&
-    diskMillis !== undefined &&
-    storeMillis !== undefined &&
-    diskMillis > storeMillis
-  ) {
-    const disk = parseNote(raw, path);
-    if (disk.id && disk.id !== current.id) {
-      reportError("Failed to save frontmatter", new Error("A different note is at this path"));
-      revertFrontmatterWrite(noteId, before, applied, updates);
-      return;
+  const result = await commitExistingNote({
+    noteId,
+    enqueuedPath,
+    beforeUpdated: before.frontmatter.updated,
+    previousContent: before.content,
+    // The click already painted this edit. Writing the note captured at the
+    // start of the save would erase a later click that landed while it ran.
+    updateStore: false,
+    failureMessage: "Failed to save frontmatter",
+    // The store note is that result. A newer file is the base instead, and
+    // only this edit is applied on top of it.
+    apply: (base, fromDisk) => (fromDisk ? noteWithFrontmatter(base, updates) : base),
+  });
+  if (result.ok && result.wrote) {
+    const latest = useNoteStore.getState().notes.find((item) => item.id === noteId);
+    if (latest) {
+      const pathChanged = latest.filePath !== result.note.filePath;
+      const contentChanged =
+        result.fromDisk &&
+        normalizeContent(latest.content) !== normalizeContent(result.note.content);
+      // A watcher may have pointed the store at a slug that is not a file.
+      // The write stayed on the file that exists, and the store follows it.
+      // A newer disk body replaces the stale one. Later flag edits stay.
+      if (pathChanged || contentChanged) {
+        useNoteStore.getState().updateNote({
+          ...latest,
+          content: result.fromDisk ? result.note.content : latest.content,
+          filePath: result.note.filePath,
+          fileName: result.note.fileName,
+        });
+      }
     }
-    if (normalizeContent(disk.content) !== normalizeContent(current.content)) {
-      reportError(
-        "This note changed on disk",
-        new Error("The newer text was kept. This change was saved on top of it."),
-      );
-    }
-    target = noteWithFrontmatter(
-      {
-        ...current,
-        content: disk.content,
-        filePath: path,
-        fileName,
-        frontmatter: { ...disk.frontmatter, id: current.frontmatter.id },
-      },
-      updates,
-    );
   }
-  if (target !== current) useNoteStore.getState().updateNote(target);
-  // Awaited so the copy lands before write_note replaces the file. A failure
-  // must not block the save. Rust still coalesces to one snapshot per 5 minutes.
-  if (vaultPath) {
-    await tauriCommands.snapshotNote(vaultPath, target.id, path).catch(() => {
-      /* snapshotting must never block a save */
-    });
-  }
-  try {
-    await tauriCommands.writeNote(path, serializeNote(target));
-  } catch (error) {
-    reportError("Failed to save frontmatter", error);
-    revertFrontmatterWrite(noteId, before, applied, updates);
-  }
+  if (!result.ok) revertFrontmatterWrite(noteId, before, applied, updates);
 }
 
 /** True when the open note is a trash snapshot rather than a live file. */

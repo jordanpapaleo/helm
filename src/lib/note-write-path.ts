@@ -73,6 +73,12 @@ export function immediateNoteWritePath(noteId: string, enqueuedPath: string): st
   return null;
 }
 
+/** The file we just wrote or renamed. Later saves can skip the existence probe. */
+export function rememberExistingNotePath(noteId: string, filePath: string): void {
+  if (!noteId || !filePath) return;
+  existingPaths.set(noteId, filePath);
+}
+
 /** Keep the path from the first keystroke of a pending save. */
 export function rememberNotePath(noteId: string, filePath: string): void {
   if (!noteId || !filePath || scheduledPaths.has(noteId)) return;
@@ -129,6 +135,12 @@ export async function resolveNoteWritePath(
   }
   if (remembered && remembered !== current && (await noteFileExists(remembered))) {
     return remembered;
+  }
+  // The store and this write name the same path. A failed read is not proof
+  // that some other file is the real one, so the write still goes there.
+  if (current === enqueuedPath) {
+    existingPaths.set(noteId, current);
+    return current;
   }
   return null;
 }

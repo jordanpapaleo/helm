@@ -13,12 +13,10 @@ import { forceX, forceY } from "d3-force-3d";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { isArchived, visibleNotes } from "../lib/archive";
+import { queueExistingNoteWrite } from "../lib/existing-note-write";
 import { resolveOutgoingLinks } from "../lib/note-links";
-import { serializeNote } from "../lib/note-parser";
-import { tauriCommands } from "../lib/tauri-commands";
 import { useNoteStore } from "../store/notes";
 import { useSettingsStore } from "../store/settings";
-import { reportError } from "../store/toast";
 import { useUIStore } from "../store/ui";
 import type { Note, NoteState } from "../types/note";
 import {
@@ -220,11 +218,20 @@ export function GraphView() {
         },
       };
       updateNote(updated);
-      try {
-        await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-      } catch (e) {
-        reportError("Failed to create link", e);
-      }
+      await queueExistingNoteWrite({
+        noteId: sourceNote.id,
+        enqueuedPath: sourceNote.filePath,
+        beforeUpdated: sourceNote.frontmatter.updated,
+        failureMessage: "Failed to create link",
+        apply: (base) => {
+          const links = base.frontmatter.links ?? [];
+          if (links.includes(targetId)) return null;
+          return {
+            ...base,
+            frontmatter: { ...base.frontmatter, links: [...links, targetId] },
+          };
+        },
+      });
     },
     [notes, updateNote],
   );
@@ -241,11 +248,19 @@ export function GraphView() {
         },
       };
       updateNote(updated);
-      try {
-        await tauriCommands.writeNote(updated.filePath, serializeNote(updated));
-      } catch (e) {
-        reportError("Failed to remove link", e);
-      }
+      await queueExistingNoteWrite({
+        noteId: sourceNote.id,
+        enqueuedPath: sourceNote.filePath,
+        beforeUpdated: sourceNote.frontmatter.updated,
+        failureMessage: "Failed to remove link",
+        apply: (base) => ({
+          ...base,
+          frontmatter: {
+            ...base.frontmatter,
+            links: (base.frontmatter.links ?? []).filter((id) => id !== targetId),
+          },
+        }),
+      });
     },
     [notes, updateNote],
   );

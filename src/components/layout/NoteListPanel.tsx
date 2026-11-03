@@ -5,11 +5,14 @@ import { requestNotePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { createNote, creationTargetFromUI } from "../../lib/create-note";
+import { queueExistingNoteWrite } from "../../lib/existing-note-write";
 import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
 import { writeNoteDrag } from "../../lib/note-drag";
 import { moveNoteToFolder } from "../../lib/note-drop";
 import { notesForList, trashForList } from "../../lib/note-list";
 import { serializeNote } from "../../lib/note-parser";
+import { enqueueNoteWrite } from "../../lib/note-write-path";
+import { flushPendingSaves } from "../../lib/pending-saves";
 import { moveNoteToCategory } from "../../lib/project-actions";
 import { moveDestinations, PROJECT_CATEGORIES, projectForPath } from "../../lib/projects";
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
@@ -38,10 +41,8 @@ export function NoteListPanel() {
     vaults,
     activeVaultId,
     addNote,
-    updateNote,
     removeNote,
     knownFolderPaths,
-    renameNote,
   } = useNoteStore();
   const { items: trashItems, removeFromTrash, permanentlyDelete, addToTrash } = useTrashStore();
   const showArchivedNotes = useSettingsStore((s) => s.settings.showArchivedNotes);
@@ -113,17 +114,8 @@ export function NoteListPanel() {
     }
   }
 
-  async function handlePinToggle(note: Note) {
-    const updated = {
-      ...note,
-      frontmatter: { ...note.frontmatter, pinned: !note.frontmatter.pinned },
-    };
-    try {
-      await tauriCommands.writeNote(note.filePath, serializeNote(updated));
-      updateNote(updated);
-    } catch (e) {
-      reportError("Failed to toggle pin", e);
-    }
+  function handlePinToggle(note: Note) {
+    return saveExistingNote(note, { pinned: !note.frontmatter.pinned }, "Failed to toggle pin");
   }
 
   async function handleMoveToCategory(
@@ -243,26 +235,21 @@ export function NoteListPanel() {
     });
   }
 
-  async function handleFrontmatterToggle(note: Note, field: "locked" | "unmanaged") {
+  function handleFrontmatterToggle(note: Note, field: "locked" | "unmanaged") {
     const next = !note.frontmatter[field];
     // Marking a note unmanaged clears the workflow fields it no longer uses.
     // Unmarking only flips the flag — the values are already cleared.
     const cleared = field === "unmanaged" && next ? UNMANAGED_CLEARED_FIELDS : {};
-    const updated = {
-      ...note,
-      frontmatter: { ...note.frontmatter, [field]: next, ...cleared },
-    };
-    try {
-      await tauriCommands.writeNote(note.filePath, serializeNote(updated));
-      updateNote(updated);
-    } catch (e) {
-      reportError(`Failed to toggle ${field}`, e);
-    }
+    return saveExistingNote(note, { [field]: next, ...cleared }, `Failed to toggle ${field}`);
   }
 
   async function handleRenameNote(note: Note, newTitle: string) {
     try {
-      await renameNote(note, newTitle);
+      await enqueueNoteWrite(note.id, async () => {
+        await flushPendingSaves();
+        const current = useNoteStore.getState().notes.find((item) => item.id === note.id) ?? note;
+        await useNoteStore.getState().renameNote(current, newTitle);
+      });
     } catch (e) {
       reportError("Failed to rename note", e);
     }
@@ -274,20 +261,28 @@ export function NoteListPanel() {
       reportError("Unlock the note before archiving it", new Error("Note is locked"));
       return;
     }
-    const updated = {
-      ...note,
-      frontmatter: {
-        ...note.frontmatter,
-        archived: !isArchived(note.frontmatter),
-        updated: nowTimestamp(),
-      },
-    };
-    try {
-      await tauriCommands.writeNote(note.filePath, serializeNote(updated));
-      updateNote(updated);
-    } catch (e) {
-      reportError("Failed to update archive state", e);
-    }
+    await saveExistingNote(
+      note,
+      { archived: !isArchived(note.frontmatter) },
+      "Failed to update archive state",
+    );
+  }
+
+  function saveExistingNote(
+    note: Note,
+    updates: Partial<Note["frontmatter"]>,
+    failureMessage: string,
+  ) {
+    return queueExistingNoteWrite({
+      noteId: note.id,
+      enqueuedPath: note.filePath,
+      beforeUpdated: note.frontmatter.updated,
+      failureMessage,
+      apply: (base) => ({
+        ...base,
+        frontmatter: { ...base.frontmatter, ...updates, updated: nowTimestamp() },
+      }),
+    });
   }
 
   async function handleDeleteNote(note: Note) {

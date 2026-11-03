@@ -97,6 +97,10 @@ Areas:
   - Checking Unmanaged clears `state`, `urgent`, `important`, `blocked` in the same write (`UNMANAGED_CLEARED_FIELDS` in `src/lib/constants.ts`); unchecking only flips the flag.
 - **Locked note** — `MainPanel` (`persistFrontmatterChange`)
   - Every frontmatter write except `locked` itself is dropped while the note is locked.
+- **Frontmatter save** — `persistFrontmatterChange` in `MainPanel.tsx`
+  - Header and Properties writes snapshot the on-disk file before `writeNote`, including a toggle that does not change the body. The snapshot is awaited; a snapshot failure still saves.
+  - The queued write applies the edit to the latest store note. If the file's stored `updated` is newer than the store copy from before the click, the disk text is kept, the edit is saved on top of it, and a toast says the note changed on disk. A different note id at that path refuses the write.
+  - **Gap:** note-list Mark Unmanaged, Lock, and Archive (`NoteListPanel`) still write the in-memory note with no snapshot and no newer-disk check.
   - Locked does not disable the header controls visually; only deleted notes set `readOnly`.
 - **Deleted note view** — `MainPanel`
   - A banner offers Restore and permanent Delete; all header fields are disabled (`readOnly`).
@@ -113,7 +117,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 - **Deadline** — date input; clearing removes the key.
 - **Team** — comma list, saved on blur; empty removes the key.
 - **Tags** — comma list, saved on blur; leading `#` stripped; empty saves `[]`.
-  - Removing a tag here also removes its inline `#tag` from the body (`dropRemovedInlineTags` in `src/lib/tags.ts`), and that body change is snapshotted first (`MainPanel`).
+  - Removing a tag here also removes its inline `#tag` from the body (`dropRemovedInlineTags` in `src/lib/tags.ts`). Every properties save snapshots the previous file first, including one that leaves the body alone (`MainPanel`).
 - **Links** — read-only titles from `resolveOutgoingLinks`, same as the graph and footer; empty shows a `[[Note Title]]` hint.
 - **Custom fields** — every frontmatter key not in `KNOWN_FIELDS` is editable as text; `kanbanOrder` and `eisenhowerOrder` are hidden.
 - **Disabled for deleted notes** — the whole panel is a disabled fieldset when `readOnly`.
@@ -320,7 +324,7 @@ The disclosure under the header in `PropertyPanel.tsx`.
 
 `src-tauri/src/vault.rs` (`snapshot_note`, `list_note_history`), `mcp-server/history.ts` (KEEP IN SYNC), `src/components/editor/NoteHistoryModal.tsx`.
 
-- **Snapshots** — `<vault>/.helm-history/<note-id>/<epoch-ms>.md`, taken before a content write.
+- **Snapshots** — `<vault>/.helm-history/<note-id>/<epoch-ms>.md`, taken before a content write and before a header or Properties frontmatter write.
   - Coalesced: no new snapshot if the newest is under 5 minutes old (`HISTORY_MIN_AGE_SECS = 300`, `HISTORY_MIN_AGE_MS = 300_000`).
   - Retention: the newest 50 are kept (`HISTORY_MAX_KEEP = 50`).
   - Note id must be non-empty ASCII alphanumeric; a missing source file is a silent no-op.

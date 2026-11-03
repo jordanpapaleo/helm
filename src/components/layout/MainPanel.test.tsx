@@ -522,7 +522,46 @@ describe("MainPanel properties — removing the last tag", () => {
     const [, serialized] = vi.mocked(tauriCommands.writeNote).mock.calls[0];
     expect(serialized).toContain("tags: []");
     expect(parseNote(serialized, note.filePath).frontmatter.tags).toEqual([]);
-    expect(tauriCommands.snapshotNote).not.toHaveBeenCalled();
+    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", note.id, note.filePath);
+  });
+
+  it("keeps a newer on-disk body when a header toggle saves", async () => {
+    const order: string[] = [];
+    vi.mocked(tauriCommands.snapshotNote).mockImplementation(async () => {
+      order.push("snapshot");
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async () => {
+      order.push("write");
+    });
+
+    const note = makeNote({ content: "November body" });
+    note.frontmatter.updated = "2026-11-01T12:00:00Z";
+    const external = serializeNote({
+      ...note,
+      content: "External body from 15:09",
+      frontmatter: { ...note.frontmatter, updated: "2026-11-03T15:09:36Z" },
+    });
+    vi.mocked(tauriCommands.readNote).mockResolvedValueOnce(external);
+    setup(note, true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
+    });
+
+    expect(order).toEqual(["snapshot", "write"]);
+    expect(tauriCommands.snapshotNote).toHaveBeenCalledWith("/vault", note.id, note.filePath);
+    const written = String(vi.mocked(tauriCommands.writeNote).mock.calls[0]?.[1]);
+    const saved = parseNote(written, note.filePath);
+    expect(saved.content).toContain("External body from 15:09");
+    expect(saved.content).not.toContain("November body");
+    expect(saved.frontmatter.unmanaged).toBe(true);
+    expect(saved.frontmatter.state).toBe("");
+    expect(useNoteStore.getState().notes[0].content).toContain("External body from 15:09");
+    expect(
+      useToastStore
+        .getState()
+        .toasts.some((toast) => toast.message.includes("This note changed on disk")),
+    ).toBe(true);
   });
 
   it("snapshots the on-disk note before a tag edit rewrites the body", async () => {

@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import matter from "gray-matter";
 import {
   forwardRef,
   useCallback,
@@ -15,7 +16,7 @@ import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { decideEditorSync } from "../../lib/git-sync";
-import { normalizeContent, serializeNote } from "../../lib/note-parser";
+import { normalizeContent, parseNote, serializeNote } from "../../lib/note-parser";
 import {
   enqueueNoteWrite,
   forgetScheduledPath,
@@ -33,7 +34,7 @@ import { saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
-import { nowTimestamp } from "../../lib/timestamps";
+import { normalizeTimestamp, nowTimestamp } from "../../lib/timestamps";
 import { useGitSyncStore } from "../../store/git-sync";
 import { occupiedNotePaths, useNoteStore } from "../../store/notes";
 import { useProjectStore } from "../../store/projects";
@@ -456,12 +457,31 @@ function revertFrontmatterWrite(
   }
 }
 
+/** `updated` as stored in the file, ignoring the clock parseNote fills in when it is absent. */
+function fileUpdated(raw: string): string | undefined {
+  try {
+    return normalizeTimestamp(matter(raw).data.updated);
+  } catch {
+    return undefined;
+  }
+}
+
+function stampMillis(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const iso = value.length === 10 ? `${value}T00:00:00Z` : value;
+  const time = Date.parse(iso);
+  return Number.isNaN(time) ? undefined : time;
+}
+
 /**
  * Write one header edit after any earlier edit for this note has finished.
  * The store already shows the edit. The write overwrites a file that exists:
  * the path captured when the edit was queued, or a later path the rename or
  * the watcher has already created. It never creates a second file at a slug
  * that is not on disk yet.
+ *
+ * Every overwrite snapshots the file still on disk first, including a
+ * frontmatter-only toggle. The previous bytes are what history has to keep.
  */
 async function persistFrontmatterChange(
   noteId: string,
@@ -496,13 +516,52 @@ async function persistFrontmatterChange(
     return;
   }
   const fileName = path.split("/").pop() ?? current.fileName;
-  const target = path === current.filePath ? current : { ...current, filePath: path, fileName };
+  let target = path === current.filePath ? current : { ...current, filePath: path, fileName };
+
+  // The click already painted this edit onto whatever the store held. If a
+  // newer file is on disk — the installed app, or any other writer — that
+  // text is the base. This edit is applied on top of it.
+  let raw: string | undefined;
+  try {
+    raw = await tauriCommands.readNote(path);
+  } catch {
+    raw = undefined;
+  }
+  const diskMillis = raw === undefined ? undefined : stampMillis(fileUpdated(raw));
+  const storeMillis = stampMillis(before.frontmatter.updated);
+  if (
+    raw !== undefined &&
+    diskMillis !== undefined &&
+    storeMillis !== undefined &&
+    diskMillis > storeMillis
+  ) {
+    const disk = parseNote(raw, path);
+    if (disk.id && disk.id !== current.id) {
+      reportError("Failed to save frontmatter", new Error("A different note is at this path"));
+      revertFrontmatterWrite(noteId, before, applied, updates);
+      return;
+    }
+    if (normalizeContent(disk.content) !== normalizeContent(current.content)) {
+      reportError(
+        "This note changed on disk",
+        new Error("The newer text was kept. This change was saved on top of it."),
+      );
+    }
+    target = noteWithFrontmatter(
+      {
+        ...current,
+        content: disk.content,
+        filePath: path,
+        fileName,
+        frontmatter: { ...disk.frontmatter, id: current.frontmatter.id },
+      },
+      updates,
+    );
+  }
   if (target !== current) useNoteStore.getState().updateNote(target);
-  // A tag edit can delete body text, including a list or task line that held
-  // only that tag. Snapshot the file that is still on disk before overwriting
-  // it. The snapshot is awaited so it lands first, and a failure must not block
-  // the write. Frontmatter-only edits leave the body alone and skip this.
-  if (target.content !== before.content && vaultPath) {
+  // Awaited so the copy lands before write_note replaces the file. A failure
+  // must not block the save. Rust still coalesces to one snapshot per 5 minutes.
+  if (vaultPath) {
     await tauriCommands.snapshotNote(vaultPath, target.id, path).catch(() => {
       /* snapshotting must never block a save */
     });

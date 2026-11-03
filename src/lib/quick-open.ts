@@ -8,8 +8,8 @@ export const QUICK_OPEN_RESULT_LIMIT = 50;
 /**
  * Notes for the ⌘P palette. Archived notes follow **Show archived notes**, like
  * the other discovery views; Trash notes are never in `notes`. An empty query
- * lists the most recently updated notes. A query ranks every title match ahead
- * of matches found only in tags or the body.
+ * lists the most recently updated notes. A query matches titles only, with
+ * prefix and fuzzy matching. Body and tag text never decide which notes appear.
  */
 export function quickOpenResults(options: {
   notes: Note[];
@@ -30,10 +30,7 @@ export function quickOpenResults(options: {
   const byId = new Map(candidates.map((note) => [note.id, note]));
   const ranked: Note[] = [];
   const seen = new Set<string>();
-  const hits = [
-    ...index.search(q, { fields: ["title"], prefix: true, fuzzy: 0.2 }),
-    ...index.search(q, { prefix: true, fuzzy: 0.2 }),
-  ];
+  const hits = index.search(q, { fields: ["title"], prefix: true, fuzzy: 0.2 });
   for (const hit of hits) {
     const id = String(hit.id);
     const note = byId.get(id);

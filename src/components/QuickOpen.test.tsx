@@ -171,12 +171,13 @@ describe("QuickOpen", () => {
     expect(within(rows[0]).queryByText(/standup\.md/)).not.toBeInTheDocument();
   });
 
-  it("filters as you type, with title matches first", () => {
+  it("filters as you type to title matches only", () => {
     render(<QuickOpen />);
     pressShortcut();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "roadm" } });
     expect(screen.getByText("Matching notes")).toBeInTheDocument();
-    expect(optionTitles()).toEqual(["Roadmap", "Weekly review"]);
+    expect(optionTitles()).toEqual(["Roadmap"]);
+    expect(screen.queryByRole("option", { name: "Weekly review" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "qqqq" } });
     expect(screen.getByRole("status")).toHaveTextContent("No matching notes");
@@ -203,8 +204,7 @@ describe("QuickOpen", () => {
     render(<QuickOpen />);
     pressShortcut();
     const input = screen.getByRole("combobox");
-    fireEvent.change(input, { target: { value: "roadm" } });
-    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.change(input, { target: { value: "week" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(useNoteStore.getState().selectedNoteId).toBe("review");

@@ -61,12 +61,19 @@ describe("quickOpenResults", () => {
     expect(results(notes, "")).toHaveLength(QUICK_OPEN_RECENT_LIMIT);
   });
 
-  it("ranks title matches ahead of body-only matches", () => {
+  it("matches titles only, including prefixes and small typos", () => {
     const notes = [
-      note("body", "Weekly review", { content: "notes about the roadmap and more roadmap" }),
+      note("body", "Weekly review", {
+        content: "notes about the roadmap and a meeting template",
+      }),
+      note("tagged", "RFL plans", { content: "helm-notes" }),
       note("title", "Roadmap"),
+      note("template", "Note template"),
     ];
-    expect(results(notes, "roadmap")).toEqual(["title", "body"]);
+    notes[1].frontmatter.tags = ["template"];
+    expect(results(notes, "roadmap")).toEqual(["title"]);
+    expect(results(notes, "template")).toEqual(["template"]);
+    expect(results(notes, "templ")).toEqual(["template"]);
   });
 
   it("matches title prefixes and small typos", () => {

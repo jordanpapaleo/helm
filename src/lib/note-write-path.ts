@@ -28,6 +28,11 @@ const scheduledPaths = new Map<string, string>();
 /** Last path we proved was on disk. A flush can fall back to it. */
 const existingPaths = new Map<string, string>();
 
+/** True while a body, frontmatter, or rename write for this note is still queued. */
+export function hasInflightNoteWrite(noteId: string): boolean {
+  return inflight.has(noteId);
+}
+
 export function enqueueNoteWrite<T>(noteId: string, task: () => Promise<T>): Promise<T> {
   if (syncStart.has(noteId)) return task();
   const execute = (): Promise<T> => {

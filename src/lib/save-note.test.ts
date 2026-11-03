@@ -3,7 +3,8 @@ import { useGitSyncStore } from "../store/git-sync";
 import { useNoteStore } from "../store/notes";
 import { useToastStore } from "../store/toast";
 import type { Note } from "../types/note";
-import { saveNoteContent } from "./save-note";
+import { parseNote } from "./note-parser";
+import { acknowledgeLocalBody, saveNoteContent } from "./save-note";
 import { tauriCommands } from "./tauri-commands";
 
 vi.mock("./tauri-commands", () => ({
@@ -81,6 +82,68 @@ describe("saveNoteContent", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("keeps a property edit made while the body write is in flight", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(tauriCommands.writeNote).mockImplementation(() => gate);
+    const note = makeNote();
+    useNoteStore.getState().setNotes([note]);
+
+    const save = saveNoteContent(note, "Note A body edited");
+    await Promise.resolve();
+    const during = useNoteStore.getState().notes[0];
+    useNoteStore.getState().updateNote({
+      ...during,
+      frontmatter: { ...during.frontmatter, urgent: true, tags: ["kept"] },
+    });
+
+    release();
+    expect(await save).toBe("saved");
+    const stored = useNoteStore.getState().notes[0];
+    expect(stored.content).toBe("Note A body edited");
+    expect(stored.frontmatter.urgent).toBe(true);
+    expect(stored.frontmatter.tags).toEqual(["kept"]);
+    acknowledgeLocalBody(note.id, stored.content);
+  });
+
+  it("queues an undo that matches the store while the edited body is still writing", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const written: string[] = [];
+    vi.mocked(tauriCommands.writeNote).mockImplementation(async (_path, raw) => {
+      written.push(raw);
+      if (written.length === 1) await gate;
+    });
+    const note = makeNote();
+    useNoteStore.getState().setNotes([note]);
+
+    const first = saveNoteContent(note, "Note A body edited");
+    await Promise.resolve();
+    expect(written).toHaveLength(1);
+
+    const second = saveNoteContent(note, "Note A body");
+    let settled = false;
+    void second.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    release();
+    expect(await second).toBe("saved");
+    await first;
+    const stored = useNoteStore.getState().notes[0];
+    expect(stored.content).toBe("Note A body");
+    expect(parseNote(written.at(-1) ?? "", note.filePath).content.trim()).toBe("Note A body");
+    acknowledgeLocalBody(note.id, "Note A body");
+    acknowledgeLocalBody(note.id, "Note A body edited");
   });
 });
 

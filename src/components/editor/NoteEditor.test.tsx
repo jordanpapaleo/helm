@@ -315,4 +315,73 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
       vi.restoreAllMocks();
     }
   });
+
+  it("does not hold the note when an earlier local save lands under a newer edit", async () => {
+    const note = makeNote();
+    useNoteStore.setState({
+      notes: [note],
+      vaults: [{ id: "v1", name: "Vault", path: "/vault" }],
+      activeVaultId: "v1",
+    });
+    let writes = 0;
+    let releaseFirst: () => void = () => {};
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command !== "write_note") return undefined;
+      writes += 1;
+      if (writes === 1) await firstGate;
+      return undefined;
+    });
+
+    const ref = createRef<NoteEditorHandle>();
+    const onSave = async (content: string): Promise<void> => {
+      const current = useNoteStore.getState().notes.find((item) => item.id === note.id) ?? note;
+      await saveNoteContent(current, content);
+    };
+    function LiveEditor() {
+      const live = useNoteStore((state) => state.notes.find((item) => item.id === note.id));
+      if (!live) return null;
+      return <NoteEditor ref={ref} note={live} onSave={onSave} />;
+    }
+    try {
+      render(<LiveEditor />);
+      act(() => {
+        ref.current?.getEditor()?.commands.insertContent(" one");
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(writes).toBe(1);
+
+      act(() => {
+        ref.current?.getEditor()?.commands.insertContent(" two");
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(writes).toBe(1);
+
+      releaseFirst();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(useGitSyncStore.getState().isHeld(note.id)).toBe(false);
+      expect(ref.current?.getEditor()?.getText()).toContain("two");
+
+      act(() => {
+        ref.current?.getEditor()?.commands.insertContent(" three");
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(useGitSyncStore.getState().isHeld(note.id)).toBe(false);
+      expect(writes).toBe(3);
+    } finally {
+      releaseFirst();
+      vi.mocked(invoke).mockReset();
+      vi.mocked(invoke).mockResolvedValue(undefined);
+    }
+  });
 });

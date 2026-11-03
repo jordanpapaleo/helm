@@ -157,6 +157,8 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - `[[wiki]]` titles become `links` ids (self excluded; empty removes the key).
   - Image assets removed from the body are deleted only when the file is inside that vault's `assets/` directory, and only after the write lands. An `asset.localhost` URL pointing anywhere else is left on disk. A failed write deletes nothing.
   - A failed write does not update the store, leaves the rich editor dirty, toasts via `reportError`, and is retried on the next save.
+  - A frontmatter edit made while that write is in flight stays in the store, and the queued property write reads it back.
+  - A body submitted while a write is already in flight is queued. That includes an undo back to the text still in the store.
   - A sync-blocked note keeps the draft in the editor, writes nothing, and toasts once.
 - **Locked note is read-only** — `editor.setEditable(!locked)`; markdown textarea `readOnly`; block commands, wrap shortcuts, and Replace refuse.
 - **Deleted note is read-only** — the editor gets `locked` while viewing Trash.
@@ -184,6 +186,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - Hidden when there are no links either way; incoming links hide archived sources unless the setting is on; outgoing links keep archived targets.
 - **Sync-aware reload** — `NoteEditor.tsx`, `decideEditorSync` in `src/lib/git-sync.ts`
   - Clean editor plus a different file adopts the file; dirty editor plus a different file holds the draft; switching notes keeps a held draft.
+  - A local save landing while a newer edit is outstanding does not hold the note in the rich editor, the markdown textarea, or the pinned pane, and the newer edit can still be written.
 - **Pinned-note pane** — `src/components/layout/PinnedNoteView.tsx`
   - Edits a pinned note with the same save path but no header, wiki popup, or image paste; follows the main editor's live draft when both show the same note.
   - A held draft is dropped only after that save writes. A failed write keeps the draft and retries next time.

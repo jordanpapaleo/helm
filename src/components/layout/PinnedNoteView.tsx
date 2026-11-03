@@ -15,7 +15,7 @@ import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
 import { forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
-import { saveNoteContent } from "../../lib/save-note";
+import { acknowledgeLocalBody, isLocalBodyEcho, saveNoteContent } from "../../lib/save-note";
 import { NOTE_CONTENT_STYLE } from "../../lib/settings";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
@@ -160,6 +160,20 @@ function PinnedNoteBody({
   useEffect(() => {
     if (!editor) return;
     const markdown = getEditorMarkdown(editor);
+    if (isLocalBodyEcho(note.id, saved)) {
+      const incoming = saved;
+      const noteId = note.id;
+      queueMicrotask(() => acknowledgeLocalBody(noteId, incoming));
+      if (heldByUs.current || useGitSyncStore.getState().isHeld(note.id)) {
+        useGitSyncStore.getState().releaseNote(note.id);
+        useGitSyncStore.getState().clearHeldDraft(note.id);
+        heldByUs.current = false;
+      }
+      if (normalizeContent(markdown) !== normalizeContent(saved)) return;
+      lastSavedRef.current = saved;
+      editingRef.current = false;
+      return;
+    }
     const fileMoved = normalizeContent(saved) !== normalizeContent(lastSavedRef.current);
 
     if (fileMoved) {

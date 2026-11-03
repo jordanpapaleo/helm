@@ -29,7 +29,7 @@ import {
 } from "../../lib/pending-saves";
 import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
-import { saveNoteContent } from "../../lib/save-note";
+import { acknowledgeLocalBody, isLocalBodyEcho, saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { dropRemovedInlineTags } from "../../lib/tags";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -254,6 +254,18 @@ export const MarkdownTextarea = forwardRef<
       lastSavedContentRef.current = content;
       store.releaseNote(noteId);
       setValue(draft);
+      return;
+    }
+    if (isLocalBodyEcho(noteId, content)) {
+      const incoming = content;
+      queueMicrotask(() => acknowledgeLocalBody(noteId, incoming));
+      if (useGitSyncStore.getState().isHeld(noteId)) {
+        useGitSyncStore.getState().releaseNote(noteId);
+        useGitSyncStore.getState().clearHeldDraft(noteId);
+      }
+      if (normalizeContent(valueRef.current) !== normalizeContent(content)) return;
+      lastSavedContentRef.current = content;
+      dirtyRef.current = false;
       return;
     }
     const decision = decideEditorSync({

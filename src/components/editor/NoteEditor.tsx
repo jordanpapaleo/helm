@@ -20,6 +20,7 @@ import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
 import { forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
+import { acknowledgeLocalBody, isLocalBodyEcho } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
 import { NOTE_CONTENT_STYLE } from "../../lib/settings";
 import { tauriCommands } from "../../lib/tauri-commands";
@@ -428,6 +429,21 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally omits editor — re-running on editor instance changes would cause loops
     useEffect(() => {
       if (!editor) return;
+      // An earlier local save can land while a newer edit is outstanding.
+      // That body is ours: keep the editor and do not hold the note.
+      if (isLocalBodyEcho(note.id, note.content)) {
+        const incoming = note.content;
+        const noteId = note.id;
+        queueMicrotask(() => acknowledgeLocalBody(noteId, incoming));
+        if (useGitSyncStore.getState().isHeld(note.id)) {
+          useGitSyncStore.getState().releaseNote(note.id);
+          useGitSyncStore.getState().clearHeldDraft(note.id);
+        }
+        if (normalizeContent(getEditorMarkdown(editor)) !== normalizeContent(note.content)) return;
+        lastSavedContentRef.current = note.content;
+        dirtyRef.current = false;
+        return;
+      }
       const decision = decideEditorSync({
         dirtySinceFlush: dirtyRef.current,
         flushedContent: lastSavedContentRef.current,

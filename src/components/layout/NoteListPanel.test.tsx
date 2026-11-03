@@ -131,7 +131,6 @@ describe("NoteListPanel — Mark Unmanaged", () => {
 describe("NoteListPanel — sorting by last modified", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
   });
 
   function note(id: string, title: string, updated: string, pinned = false): Note {
@@ -177,18 +176,6 @@ describe("NoteListPanel — sorting by last modified", () => {
 
     const titles = screen.getAllByText(/Newest|Pinned old/);
     expect(titles.map((t) => t.textContent)).toEqual(["Pinned old", "Newest"]);
-  });
-
-  it("sorts pinned notes by date like any other when Pinned notes float is off", () => {
-    setNotes([
-      note("a", "Newest", "2026-07-31T18:23:05Z"),
-      note("b", "Pinned old", "2026-07-01", true),
-    ]);
-    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, pinnedNotesFloat: false } });
-    render(<NoteListPanel />);
-
-    const titles = screen.getAllByText(/Newest|Pinned old/);
-    expect(titles.map((t) => t.textContent)).toEqual(["Newest", "Pinned old"]);
   });
 
   it("shows only the day in the list row, with the full stamp as a tooltip", () => {

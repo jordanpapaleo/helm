@@ -28,13 +28,9 @@ function inScope(note: Note, grouping: Grouping, activeVaultId: string | null): 
 }
 
 function byRecent(a: ListedNote, b: ListedNote): number {
-  return b.note.frontmatter.updated.localeCompare(a.note.frontmatter.updated);
-}
-
-function pinnedThenRecent(a: ListedNote, b: ListedNote): number {
   if (a.note.frontmatter.pinned && !b.note.frontmatter.pinned) return -1;
   if (!a.note.frontmatter.pinned && b.note.frontmatter.pinned) return 1;
-  return byRecent(a, b);
+  return b.note.frontmatter.updated.localeCompare(a.note.frontmatter.updated);
 }
 
 /**
@@ -42,8 +38,6 @@ function pinnedThenRecent(a: ListedNote, b: ListedNote): number {
  * The archive grouping shows archived notes even when the setting is off.
  * A query uses the same title, tag, and body match for archived notes and
  * Trash notes in the current vault, folder, or tag scope.
- * Rows are newest first; with `pinnedFirst` (the "Pinned notes float"
- * setting), pinned notes come before the rest.
  */
 export function notesForList(options: {
   notes: Note[];
@@ -52,11 +46,9 @@ export function notesForList(options: {
   activeVaultId: string | null;
   showArchived: boolean;
   query: string;
-  pinnedFirst: boolean;
 }): ListedNote[] {
-  const { notes, trash, grouping, activeVaultId, showArchived, query, pinnedFirst } = options;
+  const { notes, trash, grouping, activeVaultId, showArchived, query } = options;
   if (grouping.type === "trash") return [];
-  const order = pinnedFirst ? pinnedThenRecent : byRecent;
 
   const scoped = (note: Note) => inScope(note, grouping, activeVaultId);
 
@@ -66,12 +58,12 @@ export function notesForList(options: {
         (note) => isArchived(note.frontmatter) && scoped(note) && noteMatchesQuery(note, query),
       )
       .map((note) => ({ note, deletedAt: null }))
-      .sort(order);
+      .sort(byRecent);
   }
 
   const base = visibleNotes(notes, showArchived).filter(scoped);
   if (!query.trim()) {
-    return base.map((note) => ({ note, deletedAt: null })).sort(order);
+    return base.map((note) => ({ note, deletedAt: null })).sort(byRecent);
   }
 
   const rows: ListedNote[] = [];
@@ -94,7 +86,7 @@ export function notesForList(options: {
     if (!noteMatchesQuery(item.note, query)) continue;
     rows.push({ note: item.note, deletedAt: item.deletedAt });
   }
-  return rows.sort(order);
+  return rows.sort(byRecent);
 }
 
 /** Trash rows, filtered with the same matcher as the note list. */

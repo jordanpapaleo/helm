@@ -399,6 +399,36 @@ This is the note content.
     expect(note.frontmatter.title).toBe("Meeting Notes 2026");
   });
 
+  it("treats a non-array tags value as no frontmatter tags", () => {
+    const numbered = parseNote(
+      "---\nid: abc\ntitle: Num\ntags: 12\n---\nSee #work\n",
+      "/notes/num.md",
+    );
+    expect(numbered.id).toBe("abc");
+    expect(numbered.content).toContain("See #work");
+    expect(numbered.frontmatter.tags).toEqual(["work"]);
+
+    const asString = parseNote(
+      "---\nid: abc\ntitle: Str\ntags: work\n---\nbody\n",
+      "/notes/str.md",
+    );
+    expect(asString.frontmatter.tags).toEqual([]);
+
+    const flagged = parseNote(
+      "---\nid: abc\ntitle: Flag\ntags: true\n---\nbody\n",
+      "/notes/flag.md",
+    );
+    expect(flagged.frontmatter.tags).toEqual([]);
+  });
+
+  it("drops non-string entries in a tags list and keeps the rest", () => {
+    const note = parseNote(
+      "---\nid: abc\ntitle: Mixed\ntags:\n  - work\n  - 1\n  - home\n---\n#extra\n",
+      "/notes/mixed.md",
+    );
+    expect(note.frontmatter.tags).toEqual(["work", "home", "extra"]);
+  });
+
   it("merges frontmatter tags with inline tags and deduplicates", () => {
     const raw = `---
 title: Tag Test

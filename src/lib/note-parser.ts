@@ -26,12 +26,28 @@ function derivetitleFromFilename(fileName: string): string {
   return base.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Frontmatter `tags` must be a list of strings.
+ *
+ * js-yaml leaves a scalar in place: `tags: 1` is a number, and spreading a
+ * number throws; `tags: work` is a string, and spreading a string yields its
+ * characters. That throw used to escape `loadVault` and
+ * `repairVaultFrontmatter` and replace the shell with the init error. A
+ * non-array contributes no frontmatter tags. Non-strings inside a list are
+ * skipped for the same reason — `buildTagTree` calls string methods on each
+ * tag. Inline `#tags` still merge.
+ */
+function frontmatterTagList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((tag): tag is string => typeof tag === "string");
+}
+
 export function parseNote(raw: string, filePath: string): Note {
   const { data, content } = matter(raw);
   const fileName = filePath.split("/").pop() ?? "";
 
   const inlineTags = extractInlineTags(content);
-  const frontmatterTags: string[] = data.tags ?? [];
+  const frontmatterTags = frontmatterTagList(data.tags);
   const mergedTags = [...new Set([...frontmatterTags, ...inlineTags])];
 
   const frontmatter: NoteFrontmatter = {

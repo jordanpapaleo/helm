@@ -37,7 +37,7 @@ Areas:
 - **Notes are `.md` files with YAML frontmatter** — `src/lib/note-parser.ts` (`parseNote`, `serializeNote`)
   - Title falls back from frontmatter to the first H1 to the filename in Title Case.
   - Missing fields default to `state: Prepare` and `false` booleans; `template` is kept only when it is a real boolean.
-  - Frontmatter tags and inline `#tags` are unioned on load.
+  - Frontmatter tags and inline `#tags` are unioned on load. A non-array `tags` value contributes no frontmatter tags, and non-string entries in a list are dropped, so a bad `tags` value cannot stop the vault from loading.
   - `normalizeContent` strips leading and trailing newlines so gray-matter round-trips do not look like edits.
 - **IDs are ULIDs, never filenames** — `src/types/note.ts`, `src/hooks/useVault.ts`
   - A file that arrives with no `id` gets a ULID written back on the next watcher event.
@@ -323,6 +323,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 
 - **Inline tag syntax** — `#` then a letter, then letters, digits, `/`, `_`, `-`; not after an alphanumeric (so headings are not tags).
   - Code fences and inline code are ignored; 3- and 6-digit hex colors are not tags.
+- **Frontmatter list on load** — `parseNote` keeps string entries of a `tags` array and unions them with inline tags. A number, string, or other non-array is treated as no frontmatter tags; non-string list entries are skipped. The file is still loaded.
 - **Hierarchy** — `a/b` implies `a`; filtering by a tag includes descendants but not prefix collisions (`work` does not match `workflow`).
 - **Tag tree** — null-prototype maps so tags like `constructor` or `__proto__` cannot break loading.
 - **Rename tag** — rewrites frontmatter and inline `#tags` (outside code) in every note, descendants included; rejects invalid names with a toast.

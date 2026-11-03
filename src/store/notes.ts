@@ -431,11 +431,15 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       reportError("Failed to rename note", new Error(`${blocked} already has a note`));
       return;
     }
+    // The caller can still hold the note from before a flush. That flush has
+    // already updated the store. Write this note, or the rename puts the
+    // pre-flush frontmatter back on disk.
+    const current = catalog.find((item) => item.id === note.id) ?? note;
     const updated: Note = {
-      ...note,
+      ...current,
       filePath: newFilePath,
       fileName: newFileName,
-      frontmatter: { ...note.frontmatter, title: newTitle },
+      frontmatter: { ...current.frontmatter, title: newTitle },
     };
     // Write the updated content to the old path first, then rename. Both steps
     // are individually atomic, so a crash between them leaves a fully intact

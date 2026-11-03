@@ -99,8 +99,8 @@ describe("quickOpenResults", () => {
     expect(template.kind).toBe("matches");
     if (template.kind !== "matches") return;
     expect(template.titles.map((n) => n.id)).toEqual(["template"]);
-    expect(template.content.map((n) => n.id).sort()).toEqual(["body", "tagged"]);
-    expect(results(notes, "templ")).toEqual(["template", "tagged", "body"]);
+    expect(template.content.map((n) => n.id)).toEqual(["body"]);
+    expect(results(notes, "templ")).toEqual(["template", "body"]);
   });
 
   it("fills title matches before content matches, up to the result cap", () => {

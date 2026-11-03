@@ -15,8 +15,8 @@ export type QuickOpenList =
  * Notes for the ⌘P palette. Archived notes follow **Show archived notes**, like
  * the other discovery views; Trash notes are never in `notes`. An empty query
  * lists the most recently updated notes, with no groups. A query searches
- * titles and then the rest of the index (body and tags). Title matches come
- * first; a note is listed only once.
+ * titles, then the body. Title matches come first. A body match that is
+ * already in the title group is not listed again.
  */
 export function quickOpenList(options: {
   notes: Note[];
@@ -52,12 +52,12 @@ export function quickOpenList(options: {
     }
   };
   take(index.search(q, { ...SEARCH, fields: ["title"] }), titles);
-  // Body and tag matches. Title hits are already recorded, so they stay out of this group.
-  take(index.search(q, SEARCH), content);
+  // Body matches only. Title hits are already recorded, so they stay out of this group.
+  take(index.search(q, { ...SEARCH, fields: ["content"] }), content);
   return { kind: "matches", titles, content };
 }
 
-/** Title matches, then body-or-tag matches. An empty query is the recent list. */
+/** Title matches, then body-only matches. An empty query is the recent list. */
 export function quickOpenResults(options: {
   notes: Note[];
   index: NoteIndex | null;

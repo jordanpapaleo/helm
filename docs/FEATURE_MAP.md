@@ -48,6 +48,7 @@ Areas:
   - `deadline` stays date-only.
 - **All file I/O goes through Tauri** — `src/lib/tauri-commands.ts`, `src-tauri/src/vault.rs`
   - Paths must be absolute; any `..` component is rejected (`validate_path`).
+  - `delete_asset` deletes only a non-markdown file whose canonical path is inside that vault's `assets/` directory. A sibling folder, a symlink that resolves outside it, and the directory itself are refused.
 - **Atomic writes** — `vault.rs` (`atomic_write`, `write_note`, `write_asset`)
   - Writes go to `.{name}.tmp-{pid}` in the same folder, then rename; a failed rename deletes the temp file.
 - **Rename ordering** — `src/store/notes.ts` (`renameNote`)
@@ -150,7 +151,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - The previous file is snapshotted before every write.
   - Tags are merged, not recomputed (`mergeTagsOnSave`).
   - `[[wiki]]` titles become `links` ids (self excluded; empty removes the key).
-  - Image assets removed from the body are deleted from `assets/`.
+  - Image assets removed from the body are deleted only when the file is inside that vault's `assets/` directory. An `asset.localhost` URL pointing anywhere else is left on disk.
   - A sync-blocked note keeps the draft in the editor, writes nothing, and toasts once.
 - **Locked note is read-only** — `editor.setEditable(!locked)`; markdown textarea `readOnly`; block commands, wrap shortcuts, and Replace refuse.
 - **Deleted note is read-only** — the editor gets `locked` while viewing Trash.

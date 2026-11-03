@@ -78,9 +78,11 @@ export const tauriCommands = {
   writeAsset: (vaultPath: string, filename: string, data: number[]): Promise<string> =>
     invoke("write_asset", { vaultPath, filename, data }),
 
-  // Deletes a non-markdown asset file; the Rust side refuses .md paths so a bad
-  // asset-path extraction can never delete a note.
-  deleteAsset: (filePath: string): Promise<void> => invoke("delete_asset", { filePath }),
+  // Deletes a non-markdown file inside the vault's assets directory. The Rust
+  // side refuses every other path, so a crafted asset URL cannot delete a note
+  // or any file outside that directory.
+  deleteAsset: (vaultPath: string, filePath: string): Promise<void> =>
+    invoke("delete_asset", { vaultPath, filePath }),
 
   // Snapshot the note's current on-disk content into <vault>/.helm-history/<noteId>/.
   // Coalesced (min 5 min between snapshots) and pruned (50 kept) on the Rust side.

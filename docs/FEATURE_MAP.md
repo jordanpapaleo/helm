@@ -209,7 +209,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - File ▸ Go to Note… carries the `CmdOrCtrl+P` accelerator and emits `quick-open` to the main window only; a capture-phase `keydown` listener also catches it, so it works while the editor has focus and the webview never prints. Opening is idempotent.
   - Uses the store's `searchIndex`: title matches first, then tag/body matches, prefix plus `fuzzy: 0.2`, max 50; an empty query lists the 20 most recently updated notes.
   - Archived notes only when **Show archived notes** is on; Trash never; unmanaged notes and templates included.
-  - Rows show title, folder (vault name at the root, vault-prefixed with several vaults), state for managed notes, first tag, Archived badge.
+  - Rows show the title, then a muted folder path beside it (vault-relative, folder only, not the filename; vault name at the root, vault-prefixed with several vaults), state for managed notes, first tag, Archived badge. Same titles stay distinct by that path.
   - ↑/↓ wrap, Enter or click opens, Escape or backdrop closes and restores focus; Tab stays in the dialog.
   - Opens through the same `openNote` as the note list; from Trash it switches to All Notes so the live note shows.
   - Main window only; the capture window has no palette.

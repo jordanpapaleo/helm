@@ -142,13 +142,33 @@ describe("QuickOpen", () => {
     expect(optionTitles()).toEqual(["Weekly review", "Roadmap", "Groceries"]);
   });
 
-  it("shows the folder and a state and tag hint for each result", () => {
+  it("shows the folder beside the title, with a state and tag hint", () => {
     render(<QuickOpen />);
     pressShortcut();
     const row = screen.getByRole("option", { name: "Roadmap" });
-    expect(within(row).getByText("plans")).toBeInTheDocument();
+    const title = within(row).getByText("Roadmap");
+    const path = within(row).getByText("plans");
+    expect(path.parentElement).toBe(title.parentElement);
+    expect(path.className).toContain("opacity-60");
+    expect(within(row).queryByText("roadmap.md")).not.toBeInTheDocument();
     expect(within(row).getByText("Doing")).toBeInTheDocument();
     expect(within(row).getByText("#work")).toBeInTheDocument();
+  });
+
+  it("distinguishes two notes that share a title by their folders", () => {
+    useNoteStore
+      .getState()
+      .setNotes([
+        note("stand-work", "Standup", { folder: "work/meetings", updated: "2026-06-01T00:00:00Z" }),
+        note("stand-home", "Standup", { folder: "personal", updated: "2026-06-02T00:00:00Z" }),
+      ]);
+    render(<QuickOpen />);
+    pressShortcut();
+    const rows = screen.getAllByRole("option", { name: "Standup" });
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText("personal")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("work/meetings")).toBeInTheDocument();
+    expect(within(rows[0]).queryByText(/standup\.md/)).not.toBeInTheDocument();
   });
 
   it("filters as you type, with title matches first", () => {

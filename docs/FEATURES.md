@@ -88,7 +88,7 @@ The editor respects the user's typography settings (note font, font size, line h
 
 - **Search as you type**: Uses the app's search index with prefix and typo-tolerant matching. Notes whose title matches come first, then notes that match only in tags or the body. Up to 50 results.
 - **Empty query**: Lists the 20 most recently updated notes.
-- **Each row**: Title, folder (relative to the vault; the vault name for a note at the root, prefixed with the vault name when several vaults are loaded), the note's state when it is managed, its first tag, and an Archived badge.
+- **Each row**: Title, then a muted folder path beside it (relative to the vault root, folder only — not the filename; the vault name for a note at the root, prefixed with the vault name when several vaults are loaded), the note's state when it is managed, its first tag, and an Archived badge. Two notes with the same title stay distinct because their paths differ.
 - **Keys**: ↑/↓ move the selection (wrapping), Enter opens it, Escape closes and returns focus to where you were. Clicking a row opens it; clicking outside closes.
 - **Opening**: The note becomes the active note in the editor exactly as clicking it in the note list does: the Notes view opens, the current folder or tag grouping is kept, and Back/Forward history records it. From Trash, the palette switches to All Notes so the live note is shown.
 - **What is listed**: Unmanaged notes and templates are included. Archived notes are listed only when **Show archived notes** is on, as in the other discovery views. Notes in Trash are never listed.

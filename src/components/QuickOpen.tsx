@@ -230,17 +230,21 @@ function ResultRow({
         className={`flex min-w-0 items-center gap-3 ${active ? "menu-active" : ""}`}
       >
         <Icon icon="uil:file-alt" className="h-4 w-4 shrink-0 opacity-60" aria-hidden="true" />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span id={`${optionId(index)}-title`} className="truncate text-sm font-medium">
-            {title || "Untitled"}
+        <span
+          id={`${optionId(index)}-title`}
+          className="min-w-0 shrink truncate text-sm font-medium"
+        >
+          {title || "Untitled"}
+        </span>
+        {folder && (
+          <span
+            id={`${optionId(index)}-folder`}
+            className="max-w-[45%] shrink-0 truncate text-xs opacity-60"
+          >
+            {folder}
           </span>
-          {folder && (
-            <span id={`${optionId(index)}-folder`} className="truncate text-xs opacity-60">
-              {folder}
-            </span>
-          )}
-        </div>
-        <span className="flex shrink-0 items-center gap-1">
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
           {isArchived(note.frontmatter) && (
             <span className="badge badge-outline badge-xs">Archived</span>
           )}

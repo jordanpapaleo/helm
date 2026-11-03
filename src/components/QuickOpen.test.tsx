@@ -248,6 +248,32 @@ describe("QuickOpen", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("keeps Cmd/Ctrl+F from moving focus out of the palette", () => {
+    const background = vi.fn();
+    render(<QuickOpen />);
+    pressShortcut();
+    const input = screen.getByRole("combobox");
+    document.addEventListener("keydown", background, true);
+
+    for (const init of [
+      { key: "f", ctrlKey: true, metaKey: false },
+      { key: "f", ctrlKey: false, metaKey: true },
+    ]) {
+      const event = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+      act(() => {
+        input.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented).toBe(true);
+      expect(background).not.toHaveBeenCalled();
+      expect(input).toHaveFocus();
+    }
+
+    document.removeEventListener("keydown", background, true);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(useNoteStore.getState().selectedNoteId).toBe("review");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("Escape closes without changing the note and returns focus", () => {
     useNoteStore.setState({ selectedNoteId: "groceries" });
     render(

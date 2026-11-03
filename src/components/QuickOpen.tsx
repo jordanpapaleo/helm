@@ -70,6 +70,19 @@ function QuickOpenDialog({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
+  // MainPanel opens Find on Cmd/Ctrl+F in the capture phase, and FindReplaceBar
+  // then takes focus. Swallow that shortcut so the palette keeps the keyboard.
+  useEffect(() => {
+    function blockFindShortcut(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "f") return;
+      event.preventDefault();
+      event.stopPropagation();
+      inputRef.current?.focus();
+    }
+    window.addEventListener("keydown", blockFindShortcut, true);
+    return () => window.removeEventListener("keydown", blockFindShortcut, true);
+  }, []);
+
   useEffect(() => {
     if (activeIndex < 0) return;
     document.getElementById(optionId(activeIndex))?.scrollIntoView?.({ block: "nearest" });

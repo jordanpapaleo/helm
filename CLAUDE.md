@@ -100,7 +100,7 @@ Markdown content here. You can use [[Wiki Links]] and #inline-tags.
 - **Tauri commands** — all file I/O goes through `src/lib/tauri-commands.ts` (never use `fetch` or `fs` directly in React)
 - **State management** — Zustand only; no React context for global state
 - **Styling** — Tailwind CSS v4 utility classes + CSS custom properties for theming (`--color-bg`, `--color-surface`, `--color-accent`, etc.)
-- **Icons** — offline app: only the bundled `uil` Iconify set works; use `uil:*` names exclusively
+- **Icons** — offline app: only icons registered in `src/lib/bundled-icons.ts` render. Use `uil:*` names, and add each new one to `BUNDLED_ICON_NAMES`; `src/lib/bundled-icons.test.tsx` fails if a source file uses an icon that is not bundled
 - **Auto-save** — editor saves on blur and debounced 1s; always call `serializeNote()` before writing to disk
 - **Error surfacing** — never a bare `console.error` in a catch block; use `reportError(message, e)` from `src/store/toast.ts` so failures reach the user as toasts
 - **Crash-safe writes** — `write_note` is atomic (temp file + rename) on the Rust side; for renames, write content to the old path first, then rename (see `renameNote` in `src/store/notes.ts`)

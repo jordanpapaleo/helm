@@ -18,7 +18,7 @@ If behavior changed, update docs/FEATURE_MAP.md in this PR and say so below.
 
 | Area | Feature or rule | Result |
 |---|---|---|
-| <!-- 2. Note header --> | <!-- Unmanaged note hides State, Urgent, Important, Blocked --> | <!-- Persists (PropertyPanel.test.tsx "hides State / Urgent / Important / Blocked when the note is unmanaged", plus a manual check) --> |
+| <!-- 2. Note header --> | <!-- Unmanaged note hides State, Urgent, Important --> | <!-- Persists (PropertyPanel.test.tsx "hides state, urgent, and important when the note is unmanaged", plus a manual check) --> |
 | | | <!-- or: Intentionally removed (why) --> |
 
 **Feature map updated:** <!-- Yes: what changed in docs/FEATURE_MAP.md / No: no behavior changed -->

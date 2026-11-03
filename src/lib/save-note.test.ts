@@ -87,6 +87,43 @@ describe("saveNoteContent asset deletion", () => {
     expect(tauriCommands.deleteAsset).not.toHaveBeenCalled();
   });
 
+  it("keeps a literal backslash in a POSIX asset filename", async () => {
+    const literal = `${VAULT}/assets/a\\b.png`;
+    const result = await save(`${image(`${VAULT}/assets/a%5Cb.png`)}\n`, "removed\n");
+    expect(result).toBe("saved");
+    expect(tauriCommands.deleteAsset).toHaveBeenCalledTimes(1);
+    expect(tauriCommands.deleteAsset).toHaveBeenCalledWith(VAULT, literal);
+  });
+
+  it("treats backslash as a separator only on a Windows asset path", async () => {
+    const vault = "C:\\Users\\me\\notes";
+    const removed = makeNote(
+      "![pic](http://asset.localhost/C:%5CUsers%5Cme%5Cnotes%5Cassets%5Cpic.png)\n",
+    );
+    const traversal = makeNote(
+      "![x](http://asset.localhost/C:%5CUsers%5Cme%5Cnotes%5Cassets%5C..%5C..%5Csecret.png)\n",
+    );
+    useNoteStore.setState({
+      notes: [removed],
+      duplicateGroups: [],
+      vaults: [{ id: "v1", name: "Notes", path: vault }],
+    });
+    expect(await saveNoteContent(removed, "removed\n")).toBe("saved");
+    expect(tauriCommands.deleteAsset).toHaveBeenCalledWith(
+      vault,
+      "C:/Users/me/notes/assets/pic.png",
+    );
+
+    vi.clearAllMocks();
+    useNoteStore.setState({
+      notes: [traversal],
+      duplicateGroups: [],
+      vaults: [{ id: "v1", name: "Notes", path: vault }],
+    });
+    expect(await saveNoteContent(traversal, "removed\n")).toBe("saved");
+    expect(tauriCommands.deleteAsset).not.toHaveBeenCalled();
+  });
+
   it("keeps an asset that is still referenced", async () => {
     const result = await save(`${image(ASSET)}\n`, `${image(ASSET)}\nedited\n`);
     expect(result).toBe("saved");

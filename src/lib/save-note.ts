@@ -33,11 +33,18 @@ function reportSyncHold(noteId: string) {
   );
 }
 
+// Drive-letter and UNC paths. A URL pathname for a drive is `/C:\...` or `/C:/...`.
+// On macOS and Linux `\` is a filename character, so it is not a separator there.
+function isWindowsPath(input: string): boolean {
+  return (
+    /^[A-Za-z]:[\\/]/.test(input) || /^\/[A-Za-z]:[\\/]/.test(input) || input.startsWith("\\\\")
+  );
+}
+
 // Absolute path with trailing slashes stripped, or null when it is relative
-// or contains `..`. A Windows asset URL pathname is `/C:/...`; drop that
-// extra leading slash.
+// or contains `..`. Backslashes stay literal except in a Windows path.
 function absolutePath(input: string): string | null {
-  let path = input.replaceAll("\\", "/");
+  let path = isWindowsPath(input) ? input.replaceAll("\\", "/") : input;
   if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1);
   if (path.length > 1) path = path.replace(/\/+$/, "");
   const isAbsolute = path.startsWith("/") || /^[A-Za-z]:\//.test(path);

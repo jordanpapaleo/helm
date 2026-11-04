@@ -1,3 +1,8 @@
+## v1.10.2 — 2026-11-04
+
+- Restore wiki links in the pinned side panel.
+- chore: update version to 1.10.1 in package-lock.json and Cargo.lock
+
 ## v1.10.1 — 2026-11-04
 
 - Ignore editor chords while a field inside the note is focused

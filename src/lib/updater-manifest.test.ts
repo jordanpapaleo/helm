@@ -104,4 +104,14 @@ describe("updater config and release publishing", () => {
     expect(releaseSh).not.toMatch(/releases\/delete/);
     expect(workflow).not.toMatch(/gh release delete/);
   });
+
+  it("keeps the Node CLI out of the module the app imports", () => {
+    const manifest = readFileSync(`${process.cwd()}/src/lib/updater-manifest.mjs`, "utf8");
+    const checker = readFileSync(`${process.cwd()}/src/lib/check-for-updates.ts`, "utf8");
+    expect(manifest).not.toMatch(/node:fs|node:url|process\.argv/);
+    expect(checker).not.toMatch(/node:fs|write-updater-manifest/);
+    expect(releaseSh).toContain("scripts/write-updater-manifest.mjs");
+    expect(releaseSh).not.toContain("node src/lib/updater-manifest.mjs");
+    expect(workflow).toContain("scripts/write-updater-manifest.mjs");
+  });
 });

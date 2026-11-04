@@ -4,6 +4,7 @@ import {
   checkForUpdates,
   compareVersions,
   compareWithLatest,
+  downloadInstallAndRelaunch,
   parseVersion,
 } from "./check-for-updates";
 import { UPDATER_MANIFEST_URL } from "./updater-manifest.mjs";
@@ -221,5 +222,54 @@ describe("checkAndInstallUpdate", () => {
     );
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.message).toContain("signature rejected");
+  });
+});
+
+describe("downloadInstallAndRelaunch", () => {
+  it("flushes again after the download and before relaunch", async () => {
+    const order: string[] = [];
+    const update = {
+      downloadAndInstall: async () => {
+        order.push("download");
+      },
+      close: async () => {
+        order.push("close");
+      },
+    };
+    await downloadInstallAndRelaunch(
+      update,
+      async () => {
+        order.push("flush");
+      },
+      async () => {
+        order.push("relaunch");
+      },
+    );
+    expect(order).toEqual(["flush", "download", "flush", "relaunch"]);
+  });
+
+  it("does not relaunch when the download fails", async () => {
+    const order: string[] = [];
+    const update = {
+      downloadAndInstall: async () => {
+        order.push("download");
+        throw new Error("network");
+      },
+      close: async () => {
+        order.push("close");
+      },
+    };
+    await expect(
+      downloadInstallAndRelaunch(
+        update,
+        async () => {
+          order.push("flush");
+        },
+        async () => {
+          order.push("relaunch");
+        },
+      ),
+    ).rejects.toThrow("network");
+    expect(order).toEqual(["flush", "download", "close"]);
   });
 });

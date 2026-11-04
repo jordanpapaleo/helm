@@ -140,7 +140,7 @@ fi
 npm run tauri -- "${SIGN_ARGS[@]}" "$UPDATER_ARCHIVE"
 
 PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-node src/lib/updater-manifest.mjs \
+node scripts/write-updater-manifest.mjs \
   --out "$RELEASE_DIR/latest.json" \
   --version "$NEW_VERSION" \
   --pub-date "$PUB_DATE" \

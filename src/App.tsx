@@ -13,6 +13,7 @@ import { addVault, useVault } from "./hooks/useVault";
 import {
   checkAndInstallUpdate,
   compareVersions,
+  downloadInstallAndRelaunch,
   type UpdateFlowResult,
 } from "./lib/check-for-updates";
 import { applyEditorShortcut, isEditorShortcutId } from "./lib/editor-shortcuts";
@@ -57,14 +58,7 @@ async function installSignedRelease(available: { latest: string }) {
     await update.close();
     throw new Error(`the updater offered ${offered}, not v${available.latest}.`);
   }
-  await flushPendingSaves();
-  try {
-    await update.downloadAndInstall();
-  } catch (error) {
-    await update.close().catch(() => {});
-    throw error;
-  }
-  await relaunch();
+  await downloadInstallAndRelaunch(update, flushPendingSaves, relaunch);
 }
 
 async function handleCheckForUpdates() {

@@ -455,7 +455,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **MCP setup** — `McpSetupModal.tsx` builds the Claude Desktop config with `HELM_VAULT` or `HELM_VAULTS` by vault count.
 - **Update check** — Helm menu ▸ Check for Updates… (`src/lib/check-for-updates.ts`, `src/App.tsx`).
   - The running version is compared with the latest GitHub release. When the app is current, the menu says so.
-  - A newer signed release is downloaded and installed in place, then Helm relaunches. Pending saves flush first.
+  - A newer signed release is downloaded and installed in place, then Helm relaunches. Pending saves flush before the download and again immediately before relaunch.
   - A GitHub error, including 403, is shown. A network failure and an unreadable release or manifest are shown too.
   - Overlapping checks are ignored.
 - **Release history** — `release.sh` still builds the signed, notarized dmg, and publishes `latest.json` plus the signed updater archive on that version's GitHub release. Older GitHub releases remain.

@@ -203,3 +203,27 @@ export async function checkAndInstallUpdate(
 
   return { status: "installed", current: result.current, latest: result.latest };
 }
+
+/**
+ * Download and install, then relaunch. Pending saves flush before the download
+ * and again immediately before relaunch, so keystrokes during the download are
+ * written before the process is replaced.
+ */
+export async function downloadInstallAndRelaunch(
+  update: {
+    downloadAndInstall: () => Promise<void>;
+    close: () => Promise<void>;
+  },
+  flush: () => Promise<void>,
+  relaunch: () => Promise<void>,
+): Promise<void> {
+  await flush();
+  try {
+    await update.downloadAndInstall();
+  } catch (error) {
+    await update.close().catch(() => {});
+    throw error;
+  }
+  await flush();
+  await relaunch();
+}

@@ -100,7 +100,7 @@ jobs:
           sig="${appimage[0]}.sig"
           if [[ -f "$sig" ]]; then
             if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --clobber; then
-              node src/lib/updater-manifest.mjs \
+              node scripts/write-updater-manifest.mjs \
                 --merge latest.json \
                 --platform linux-x86_64 \
                 --signature "$sig" \

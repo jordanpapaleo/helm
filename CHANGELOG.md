@@ -1,3 +1,11 @@
+## v1.10.1 — 2026-11-04
+
+- Ignore editor chords while a field inside the note is focused
+- Restore editor shortcuts for the main note and pinned pane
+- Keep a queued markdown edit when an earlier save lands
+- Keep a side-panel edit of the note that is also open
+- chore: update version to 1.10.0 in package-lock.json and Cargo.lock
+
 ## v1.10.0 — 2026-11-03
 
 - Reconcile in-flight note saves with later edits

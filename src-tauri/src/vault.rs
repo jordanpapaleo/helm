@@ -388,8 +388,16 @@ fn snapshot_note_impl(
     }
 
     let content = fs::read(&src).map_err(|e| e.to_string())?;
-    // Bump the timestamp if a snapshot already landed in this millisecond
+    // Never older than the newest snapshot. A same-millisecond bump can sit
+    // ahead of the clock; after prune frees that earlier name, reusing it
+    // would make the newest file hold an older body. KEEP IN SYNC with
+    // mcp-server/history.ts.
     let mut ts = now_ms;
+    if let Some(newest) = existing.first() {
+        if ts <= newest.ts_ms {
+            ts = newest.ts_ms + 1;
+        }
+    }
     while dir.join(format!("{}.md", ts)).exists() {
         ts += 1;
     }

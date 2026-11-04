@@ -45,5 +45,11 @@
     "macOS": {
       "signingIdentity": null
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZEMTI3MkY3RDQzMDJBNkEKUldScUtqRFU5M0lTYlFSTGlUMkxKaEZJeXpUbGZOUEtaOEpvLzNWdU01Z0dYOGwvU1dDODFXbmsK",
+      "endpoints": ["https://github.com/jordanpapaleo/helm/releases/latest/download/latest.json"]
+    }
   }
 }

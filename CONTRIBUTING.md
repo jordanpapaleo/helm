@@ -117,18 +117,19 @@ For an **unsigned** local build (no Apple Developer account needed), just run `n
 
 The script:
 1. Sources `sign.sh` and validates the Apple signing credentials: all four of `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` must be exported, and the signing identity must exist in the keychain. It aborts otherwise — a partial `sign.sh` produces a build that Gatekeeper rejects on other machines.
-2. Bumps the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
-3. Generates a changelog entry in `CHANGELOG.md` from commits since the last tag
-4. Commits the version bump
-5. Runs `npm run tauri build` to produce the `.dmg` (Tauri signs and notarizes using the credentials from step 1)
-6. **Verifies the artifacts**: `codesign --verify` and `xcrun stapler validate` on `Helm.app`, plus a Gatekeeper assessment (`spctl`) that must report *Notarized Developer ID*. If any check fails, the script aborts without committing artifacts.
-7. Copies the DMG to `releases/vX.Y.Z/`, commits it, and tags `vX.Y.Z`
-8. Syncs `Casks/helm.rb` to the new version and the DMG's sha256
+2. Requires the Tauri updater signing key: `TAURI_SIGNING_PRIVATE_KEY` (the key contents) or `TAURI_SIGNING_PRIVATE_KEY_PATH` (a file). Optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` when the key has a password. The key must match `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. Generate a pair with `npm run tauri signer generate -- -w ~/.tauri/helm.key`, put the printed public key in that config, and export the private key path from `sign.sh`. If you replace the key before the first release that includes the updater, replace the public key too. After that release ships, the private key cannot be rotated.
+3. Bumps the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
+4. Generates a changelog entry in `CHANGELOG.md` from commits since the last tag
+5. Commits the version bump
+6. Runs `npm run tauri build` to produce the `.dmg` (Tauri signs and notarizes using the credentials from step 1)
+7. **Verifies the artifacts**: `codesign --verify` and `xcrun stapler validate` on `Helm.app`, plus a Gatekeeper assessment (`spctl`) that must report *Notarized Developer ID*. If any check fails, the script aborts without committing artifacts.
+8. Copies the DMG to `releases/vX.Y.Z/`, syncs `Casks/helm.rb`, builds `Helm.app.tar.gz` from the notarized app, signs it, writes `latest.json`, commits the DMG, `latest.json`, and cask, and tags `vX.Y.Z`
 
-`sign.sh` lives at the repo root, is git-ignored, and must export the four Apple signing environment variables (see the Creating a DMG section below).
+`sign.sh` lives at the repo root, is git-ignored, and must export the four Apple signing environment variables (see the Creating a DMG section below) plus the updater signing key.
 
-When prompted, answer **y** to push and create a draft GitHub Release (attaches the `.dmg`).
-CI then builds the Linux packages and uploads them to that draft.
+The updater archive is produced after notarization, not by `bundle.createUpdaterArtifacts` during `tauri build`. Tauri's own archive is taken from the app before staple, so `release.sh` tars the stapled `.app` and signs that file.
+
+When prompted, answer **y** to push and create a draft GitHub Release for this version. The draft gets the `.dmg`, `Helm.app.tar.gz`, and `latest.json`. Older GitHub releases are not deleted or replaced. CI then builds the Linux packages and uploads them to that draft. If the updater signing key is also a GitHub Actions secret, CI signs the AppImage and adds `linux-x86_64` to that release's `latest.json`.
 
 **The Release stays a draft — CI does not publish it.** Review the notes, then publish yourself:
 

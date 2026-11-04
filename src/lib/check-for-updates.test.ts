@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  checkAndInstallUpdate,
   checkForUpdates,
   compareVersions,
   compareWithLatest,
+  downloadInstallAndRelaunch,
   parseVersion,
 } from "./check-for-updates";
+import { UPDATER_MANIFEST_URL } from "./updater-manifest.mjs";
 
 describe("parseVersion", () => {
   it("parses plain and v-prefixed versions", () => {
@@ -102,5 +105,171 @@ describe("checkForUpdates", () => {
     if (result.status === "error") {
       expect(result.message).toContain("403");
     }
+  });
+});
+
+const releasePage = "https://github.com/jordanpapaleo/helm/releases/tag/v1.2.0";
+
+function githubRelease(tag = "v1.2.0") {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ tag_name: tag, html_url: releasePage }),
+  };
+}
+
+function updaterManifest(version = "1.2.0") {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ version }),
+  };
+}
+
+describe("checkAndInstallUpdate", () => {
+  it("says the app is current and does not install", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(githubRelease("v1.0.0"));
+    const install = vi.fn();
+    const result = await checkAndInstallUpdate(
+      async () => "1.0.0",
+      install,
+      fetchImpl as typeof fetch,
+    );
+    expect(result).toEqual({ status: "up-to-date", current: "1.0.0", latest: "1.0.0" });
+    expect(install).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("shows a GitHub 403 and does not install", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+    const install = vi.fn();
+    const result = await checkAndInstallUpdate(
+      async () => "1.0.0",
+      install,
+      fetchImpl as typeof fetch,
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toContain("403");
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("shows a GitHub error from the updater manifest", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(githubRelease())
+      .mockResolvedValueOnce({ ok: false, status: 403 });
+    const install = vi.fn();
+    const result = await checkAndInstallUpdate(
+      async () => "1.0.0",
+      install,
+      fetchImpl as typeof fetch,
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toContain("403");
+    expect(install).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      UPDATER_MANIFEST_URL,
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("downloads and installs when the signed manifest matches the newer release", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(githubRelease())
+      .mockResolvedValueOnce(updaterManifest());
+    const install = vi.fn().mockResolvedValue(undefined);
+    const result = await checkAndInstallUpdate(
+      async () => "1.0.0",
+      install,
+      fetchImpl as typeof fetch,
+    );
+    expect(result).toEqual({ status: "installed", current: "1.0.0", latest: "1.2.0" });
+    expect(install).toHaveBeenCalledWith({
+      status: "update-available",
+      current: "1.0.0",
+      latest: "1.2.0",
+      htmlUrl: releasePage,
+    });
+  });
+
+  it("does not install when the manifest version disagrees with GitHub", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(githubRelease())
+      .mockResolvedValueOnce(updaterManifest("1.1.0"));
+    const install = vi.fn();
+    const result = await checkAndInstallUpdate(
+      async () => "1.0.0",
+      install,
+      fetchImpl as typeof fetch,
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toMatch(/does not match/);
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("shows the installer error", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(githubRelease())
+      .mockResolvedValueOnce(updaterManifest());
+    const install = vi.fn().mockRejectedValue(new Error("signature rejected"));
+    const result = await checkAndInstallUpdate(
+      async () => "1.0.0",
+      install,
+      fetchImpl as typeof fetch,
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toContain("signature rejected");
+  });
+});
+
+describe("downloadInstallAndRelaunch", () => {
+  it("flushes again after the download and before relaunch", async () => {
+    const order: string[] = [];
+    const update = {
+      downloadAndInstall: async () => {
+        order.push("download");
+      },
+      close: async () => {
+        order.push("close");
+      },
+    };
+    await downloadInstallAndRelaunch(
+      update,
+      async () => {
+        order.push("flush");
+      },
+      async () => {
+        order.push("relaunch");
+      },
+    );
+    expect(order).toEqual(["flush", "download", "flush", "relaunch"]);
+  });
+
+  it("does not relaunch when the download fails", async () => {
+    const order: string[] = [];
+    const update = {
+      downloadAndInstall: async () => {
+        order.push("download");
+        throw new Error("network");
+      },
+      close: async () => {
+        order.push("close");
+      },
+    };
+    await expect(
+      downloadInstallAndRelaunch(
+        update,
+        async () => {
+          order.push("flush");
+        },
+        async () => {
+          order.push("relaunch");
+        },
+      ),
+    ).rejects.toThrow("network");
+    expect(order).toEqual(["flush", "download", "close"]);
   });
 });

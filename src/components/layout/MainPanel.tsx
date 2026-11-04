@@ -263,7 +263,16 @@ export const MarkdownTextarea = forwardRef<
         useGitSyncStore.getState().releaseNote(noteId);
         useGitSyncStore.getState().clearHeldDraft(noteId);
       }
-      if (normalizeContent(valueRef.current) !== normalizeContent(content)) return;
+      if (normalizeContent(valueRef.current) !== normalizeContent(content)) {
+        // Newer keystrokes stay. A clean textarea is behind a save from the
+        // pinned pane: show that body so the next keystroke does not wipe it.
+        if (dirtyRef.current) return;
+        pendingCaretRef.current = Math.min(
+          textareaRef.current?.selectionStart ?? 0,
+          content.length,
+        );
+        setValue(content);
+      }
       lastSavedContentRef.current = content;
       dirtyRef.current = false;
       return;

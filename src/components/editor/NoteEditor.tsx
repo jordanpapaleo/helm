@@ -16,6 +16,7 @@ import {
 import { wikiLinkCandidates } from "../../lib/archive";
 import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
+import { bindRichEditor } from "../../lib/editor-shortcuts";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
 import { forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
@@ -508,6 +509,11 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     useEffect(() => {
       if (editor) editor.setEditable(!locked);
     }, [editor, locked]);
+
+    useEffect(() => {
+      if (!editor || editor.isDestroyed) return;
+      return bindRichEditor(editor);
+    }, [editor]);
 
     useEffect(() => {
       if (!editor) return;

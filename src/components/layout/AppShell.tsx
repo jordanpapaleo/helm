@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { installEditorShortcutListener } from "../../lib/editor-shortcuts";
 import { type Panel, workspaceGeometry } from "../../lib/workspace-layout";
 import { useLayoutStore } from "../../store/layout";
 import { useUIStore } from "../../store/ui";
@@ -56,6 +57,8 @@ export function AppShell() {
       />
     );
   }
+
+  useEffect(() => installEditorShortcutListener(), []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

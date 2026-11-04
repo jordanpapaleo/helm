@@ -361,12 +361,72 @@ pub fn run() {
                 .build()?;
 
             // ── Help menu ─────────────────────────────────────────────────
+            // Editor Shortcuts lists the chords in src/lib/editor-shortcuts.ts
+            // (KEEP IN SYNC). Accelerators live here so the desktop window
+            // delivers them to the focused note, main or pinned.
             let mcp_setup_item = MenuItemBuilder::new("MCP Setup")
                 .id("mcp_setup")
                 .build(app)?;
 
+            let editor_bold = MenuItemBuilder::new("Bold")
+                .id("editor_bold")
+                .accelerator("CmdOrCtrl+B")
+                .build(app)?;
+            let editor_italic = MenuItemBuilder::new("Italic")
+                .id("editor_italic")
+                .accelerator("CmdOrCtrl+I")
+                .build(app)?;
+            let editor_code = MenuItemBuilder::new("Inline Code")
+                .id("editor_code")
+                .accelerator("CmdOrCtrl+E")
+                .build(app)?;
+            let editor_underline = MenuItemBuilder::new("Underline")
+                .id("editor_underline")
+                .accelerator("CmdOrCtrl+U")
+                .build(app)?;
+            let editor_strike = MenuItemBuilder::new("Strikethrough")
+                .id("editor_strike")
+                .accelerator("CmdOrCtrl+Shift+S")
+                .build(app)?;
+            let editor_highlight = MenuItemBuilder::new("Highlight")
+                .id("editor_highlight")
+                .accelerator("CmdOrCtrl+Shift+H")
+                .build(app)?;
+            let editor_duplicate_block = MenuItemBuilder::new("Duplicate Block")
+                .id("editor_duplicate_block")
+                .accelerator("CmdOrCtrl+Shift+D")
+                .build(app)?;
+            let editor_delete_block = MenuItemBuilder::new("Delete Block")
+                .id("editor_delete_block")
+                .accelerator("CmdOrCtrl+Shift+K")
+                .build(app)?;
+            let editor_move_block_up = MenuItemBuilder::new("Move Block Up")
+                .id("editor_move_block_up")
+                .accelerator("Alt+Up")
+                .build(app)?;
+            let editor_move_block_down = MenuItemBuilder::new("Move Block Down")
+                .id("editor_move_block_down")
+                .accelerator("Alt+Down")
+                .build(app)?;
+
+            let editor_shortcuts_menu = SubmenuBuilder::new(app, "Editor Shortcuts")
+                .item(&editor_bold)
+                .item(&editor_italic)
+                .item(&editor_code)
+                .item(&editor_underline)
+                .item(&editor_strike)
+                .item(&editor_highlight)
+                .separator()
+                .item(&editor_duplicate_block)
+                .item(&editor_delete_block)
+                .item(&editor_move_block_up)
+                .item(&editor_move_block_down)
+                .build()?;
+
             let help_menu = SubmenuBuilder::new(app, "Help")
                 .item(&mcp_setup_item)
+                .separator()
+                .item(&editor_shortcuts_menu)
                 .build()?;
 
             // ── Assemble menu bar ─────────────────────────────────────────
@@ -412,6 +472,36 @@ pub fn run() {
                     }
                     "mcp_setup" => {
                         let _ = app_handle.emit("show-mcp-setup", ());
+                    }
+                    "editor_bold" => {
+                        let _ = app_handle.emit("editor-shortcut", "bold");
+                    }
+                    "editor_italic" => {
+                        let _ = app_handle.emit("editor-shortcut", "italic");
+                    }
+                    "editor_code" => {
+                        let _ = app_handle.emit("editor-shortcut", "code");
+                    }
+                    "editor_underline" => {
+                        let _ = app_handle.emit("editor-shortcut", "underline");
+                    }
+                    "editor_strike" => {
+                        let _ = app_handle.emit("editor-shortcut", "strike");
+                    }
+                    "editor_highlight" => {
+                        let _ = app_handle.emit("editor-shortcut", "highlight");
+                    }
+                    "editor_duplicate_block" => {
+                        let _ = app_handle.emit("editor-shortcut", "duplicate-block");
+                    }
+                    "editor_delete_block" => {
+                        let _ = app_handle.emit("editor-shortcut", "delete-block");
+                    }
+                    "editor_move_block_up" => {
+                        let _ = app_handle.emit("editor-shortcut", "move-block-up");
+                    }
+                    "editor_move_block_down" => {
+                        let _ = app_handle.emit("editor-shortcut", "move-block-down");
                     }
                     "font_size_increase" => {
                         let _ = app_handle.emit("font-size-change", "increase");

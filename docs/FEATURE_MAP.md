@@ -160,13 +160,19 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - A frontmatter edit made while that write is in flight stays in the store, and the queued property write reads it back.
   - A body submitted while a write is already in flight is queued. That includes an undo back to the text still in the store.
   - A sync-blocked note keeps the draft in the editor, writes nothing, and toasts once.
-- **Locked note is read-only** — `editor.setEditable(!locked)`; markdown textarea `readOnly`; block commands, wrap shortcuts, and Replace refuse.
+- **Locked note is read-only** — `editor.setEditable(!locked)`; markdown textarea `readOnly`; block commands, formatting shortcuts, and Replace refuse.
 - **Deleted note is read-only** — the editor gets `locked` while viewing Trash.
+- **Editor keyboard shortcuts** — `src/lib/editor-shortcuts.ts`, Help ▸ Editor Shortcuts in `src-tauri/src/lib.rs`
+  - The same chords apply in the main rich editor and in a note pinned in the side panel. The focused surface gets the chord. After the surface blurs without moving into another field, the chord still applies there, so the Help menu can run it.
+  - A locked or deleted note keeps the chords wired and refuses them. A read-only pinned pane does the same until it is editable.
+  - Formatting: ⌘B bold, ⌘I italic, ⌘E inline code, ⌘U underline, ⌘⇧S strikethrough, ⌘⇧H highlight. Ctrl replaces ⌘ on Windows and Linux. Markdown mode wraps the selection with `**`, `*`, backticks, `<u>`, `~~`, `==`.
+  - Blocks, rich editors only: ⌘⇧D duplicate, ⌘⇧K delete, ⌥↑ / Alt+Up move up, ⌥↓ / Alt+Down move down. No-op in markdown mode and when the editor is not editable.
+  - Help ▸ Editor Shortcuts lists this set, with those accelerators, for both the main note and the pinned side panel. A chord that also arrives in the page runs once.
 - **Find and Replace** — `FindReplaceBar.tsx`, `findReplaceExtension.ts`
   - ⌘F opens Find; a second ⌘F expands Replace only when the note is neither locked nor deleted.
   - Case and whole-word toggles; Enter/Shift+Enter step; Escape closes.
 - **Markdown mode** — raw textarea; no wiki popup, mermaid preview, or find decorations there.
-  - Wrap shortcuts: ⌘B, ⌘I, ⌘E, ⌘U, ⌘⇧S, ⌘⇧H.
+  - Formatting shortcuts are the chords in [Editor keyboard shortcuts](#4-editor). Block commands are not available here.
 - **Wiki-link autocomplete** — `WikiLink.ts`, `wikiLinkCandidates` in `src/lib/archive.ts`
   - Typing `[[` lists up to 8 title matches, excluding the current note; archived notes only when **Show archived notes** is on, labeled "(archived)".
   - Off when **Autocomplete wiki links** is off; not available in the pinned pane.
@@ -191,6 +197,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Pinned-note pane** — `src/components/layout/PinnedNoteView.tsx`
   - Edits a pinned note with the same save path but no header, wiki popup, or image paste; follows the main editor's live draft when both show the same note.
   - A side-panel edit of the note that is also open stays. The open editor shows that saved body when it has no newer keystrokes, and a later keystroke there does not drop the side-panel text.
+  - Uses the same editor keyboard shortcuts as the main rich editor when the pane is editable, and keeps them wired when it is not.
   - A held draft is dropped only after that save writes. A failed write keeps the draft and retries next time.
 
 ## 5. Sidebar and layout

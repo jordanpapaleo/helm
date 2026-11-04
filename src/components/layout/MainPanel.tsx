@@ -129,6 +129,10 @@ export const MarkdownTextarea = forwardRef<
   // watcher, a bulk tag rewrite in the store). Same device as NoteEditor's
   // lastSavedContentRef — every onSave call site must go through commitSave.
   const lastSavedContentRef = useRef(content);
+  // Bodies handed to onSave, oldest first. commitSave clears dirtyRef before
+  // the write finishes, so a false dirty flag can still have a newer body
+  // queued behind the echo that just landed.
+  const submittedRef = useRef<string[]>([]);
   const commitSave = useCallback((md: string) => {
     const id = noteIdRef.current;
     if (useGitSyncStore.getState().isWriteBlocked(id, vaultPathRef.current)) {
@@ -136,11 +140,31 @@ export const MarkdownTextarea = forwardRef<
       useGitSyncStore.getState().preserveHeldDraft(id, md);
       return;
     }
+    // A blur of text already submitted must not sit in this list, or a later
+    // pinned-pane save looks older than work this textarea did not send.
+    const tracked = normalizeContent(md) !== normalizeContent(lastSavedContentRef.current);
+    if (tracked) submittedRef.current.push(md);
     lastSavedContentRef.current = md;
     dirtyRef.current = false;
     useGitSyncStore.getState().clearHeldDraft(id);
     useGitSyncStore.getState().releaseNote(id);
-    return onSaveRef.current(md);
+    const dropUnseen = () => {
+      if (!tracked || isLocalBodyEcho(id, md)) return;
+      const index = submittedRef.current.indexOf(md);
+      if (index !== -1) submittedRef.current.splice(index, 1);
+    };
+    let pending: Promise<void>;
+    try {
+      pending = Promise.resolve(onSaveRef.current(md));
+    } catch (error) {
+      dropUnseen();
+      throw error;
+    }
+    // A save that never echoes (unchanged, blocked, failed) must not keep
+    // blocking a later pinned-pane body. A real echo stays until the effect
+    // below sees it; the store update runs before this finally.
+    void pending.finally(dropUnseen);
+    return pending;
   }, []);
 
   const flush = useCallback(() => {
@@ -263,7 +287,24 @@ export const MarkdownTextarea = forwardRef<
         useGitSyncStore.getState().releaseNote(noteId);
         useGitSyncStore.getState().clearHeldDraft(noteId);
       }
-      if (normalizeContent(valueRef.current) !== normalizeContent(content)) return;
+      const submitted = submittedRef.current;
+      const echoIndex = submitted.findIndex(
+        (body) => normalizeContent(body) === normalizeContent(content),
+      );
+      // This echo is older than a body already handed to onSave. Leave that
+      // body on screen. A pinned-pane save is not in the list, so a textarea
+      // with nothing newer queued still shows it.
+      const newerSubmission =
+        echoIndex === -1 ? submitted.length > 0 : echoIndex < submitted.length - 1;
+      if (echoIndex !== -1) submitted.splice(0, echoIndex + 1);
+      if (normalizeContent(valueRef.current) !== normalizeContent(content)) {
+        if (dirtyRef.current || newerSubmission) return;
+        pendingCaretRef.current = Math.min(
+          textareaRef.current?.selectionStart ?? 0,
+          content.length,
+        );
+        setValue(content);
+      }
       lastSavedContentRef.current = content;
       dirtyRef.current = false;
       return;

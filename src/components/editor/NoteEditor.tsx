@@ -439,7 +439,14 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           useGitSyncStore.getState().releaseNote(note.id);
           useGitSyncStore.getState().clearHeldDraft(note.id);
         }
-        if (normalizeContent(getEditorMarkdown(editor)) !== normalizeContent(note.content)) return;
+        if (normalizeContent(getEditorMarkdown(editor)) !== normalizeContent(note.content)) {
+          // Newer keystrokes in this editor stay. A clean editor is just behind
+          // a save from the pinned pane: show that body so the next keystroke
+          // here does not wipe it.
+          if (dirtyRef.current) return;
+          editor.commands.setContent(note.content, { emitUpdate: false });
+          notifyEditorDraft(note.id);
+        }
         lastSavedContentRef.current = note.content;
         dirtyRef.current = false;
         return;

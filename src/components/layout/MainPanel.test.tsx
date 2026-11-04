@@ -731,6 +731,55 @@ describe("MainPanel — the markdown view follows external writes", () => {
     expect(textarea().value).toBe("Original body, edited");
   });
 
+  it("keeps a queued markdown edit when an earlier save lands", async () => {
+    let releaseA: () => void = () => {};
+    let releaseB: () => void = () => {};
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    let writes = 0;
+    vi.mocked(tauriCommands.writeNote).mockImplementation(() => {
+      writes += 1;
+      return writes === 1 ? gateA : gateB;
+    });
+    try {
+      setup(makeNote({ content: "Original body" }), true);
+      fireEvent.change(textarea(), { target: { value: "Body A" } });
+      await act(async () => {
+        fireEvent.blur(textarea());
+      });
+      expect(writes).toBe(1);
+
+      fireEvent.change(textarea(), { target: { value: "Body B" } });
+      await act(async () => {
+        fireEvent.blur(textarea());
+      });
+      expect(writes).toBe(1);
+
+      await act(async () => {
+        releaseA();
+      });
+      expect(textarea().value).toBe("Body B");
+
+      fireEvent.change(textarea(), { target: { value: `${textarea().value} plus` } });
+      await act(async () => {
+        fireEvent.blur(textarea());
+      });
+      await act(async () => {
+        releaseB();
+      });
+      expect(textarea().value).toBe("Body B plus");
+      expect(useNoteStore.getState().notes[0].content).toBe("Body B plus");
+    } finally {
+      releaseA();
+      releaseB();
+      vi.mocked(tauriCommands.writeNote).mockResolvedValue(undefined);
+    }
+  });
+
   it("adopts a bulk tag delete that rewrites the open note", async () => {
     const note = makeNote({ content: "Plan #work today" });
     note.frontmatter.tags = ["work"];

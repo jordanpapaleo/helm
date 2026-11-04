@@ -3,6 +3,7 @@ import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
+import { saveNoteContent } from "../../lib/save-note";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
@@ -12,6 +13,8 @@ import { useToastStore } from "../../store/toast";
 import { useToolsStore } from "../../store/tools";
 import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
+import { NoteEditor } from "../editor/NoteEditor";
+import { MarkdownTextarea } from "./MainPanel";
 import { RightPanel } from "./RightPanel";
 
 vi.mock("../../lib/tauri-commands", () => ({
@@ -313,6 +316,106 @@ it("drops a recovered held draft once a later edit saves", async () => {
   fireEvent.blur(restored.view.dom);
   expect(tauriCommands.writeNote).toHaveBeenCalledTimes(writes);
   expect(vi.mocked(tauriCommands.writeNote).mock.calls[0][1]).toContain("draft-b");
+});
+
+function editorIn(root: ParentNode): Editor {
+  const surface = root.querySelector(".ProseMirror");
+  if (!surface) throw new Error("editor is not on screen");
+  let node: Node | null = surface;
+  while (node) {
+    const fiberKey = Object.keys(node).find((key) => key.startsWith("__reactFiber$"));
+    if (fiberKey) {
+      let fiber: Fiber | null | undefined = (node as unknown as Record<string, Fiber | undefined>)[
+        fiberKey
+      ];
+      while (fiber) {
+        const editor = fiber.memoizedProps?.editor;
+        if (editor?.view) return editor;
+        fiber = fiber.return;
+      }
+    }
+    node = node.parentNode;
+  }
+  throw new Error("editor instance was not found");
+}
+
+function OpenReference() {
+  const note = useNoteStore((state) => state.notes.find((item) => item.id === "reference"));
+  if (!note) return null;
+  return (
+    <NoteEditor
+      note={note}
+      onSave={async (content) => {
+        const current = useNoteStore.getState().notes.find((item) => item.id === note.id) ?? note;
+        await saveNoteContent(current, content);
+      }}
+    />
+  );
+}
+
+it("keeps a side-panel edit of the note that is open in the main editor", async () => {
+  render(
+    <>
+      <OpenReference />
+      <RightPanel />
+    </>,
+  );
+  const article = screen.getByRole("article", { name: "Pinned note Reference" });
+  const pinned = editorIn(article);
+  expect(pinned.isEditable).toBe(true);
+  insertAtEnd(pinned, " from the side");
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1100);
+  });
+
+  const main = editorIn(document.body);
+  expect(main).not.toBe(pinned);
+  expect(main.getText()).toContain("from the side");
+  expect(article).toHaveTextContent("from the side");
+
+  await act(async () => {
+    insertAtEnd(main, " main");
+  });
+  expect(main.getText()).toContain("from the side");
+  expect(article).toHaveTextContent("from the side");
+});
+
+it("keeps a side-panel edit when the open note is in markdown mode", async () => {
+  function OpenMarkdown() {
+    const note = useNoteStore((state) => state.notes.find((item) => item.id === "reference"));
+    if (!note) return null;
+    return (
+      <MarkdownTextarea
+        noteId={note.id}
+        vaultPath="/vault"
+        content={note.content}
+        onSave={async (content) => {
+          const current = useNoteStore.getState().notes.find((item) => item.id === note.id) ?? note;
+          await saveNoteContent(current, content);
+        }}
+      />
+    );
+  }
+  render(
+    <>
+      <OpenMarkdown />
+      <RightPanel />
+    </>,
+  );
+  const article = screen.getByRole("article", { name: "Pinned note Reference" });
+  insertAtEnd(editorIn(article), " from the side");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1100);
+  });
+  const textarea = screen.getByRole("textbox");
+  expect((textarea as HTMLTextAreaElement).value).toContain("from the side");
+  await act(async () => {
+    fireEvent.change(textarea, {
+      target: { value: `${(textarea as HTMLTextAreaElement).value} main` },
+    });
+  });
+  expect(article).toHaveTextContent("from the side");
 });
 
 it("moves the block with the block-command shortcut", () => {

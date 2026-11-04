@@ -187,8 +187,10 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Sync-aware reload** — `NoteEditor.tsx`, `decideEditorSync` in `src/lib/git-sync.ts`
   - Clean editor plus a different file adopts the file; dirty editor plus a different file holds the draft; switching notes keeps a held draft.
   - A local save landing while a newer edit is outstanding does not hold the note in the rich editor, the markdown textarea, or the pinned pane, and the newer edit can still be written.
+  - A local save landing in a clean editor is shown there when that editor has not submitted a newer body. That includes a body saved from the pinned pane, so the next keystroke in the open note keeps the side-panel text. An earlier markdown save does not replace a newer body that is already queued.
 - **Pinned-note pane** — `src/components/layout/PinnedNoteView.tsx`
   - Edits a pinned note with the same save path but no header, wiki popup, or image paste; follows the main editor's live draft when both show the same note.
+  - A side-panel edit of the note that is also open stays. The open editor shows that saved body when it has no newer keystrokes, and a later keystroke there does not drop the side-panel text.
   - A held draft is dropped only after that save writes. A failed write keeps the draft and retries next time.
 
 ## 5. Sidebar and layout

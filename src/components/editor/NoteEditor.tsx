@@ -2,7 +2,6 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import {
   forwardRef,
   useCallback,
@@ -11,9 +10,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
-  useState,
 } from "react";
-import { wikiLinkCandidates } from "../../lib/archive";
 import { docPositionToTextOffset, resolveTextOffset } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
 import { bindRichEditor } from "../../lib/editor-shortcuts";
@@ -42,14 +39,7 @@ import {
 import { FindReplaceExtension } from "./findReplaceExtension";
 import { InlineTagExtension } from "./InlineTag";
 import { MermaidSourceExtension } from "./MermaidSource";
-import { WikiLinkExtension } from "./WikiLink";
-
-interface SuggestionPopup {
-  items: Note[];
-  selectedIndex: number;
-  rect: DOMRect;
-  command: (props: { label: string }) => void;
-}
+import { useWikiLinkMenu, WikiLinkMenu } from "./WikiLinkMenu";
 
 export interface NoteEditorHandle {
   focus: () => void;
@@ -96,22 +86,17 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     },
     ref,
   ) => {
-    const { vaults, notes } = useNoteStore();
+    const { vaults } = useNoteStore();
     const { settings } = useSettingsStore();
+    const wikiMenu = useWikiLinkMenu(note.id);
     const vaultPath = vaults.find((v) => v.id === note.vaultId)?.path ?? null;
-    const [popup, setPopup] = useState<SuggestionPopup | null>(null);
     // The element that actually scrolls in editor mode (see scroll-fraction.ts).
     const scrollerRef = useRef<HTMLDivElement>(null);
 
-    // Refs prevent stale closures inside the TipTap extension config
-    const notesRef = useRef(notes);
-    const autocompleteRef = useRef(settings.autocompleteWikiLinks);
-    autocompleteRef.current = settings.autocompleteWikiLinks;
-    const showArchivedRef = useRef(settings.showArchivedNotes);
-    showArchivedRef.current = settings.showArchivedNotes;
+    // Refs prevent stale closures inside the TipTap extension config.
+    // The note-link menu keeps its own refs (see WikiLinkMenu.tsx).
     const autoSaveRef = useRef(settings.autoSaveOnEdit);
     autoSaveRef.current = settings.autoSaveOnEdit;
-    notesRef.current = notes;
     const noteIdRef = useRef(note.id);
     noteIdRef.current = note.id;
     const filePathRef = useRef(note.filePath);
@@ -119,10 +104,6 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     // The note whose body is currently loaded. Updated only when that body is
     // replaced, so leaving a note can still see the id render has already moved.
     const loadedNoteIdRef = useRef(note.id);
-    const popupRef = useRef(popup);
-    popupRef.current = popup;
-    const setPopupRef = useRef(setPopup);
-    setPopupRef.current = setPopup;
     // Tracks the last content we wrote to disk so we can distinguish our own
     // saves from external file changes (e.g. from Claude Code or MCP server).
     const lastSavedContentRef = useRef(note.content);
@@ -143,8 +124,8 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
     const initialContentRef = useRef(note.content);
 
     // Memoize extensions so TipTap sees stable references across renders.
-    // Every dynamic value (notes list, settings, popup state) is read via a ref,
-    // so it is safe to create this array once on mount.
+    // Every dynamic value (settings, the note-link menu) is read via a ref or a
+    // stable extension, so it is safe to create this array once on mount.
     const extensions = useMemo(
       () => [
         // Schema + markdown behaviour, shared verbatim with the tests that check
@@ -163,80 +144,10 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         MermaidSourceExtension,
         BlockCommands,
         InlineTagExtension,
-        WikiLinkExtension.configure({
-          suggestion: {
-            items: ({ query }: { query: string }) =>
-              !autocompleteRef.current
-                ? []
-                : wikiLinkCandidates(
-                    notesRef.current,
-                    noteIdRef.current,
-                    query,
-                    showArchivedRef.current,
-                  ),
-            render: () => ({
-              onStart(props: SuggestionProps<Note>) {
-                const rect = props.clientRect?.();
-                if (!rect) return;
-                setPopupRef.current({
-                  items: props.items,
-                  selectedIndex: 0,
-                  rect,
-                  command: props.command,
-                });
-              },
-              onUpdate(props: SuggestionProps<Note>) {
-                const rect = props.clientRect?.();
-                setPopupRef.current((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        items: props.items,
-                        rect: rect ?? prev.rect,
-                        command: props.command,
-                      }
-                    : null,
-                );
-              },
-              onKeyDown({ event }: SuggestionKeyDownProps) {
-                const curr = popupRef.current;
-                if (!curr || curr.items.length === 0) return false;
-                if (event.key === "Escape") {
-                  setPopupRef.current(null);
-                  return true;
-                }
-                if (event.key === "ArrowDown") {
-                  setPopupRef.current({
-                    ...curr,
-                    selectedIndex: (curr.selectedIndex + 1) % curr.items.length,
-                  });
-                  return true;
-                }
-                if (event.key === "ArrowUp") {
-                  setPopupRef.current({
-                    ...curr,
-                    selectedIndex: (curr.selectedIndex - 1 + curr.items.length) % curr.items.length,
-                  });
-                  return true;
-                }
-                if (event.key === "Enter") {
-                  const n = curr.items[curr.selectedIndex];
-                  if (n) curr.command({ label: n.frontmatter.title });
-                  setPopupRef.current(null);
-                  return true;
-                }
-                return false;
-              },
-              onExit() {
-                setPopupRef.current(null);
-              },
-            }),
-          },
-        }),
+        wikiMenu.extension,
         FindReplaceExtension,
       ],
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      [],
+      [wikiMenu.extension],
     );
 
     // Memoize editorProps so TipTap's compareOptions sees a stable reference each render.
@@ -637,41 +548,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
         className={`relative flex-1 overflow-y-auto px-12 py-6 ${locked ? "opacity-75 cursor-not-allowed select-none" : ""}`}
       >
         <EditorContent editor={editor} />
-
-        {/* Wiki-link suggestion popup */}
-        {popup && popup.items.length > 0 && (
-          <div
-            className="fixed z-50 min-w-[220px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl"
-            style={{ top: popup.rect.bottom + 6, left: popup.rect.left }}
-          >
-            {popup.items.map((n, i) => (
-              <button
-                type="button"
-                key={n.id}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                  i === popup.selectedIndex
-                    ? "bg-[var(--color-accent)] text-white"
-                    : "text-[var(--color-text)] hover:bg-[var(--color-border)]/50"
-                }`}
-                onMouseDown={(e) => {
-                  e.preventDefault(); // keep editor focus
-                  popup.command({ label: n.frontmatter.title });
-                  setPopup(null);
-                }}
-              >
-                <span className="truncate">
-                  {n.frontmatter.title || "Untitled"}
-                  {n.frontmatter.archived ? " (archived)" : ""}
-                </span>
-                {n.frontmatter.tags.length > 0 && (
-                  <span className="ml-auto shrink-0 text-xs opacity-50">
-                    {n.frontmatter.tags[0]}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
+        <WikiLinkMenu popup={wikiMenu.popup} setPopup={wikiMenu.setPopup} />
       </div>
     );
   },

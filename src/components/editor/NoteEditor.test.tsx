@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
@@ -383,5 +383,45 @@ describe("NoteEditor — opening a note must not schedule a save", () => {
       vi.mocked(invoke).mockReset();
       vi.mocked(invoke).mockResolvedValue(undefined);
     }
+  });
+});
+
+describe("NoteEditor wiki-link dropdown", () => {
+  beforeEach(() => {
+    useNoteStore.setState({ notes: [], selectedNoteId: null, vaults: [], activeVaultId: null });
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS } });
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("still opens the note-link dropdown in the main editor", async () => {
+    const note = makeNote();
+    const other = makeNote({
+      id: "other",
+      filePath: "/vault/other.md",
+      fileName: "other.md",
+      content: "elsewhere",
+      frontmatter: { ...note.frontmatter, id: "other", title: "Other Note" },
+    });
+    useNoteStore.setState({ notes: [note, other], selectedNoteId: note.id });
+    const ref = createRef<NoteEditorHandle>();
+    render(<NoteEditor ref={ref} note={note} onSave={vi.fn()} />);
+    const editor = ref.current?.getEditor();
+    if (!editor) throw new Error("editor missing");
+    await act(async () => {
+      editor.chain().focus("end").insertContent(" [[").run();
+      await Promise.resolve();
+    });
+    const menu = screen.getByRole("region", { name: "Note links" });
+    expect(within(menu).getByRole("button", { name: "Other Note" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("button", { name: "Note A" })).not.toBeInTheDocument();
+    await act(async () => {
+      fireEvent.mouseDown(within(menu).getByRole("button", { name: "Other Note" }));
+      await Promise.resolve();
+    });
+    expect(editor.getText()).toContain("[[Other Note]]");
   });
 });

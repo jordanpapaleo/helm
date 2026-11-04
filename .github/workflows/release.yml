@@ -1,6 +1,8 @@
-# Build Linux packages when a vX.Y.Z tag is pushed, attach them to the
-# existing draft GitHub Release, then publish. Push the tag, then create
-# the draft with the .dmg immediately after — see release.sh.
+# Build Linux packages when a vX.Y.Z tag is pushed and attach them to the
+# existing draft GitHub Release. Push the tag, then create the draft with the
+# .dmg immediately after — see release.sh. Uploads go on this tag only; older
+# releases are not deleted or replaced. When the updater signing key is set,
+# the AppImage is signed and added to that release's latest.json.
 #
 # Rust deps are warmed on main (.github/workflows/rust-cache-warm.yml);
 # this job restores that cache and does not save a per-tag entry.
@@ -49,7 +51,19 @@ jobs:
         run: npm ci
 
       - name: Build Linux bundles
-        run: npm run tauri build -- --bundles deb,rpm,appimage
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # Without the signing key, build the installers only. With it, also
+          # sign the AppImage so Check for Updates can install it.
+          if [[ -n "${TAURI_SIGNING_PRIVATE_KEY}${TAURI_SIGNING_PRIVATE_KEY_PATH}" ]]; then
+            npm run tauri build -- --bundles deb,rpm,appimage \
+              --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          else
+            npm run tauri build -- --bundles deb,rpm,appimage
+          fi
 
       - name: Upload artifacts and publish Release
         env:
@@ -80,6 +94,23 @@ jobs:
             Helm_amd64.deb Helm_amd64.rpm Helm_amd64.AppImage \
             --repo "$GITHUB_REPOSITORY" --clobber
           printf 'Uploaded:\n  Helm_amd64.deb\n  Helm_amd64.rpm\n  Helm_amd64.AppImage\n'
+
+          # Add Linux to this tag's updater manifest. --clobber replaces
+          # latest.json on $TAG only; older GitHub releases are untouched.
+          sig="${appimage[0]}.sig"
+          if [[ -f "$sig" ]]; then
+            if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --clobber; then
+              node src/lib/updater-manifest.mjs \
+                --merge latest.json \
+                --platform linux-x86_64 \
+                --signature "$sig" \
+                --asset Helm_amd64.AppImage
+              gh release upload "$TAG" latest.json --repo "$GITHUB_REPOSITORY" --clobber
+              echo "Added linux-x86_64 to latest.json on $TAG"
+            else
+              echo "No latest.json on $TAG — Linux packages are uploaded; the updater manifest was left unchanged."
+            fi
+          fi
 
           # Leave the Release as a draft so the maintainer can update the notes
           # before publishing. Uncomment to auto-publish after Linux uploads:

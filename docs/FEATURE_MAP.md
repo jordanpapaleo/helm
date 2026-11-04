@@ -375,6 +375,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Snapshots** — `<vault>/.helm-history/<note-id>/<epoch-ms>.md`, taken before a content write.
   - Coalesced: no new snapshot if the newest is under 5 minutes old (`HISTORY_MIN_AGE_SECS = 300`, `HISTORY_MIN_AGE_MS = 300_000`). Ordinary edits keep this window. `snapshot_note`'s `min_age_secs` is optional and defaults to 300 when omitted.
   - Retention: the newest 50 are kept (`HISTORY_MAX_KEEP = 50`).
+  - A snapshot in the same millisecond as the newest one gets a later filename. Prune must not make that newer body look older.
   - Note id must be non-empty ASCII alphanumeric; a missing source file is a silent no-op.
   - Snapshot failure never blocks the save.
   - MCP delete and restore force a snapshot regardless of age.
@@ -452,7 +453,12 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - API mode needs a chosen model; disabling Writer stops a running reply.
   - Writer is not shown in the right panel (`ToolHost` is not mounted).
 - **MCP setup** — `McpSetupModal.tsx` builds the Claude Desktop config with `HELM_VAULT` or `HELM_VAULTS` by vault count.
-- **Update check** — `src/lib/check-for-updates.ts` compares against the latest GitHub release.
+- **Update check** — Helm menu ▸ Check for Updates… (`src/lib/check-for-updates.ts`, `src/App.tsx`).
+  - The running version is compared with the latest GitHub release. When the app is current, the menu says so.
+  - A newer signed release is downloaded and installed in place, then Helm relaunches. Pending saves flush first.
+  - A GitHub error, including 403, is shown. A network failure and an unreadable release or manifest are shown too.
+  - Overlapping checks are ignored.
+- **Release history** — `release.sh` still builds the signed, notarized dmg, and publishes `latest.json` plus the signed updater archive on that version's GitHub release. Older GitHub releases remain.
 
 ## 19. Quick capture
 

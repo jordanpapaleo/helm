@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Usage: ./release.sh [patch|minor|major]
-# Bumps version, generates changelog, commits, tags, and builds a signed .dmg.
+# Bumps version, generates changelog, commits, tags, builds a signed .dmg,
+# and publishes the updater manifest for that version. Older releases stay.
 
 set -e
 
@@ -40,6 +41,15 @@ if ! security find-identity -v -p codesigning | grep -qF "$APPLE_SIGNING_IDENTIT
 fi
 
 echo "→ Signing credentials OK ($APPLE_SIGNING_IDENTITY)"
+
+# The in-app updater checks this minisign signature. Keep the private key in
+# sign.sh. It must match plugins.updater.pubkey in src-tauri/tauri.conf.json.
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
+  echo "✗ Updater signing key is not set — aborting."
+  echo "  Export TAURI_SIGNING_PRIVATE_KEY (key contents) or TAURI_SIGNING_PRIVATE_KEY_PATH from sign.sh."
+  echo "  See CONTRIBUTING.md § Releasing."
+  exit 1
+fi
 
 # Bump package.json and capture the new version
 NEW_VERSION=$(npm version "$BUMP" --no-git-tag-version | sed 's/^v//')
@@ -115,20 +125,45 @@ sed -i '' "s/^  version \".*\"/  version \"$NEW_VERSION\"/" Casks/helm.rb
 DMG_SHA=$(shasum -a 256 "$DMG_LATEST" | awk '{ print $1 }')
 sed -i '' "s/^  sha256 \".*\"/  sha256 \"$DMG_SHA\"/" Casks/helm.rb
 
-git add "$DMG_ASSET" Casks/helm.rb
+# Tar the stapled .app (not the pre-notarization archive Tauri would make) and
+# sign that. COPYFILE_DISABLE keeps AppleDouble entries out of the archive.
+echo "→ Signing the updater archive..."
+UPDATER_ARCHIVE="$RELEASE_DIR/Helm.app.tar.gz"
+COPYFILE_DISABLE=1 tar -czf "$UPDATER_ARCHIVE" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+
+SIGN_ARGS=(signer sign --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}")
+if [[ -n "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
+  SIGN_ARGS+=(--private-key-path "$TAURI_SIGNING_PRIVATE_KEY_PATH")
+elif [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" && -f "${TAURI_SIGNING_PRIVATE_KEY}" ]]; then
+  SIGN_ARGS+=(--private-key-path "$TAURI_SIGNING_PRIVATE_KEY")
+fi
+npm run tauri -- "${SIGN_ARGS[@]}" "$UPDATER_ARCHIVE"
+
+PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+node src/lib/updater-manifest.mjs \
+  --out "$RELEASE_DIR/latest.json" \
+  --version "$NEW_VERSION" \
+  --pub-date "$PUB_DATE" \
+  --notes "Helm $NEW_VERSION" \
+  --platform darwin-aarch64 \
+  --signature "$UPDATER_ARCHIVE.sig" \
+  --asset "Helm.app.tar.gz"
+
+git add "$DMG_ASSET" "$RELEASE_DIR/latest.json" Casks/helm.rb
 git commit -m "release: add Helm_${NEW_VERSION}_aarch64.dmg"
 git tag "v$NEW_VERSION"
 
 echo ""
 echo "✓ v$NEW_VERSION released"
 echo "  Artifacts: $RELEASE_DIR"
+echo "  Updater: $UPDATER_ARCHIVE and $RELEASE_DIR/latest.json"
 
 if [[ -t 0 ]]; then
   read -r -p "Push and create a draft GitHub Release now? [y/N] " CREATE_DRAFT
   if [[ "$CREATE_DRAFT" =~ ^[Yy]$ ]]; then
     if ! command -v gh >/dev/null 2>&1; then
       echo "✗ gh not found — install GitHub CLI, then create the draft manually:"
-      echo "  gh release create \"v$NEW_VERSION\" --draft --title \"Helm v$NEW_VERSION\" --notes \"\" \"$DMG_LATEST\""
+      echo "  gh release create \"v$NEW_VERSION\" --draft --title \"Helm v$NEW_VERSION\" --notes \"\" \"$DMG_LATEST\" \"$UPDATER_ARCHIVE\" \"$RELEASE_DIR/latest.json\""
       exit 1
     fi
     if ! gh auth status >/dev/null 2>&1; then
@@ -138,6 +173,7 @@ if [[ -t 0 ]]; then
 
     # Tag push starts Linux CI. Create the draft immediately after so it exists
     # by the time the job uploads (draft created events do not trigger Actions).
+    # This creates a new release for v$NEW_VERSION only. Older releases stay.
     echo "→ Pushing commits and tags..."
     git push && git push --tags
 
@@ -145,7 +181,9 @@ if [[ -t 0 ]]; then
     gh release create "v$NEW_VERSION" --draft \
       --title "Helm v$NEW_VERSION" \
       --notes "" \
-      "$DMG_LATEST"
+      "$DMG_LATEST" \
+      "$UPDATER_ARCHIVE" \
+      "$RELEASE_DIR/latest.json"
 
     echo "✓ Draft v$NEW_VERSION created — Linux CI will upload packages and publish."
   fi

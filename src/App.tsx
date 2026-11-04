@@ -1,15 +1,20 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask, message } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { message } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppShell } from "./components/layout/AppShell";
 import { McpSetupModal } from "./components/McpSetupModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { addVault, useVault } from "./hooks/useVault";
-import { checkForUpdates, type UpdateCheckResult } from "./lib/check-for-updates";
+import {
+  checkAndInstallUpdate,
+  compareVersions,
+  type UpdateFlowResult,
+} from "./lib/check-for-updates";
 import { applyEditorShortcut, isEditorShortcutId } from "./lib/editor-shortcuts";
 import { flushPendingSaves } from "./lib/pending-saves";
 import { DEFAULT_SETTINGS } from "./lib/settings";
@@ -26,20 +31,40 @@ const FONT_MAX = 24;
 /** Ignore overlapping Check for Updates clicks. */
 let checkForUpdatesInFlight = false;
 
-async function presentUpdateResult(result: UpdateCheckResult) {
+async function presentUpdateResult(result: UpdateFlowResult) {
   if (result.status === "up-to-date") {
     await message(`You're up to date (v${result.current}).`, { title: "Check for Updates" });
     return;
   }
-  if (result.status === "update-available") {
-    const open = await ask(
-      `Helm v${result.latest} is available (you have v${result.current}).\n\nOpen the release page?`,
-      { title: "Check for Updates", kind: "info" },
+  if (result.status === "installed") {
+    await message(
+      `Helm v${result.latest} is installed. Quit and reopen Helm if it is still running.`,
+      { title: "Check for Updates" },
     );
-    if (open) await openUrl(result.htmlUrl);
     return;
   }
   await message(result.message, { title: "Check for Updates", kind: "error" });
+}
+
+/** Download the signed release the updater manifest offers, then relaunch. */
+async function installSignedRelease(available: { latest: string }) {
+  const update = await check();
+  if (!update) {
+    throw new Error("the updater did not offer a newer signed release.");
+  }
+  if (compareVersions(update.version, available.latest) !== 0) {
+    const offered = update.version;
+    await update.close();
+    throw new Error(`the updater offered ${offered}, not v${available.latest}.`);
+  }
+  await flushPendingSaves();
+  try {
+    await update.downloadAndInstall();
+  } catch (error) {
+    await update.close().catch(() => {});
+    throw error;
+  }
+  await relaunch();
 }
 
 async function handleCheckForUpdates() {
@@ -48,7 +73,17 @@ async function handleCheckForUpdates() {
   const { showToast, dismissToast } = useToastStore.getState();
   const toastId = showToast("Checking for updates…", "info", { persist: true });
   try {
-    const result = await checkForUpdates(getVersion);
+    const result = await checkAndInstallUpdate(getVersion, async (available) => {
+      dismissToast(toastId);
+      const installingId = showToast(`Downloading Helm v${available.latest}…`, "info", {
+        persist: true,
+      });
+      try {
+        await installSignedRelease(available);
+      } finally {
+        dismissToast(installingId);
+      }
+    });
     dismissToast(toastId);
     await presentUpdateResult(result);
   } finally {

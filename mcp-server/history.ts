@@ -63,8 +63,11 @@ export function snapshotNoteFile(
   if (existing.length > 0 && Math.max(0, nowMs - existing[0].tsMs) < minAgeMs) return;
 
   fs.mkdirSync(dir, { recursive: true });
-  // Bump the timestamp if a snapshot already landed in this millisecond
+  // Never older than the newest snapshot. A same-millisecond bump can sit ahead
+  // of the clock; after prune frees that earlier name, reusing it would make
+  // the newest file hold an older body.
   let ts = nowMs;
+  if (existing.length > 0 && ts <= existing[0].tsMs) ts = existing[0].tsMs + 1;
   while (fs.existsSync(path.join(dir, `${ts}.md`))) ts += 1;
   fs.copyFileSync(filePath, path.join(dir, `${ts}.md`));
 

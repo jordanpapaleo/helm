@@ -16,6 +16,11 @@ dist-ssr
 .superpowers/
 
 sign.sh
+# Tauri updater private key. The matching public key is in src-tauri/tauri.conf.json.
+*.key
+# Updater archive built by release.sh and uploaded to that version's GitHub release.
+releases/**/*.tar.gz
+releases/**/*.sig
 releases/**/*.app
 # Unversioned duplicate of the versioned .dmg, made only so the Homebrew cask
 # has a stable download URL. The versioned copy in the same directory is the

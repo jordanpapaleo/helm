@@ -1,4 +1,4 @@
-const RELEASES_LATEST_URL = "https://api.github.com/repos/jordanpapaleo/helm/releases/latest";
+import { RELEASES_LATEST_API_URL, UPDATER_MANIFEST_URL } from "./updater-manifest.mjs";
 
 export type UpdateCheckResult =
   | { status: "up-to-date"; current: string; latest: string }
@@ -72,7 +72,7 @@ export async function checkForUpdates(
 
   let response: Response;
   try {
-    response = await fetchImpl(RELEASES_LATEST_URL, {
+    response = await fetchImpl(RELEASES_LATEST_API_URL, {
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "Helm-Desktop-App",
@@ -114,4 +114,92 @@ export async function checkForUpdates(
   }
 
   return compareWithLatest(current, data.tag_name, data.html_url);
+}
+
+export type UpdateFlowResult =
+  | { status: "up-to-date"; current: string; latest: string }
+  | { status: "installed"; current: string; latest: string }
+  | { status: "error"; current?: string; message: string };
+
+type UpdaterManifestJson = {
+  version?: unknown;
+};
+
+function manifestVersion(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const version = (data as UpdaterManifestJson).version;
+  return typeof version === "string" && version.trim() ? version : null;
+}
+
+/**
+ * Compare with GitHub, then install a newer signed release.
+ * The version comparison and GitHub status errors stay here. `install` performs
+ * the Tauri download, install, and relaunch.
+ */
+export async function checkAndInstallUpdate(
+  getVersion: () => Promise<string>,
+  install: (available: { current: string; latest: string; htmlUrl: string }) => Promise<void>,
+  fetchImpl: typeof fetch = fetch,
+): Promise<UpdateFlowResult> {
+  const result = await checkForUpdates(getVersion, fetchImpl);
+  if (result.status === "error" || result.status === "up-to-date") return result;
+
+  let response: Response;
+  try {
+    response = await fetchImpl(UPDATER_MANIFEST_URL, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Helm-Desktop-App",
+      },
+    });
+  } catch {
+    return {
+      status: "error",
+      current: result.current,
+      message: "Could not reach GitHub to check for updates. Check your network connection.",
+    };
+  }
+
+  if (!response.ok) {
+    return {
+      status: "error",
+      current: result.current,
+      message: `GitHub returned ${response.status} while checking for updates.`,
+    };
+  }
+
+  let version: string | null;
+  try {
+    version = manifestVersion(await response.json());
+  } catch {
+    version = null;
+  }
+  if (!version) {
+    return {
+      status: "error",
+      current: result.current,
+      message: "Could not parse the updater manifest.",
+    };
+  }
+
+  if (compareVersions(result.latest, version) !== 0) {
+    return {
+      status: "error",
+      current: result.current,
+      message: `Updater manifest version "${version}" does not match GitHub release v${result.latest}.`,
+    };
+  }
+
+  try {
+    await install(result);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : "Could not install the update.";
+    return {
+      status: "error",
+      current: result.current,
+      message: `Could not install Helm v${result.latest}: ${detail}`,
+    };
+  }
+
+  return { status: "installed", current: result.current, latest: result.latest };
 }

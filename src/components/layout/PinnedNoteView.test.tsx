@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -416,6 +416,217 @@ it("keeps a side-panel edit when the open note is in markdown mode", async () =>
     });
   });
   expect(article).toHaveTextContent("from the side");
+});
+
+async function typeAtEnd(editor: Editor, text: string) {
+  await act(async () => {
+    editor.chain().focus("end").insertContent(text).run();
+    await Promise.resolve();
+  });
+}
+
+function pressPlain(editor: Editor, key: string) {
+  const event = new KeyboardEvent("keydown", { key, bubbles: true });
+  editor.view.someProp("handleKeyDown", (handler) => handler(editor.view, event));
+}
+
+function noteLinks() {
+  return screen.getByRole("region", { name: "Note links" });
+}
+
+function archivedNote(id: string, title: string): Note {
+  const note = makeNote(id, title, "stale");
+  return { ...note, frontmatter: { ...note.frontmatter, archived: true } };
+}
+
+it("opens the note-link dropdown in the pinned pane and inserts the chosen note", async () => {
+  const ship = makeNote("ship", "Ship Log", "The log.");
+  const extras = Array.from({ length: 8 }, (_, index) =>
+    makeNote(`extra-${index + 1}`, `Extra ${index + 1}`, "extra"),
+  );
+  const archived = archivedNote("old", "Old Log");
+  useNoteStore.setState({
+    notes: [reference, ship, archived, ...extras],
+    selectedNoteId: reference.id,
+    vaults: [{ id: "vault", name: "Vault", path: "/vault" }],
+    activeVaultId: "vault",
+  });
+  render(<RightPanel />);
+  await typeAtEnd(pinnedEditor(), " [[");
+
+  const menu = noteLinks();
+  const labels = within(menu)
+    .getAllByRole("button")
+    .map((button) => button.textContent);
+  expect(labels).toEqual([
+    "Ship Log",
+    "Extra 1",
+    "Extra 2",
+    "Extra 3",
+    "Extra 4",
+    "Extra 5",
+    "Extra 6",
+    "Extra 7",
+  ]);
+  expect(within(menu).queryByRole("button", { name: "Reference" })).not.toBeInTheDocument();
+  expect(within(menu).queryByRole("button", { name: /Old Log/ })).not.toBeInTheDocument();
+  expect(within(menu).queryByRole("button", { name: "Extra 8" })).not.toBeInTheDocument();
+
+  fireEvent.mouseDown(within(menu).getByRole("button", { name: "Ship Log" }));
+  expect(pinnedEditor().getText()).toContain("[[Ship Log]]");
+  expect(screen.queryByRole("region", { name: "Note links" })).not.toBeInTheDocument();
+});
+
+it("labels archived notes in the pinned dropdown when show archived is on", async () => {
+  const archived = archivedNote("old", "Old Log");
+  useNoteStore.setState({
+    notes: [reference, archived],
+    selectedNoteId: reference.id,
+    vaults: [{ id: "vault", name: "Vault", path: "/vault" }],
+    activeVaultId: "vault",
+  });
+  useSettingsStore.setState({
+    settings: { ...DEFAULT_SETTINGS, showArchivedNotes: true },
+  });
+  render(<RightPanel />);
+  await typeAtEnd(pinnedEditor(), " [[");
+  expect(
+    within(noteLinks()).getByRole("button", { name: "Old Log (archived)" }),
+  ).toBeInTheDocument();
+});
+
+it("does not open the pinned dropdown when autocomplete is off", async () => {
+  const ship = makeNote("ship", "Ship Log", "The log.");
+  useNoteStore.setState({
+    notes: [reference, ship],
+    selectedNoteId: reference.id,
+    vaults: [{ id: "vault", name: "Vault", path: "/vault" }],
+    activeVaultId: "vault",
+  });
+  useSettingsStore.setState({
+    settings: { ...DEFAULT_SETTINGS, autocompleteWikiLinks: false },
+  });
+  render(<RightPanel />);
+  await typeAtEnd(pinnedEditor(), " [[");
+  expect(screen.queryByRole("region", { name: "Note links" })).not.toBeInTheDocument();
+});
+
+it("inserts the highlighted note when Enter is pressed in the pinned dropdown", async () => {
+  const alpha = makeNote("alpha", "Alpha", "a");
+  const beta = makeNote("beta", "Beta", "b");
+  useNoteStore.setState({
+    notes: [reference, alpha, beta],
+    selectedNoteId: reference.id,
+    vaults: [{ id: "vault", name: "Vault", path: "/vault" }],
+    activeVaultId: "vault",
+  });
+  render(<RightPanel />);
+  const editor = pinnedEditor();
+  await typeAtEnd(editor, " [[");
+  expect(within(noteLinks()).getByRole("button", { name: "Alpha" })).toBeInTheDocument();
+  await act(async () => {
+    pressPlain(editor, "ArrowDown");
+  });
+  await act(async () => {
+    pressPlain(editor, "Enter");
+  });
+  expect(editor.getText()).toContain("[[Beta]]");
+  expect(screen.queryByRole("region", { name: "Note links" })).not.toBeInTheDocument();
+});
+
+function showDashboard() {
+  useUIStore.setState({
+    activeView: "dashboard",
+    selectedGrouping: { type: "all", id: null },
+    navHistory: [
+      {
+        view: "dashboard",
+        selectedNoteId: "reference",
+        selectedGrouping: { type: "all", id: null },
+      },
+    ],
+    navIndex: 0,
+  });
+}
+
+function pinLinked(content: string, others: Note[] = []) {
+  const linked = makeNote("reference", "Reference", content);
+  useNoteStore.setState({
+    notes: [linked, ...others],
+    selectedNoteId: linked.id,
+    vaults: [{ id: "vault", name: "Vault", path: "/vault" }],
+    activeVaultId: "vault",
+  });
+  showDashboard();
+  render(<RightPanel />);
+  return screen.getByRole("article", { name: "Pinned note Reference" });
+}
+
+it("clicking a wiki link in the pinned pane sets the main note to that note", () => {
+  window.getSelection()?.removeAllRanges();
+  const ship = makeNote("ship", "Ship Log", "The log.");
+  const archived = archivedNote("old", "Old Log");
+  const article = pinLinked("See [[ ship log ]] and [[old log]] today.", [ship, archived]);
+  const links = article.querySelectorAll(".wikilink-ref");
+  expect(links).toHaveLength(2);
+
+  fireEvent.click(links[0]);
+  expect(useNoteStore.getState().selectedNoteId).toBe("ship");
+  expect(useUIStore.getState().activeView).toBe("notes");
+  expect(screen.getByRole("article", { name: "Pinned note Reference" })).toBeInTheDocument();
+
+  showDashboard();
+  useNoteStore.setState({ selectedNoteId: "reference" });
+  fireEvent.click(links[1]);
+  expect(useNoteStore.getState().selectedNoteId).toBe("old");
+  expect(useUIStore.getState().activeView).toBe("notes");
+});
+
+it("clicking a wiki link still sets the main note when the pinned pane is locked", () => {
+  window.getSelection()?.removeAllRanges();
+  const ship = makeNote("ship", "Ship Log", "The log.");
+  const linked = makeNote("reference", "Reference", "See [[Ship Log]] today.");
+  linked.frontmatter = { ...linked.frontmatter, locked: true };
+  useNoteStore.setState({
+    notes: [linked, ship],
+    selectedNoteId: linked.id,
+    vaults: [{ id: "vault", name: "Vault", path: "/vault" }],
+    activeVaultId: "vault",
+  });
+  showDashboard();
+  render(<RightPanel />);
+  const article = screen.getByRole("article", { name: "Pinned note Reference" });
+  expect(article.querySelector(".ProseMirror")).toHaveAttribute("contenteditable", "false");
+  const link = article.querySelector(".wikilink-ref");
+  expect(link).not.toBeNull();
+  fireEvent.click(link as Element);
+  expect(useNoteStore.getState().selectedNoteId).toBe("ship");
+  expect(useUIStore.getState().activeView).toBe("notes");
+});
+
+it("leaves the main note unchanged when the pinned wiki link matches nothing", () => {
+  window.getSelection()?.removeAllRanges();
+  const article = pinLinked("See [[Missing Note]] today.");
+  const link = article.querySelector(".wikilink-ref");
+  expect(link).not.toBeNull();
+  fireEvent.click(link as Element);
+  expect(useNoteStore.getState().selectedNoteId).toBe("reference");
+  expect(useUIStore.getState().activeView).toBe("dashboard");
+});
+
+it("does not follow a pinned wiki link while its text is selected", () => {
+  window.getSelection()?.removeAllRanges();
+  const ship = makeNote("ship", "Ship Log", "The log.");
+  const article = pinLinked("See [[Ship Log]] today.", [ship]);
+  const link = article.querySelector(".wikilink-ref");
+  expect(link).not.toBeNull();
+  const range = document.createRange();
+  range.selectNodeContents(link as Node);
+  const selection = window.getSelection();
+  selection?.addRange(range);
+  fireEvent.click(link as Element);
+  expect(useNoteStore.getState().selectedNoteId).toBe("reference");
+  expect(useUIStore.getState().activeView).toBe("dashboard");
 });
 
 it("moves the block with the block-command shortcut", () => {

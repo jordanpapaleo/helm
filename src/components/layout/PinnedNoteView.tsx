@@ -13,6 +13,7 @@ import {
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
 import { bindRichEditor } from "../../lib/editor-shortcuts";
 import { decideEditorSync } from "../../lib/git-sync";
+import { wikiLinkTargetId } from "../../lib/note-links";
 import { normalizeContent } from "../../lib/note-parser";
 import { forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
 import { registerSaveFlusher, unregisterSaveFlusher } from "../../lib/pending-saves";
@@ -21,6 +22,7 @@ import { NOTE_CONTENT_STYLE } from "../../lib/settings";
 import { useGitSyncStore } from "../../store/git-sync";
 import { useNoteStore } from "../../store/notes";
 import { useSettingsStore } from "../../store/settings";
+import { useUIStore } from "../../store/ui";
 import type { Note } from "../../types/note";
 import { BlockCommands } from "../editor/BlockCommands";
 import { richCodeBlock } from "../editor/CodeBlockView";
@@ -33,6 +35,7 @@ import {
 } from "../editor/extensions";
 import { InlineTagExtension } from "../editor/InlineTag";
 import { MermaidSourceExtension } from "../editor/MermaidSource";
+import { useWikiLinkMenu, WikiLinkMenu } from "../editor/WikiLinkMenu";
 
 function useLiveDraft(noteId: string): string | undefined {
   return useSyncExternalStore(
@@ -43,12 +46,37 @@ function useLiveDraft(noteId: string): string | undefined {
 }
 
 /**
+ * A click on a painted `[[Title]]` opens that note in the main editor.
+ * Dragging a selection across the link is not a click. An unknown title
+ * leaves the main note alone. Locked panes still open the link.
+ */
+function handleWikiLinkClick(event: MouseEvent) {
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed) return;
+  const target = event.target;
+  const element =
+    target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  if (!element) return;
+  const link = element.closest(".wikilink-ref");
+  const root = event.currentTarget;
+  if (!link || !(root instanceof Node) || !root.contains(link)) return;
+  const match = /^\[\[([^\]]+)\]\]$/.exec(link.textContent ?? "");
+  const title = match?.[1];
+  if (!title) return;
+  const id = wikiLinkTargetId(useNoteStore.getState().notes, title);
+  if (!id) return;
+  useUIStore.getState().openNote(id);
+}
+
+/**
  * Editable body for one pinned note.
  *
- * Keyboard shortcuts match the main editor. The property row, toolbar, and
- * status line stay on the main note. This pane does not register a draft
- * reader: when the same note is open in the main editor, that reader is the
- * main editor's, and replacing it would hide those unsaved keystrokes.
+ * Keyboard shortcuts match the main editor. Typing [[ opens the same note-link
+ * dropdown, and clicking a [[Title]] sets the main note to that note. The
+ * property row, toolbar, and status line stay on the main note. This pane does
+ * not register a draft reader: when the same note is open in the main editor,
+ * that reader is the main editor's, and replacing it would hide those unsaved
+ * keystrokes.
  */
 function PinnedNoteBody({
   note,
@@ -76,6 +104,7 @@ function PinnedNoteBody({
   lockedRef.current = locked;
   const autoSaveRef = useRef(true);
   autoSaveRef.current = useSettingsStore((state) => state.settings.autoSaveOnEdit);
+  const wikiMenu = useWikiLinkMenu(note.id);
 
   const extensions = useRef([
     ...markdownExtensions(richCodeBlock()),
@@ -86,6 +115,7 @@ function PinnedNoteBody({
     MermaidSourceExtension,
     BlockCommands,
     InlineTagExtension,
+    wikiMenu.extension,
   ]).current;
 
   const editorProps = useRef({
@@ -161,6 +191,13 @@ function PinnedNoteBody({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     return bindRichEditor(editor);
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const dom = editor.view.dom;
+    dom.addEventListener("click", handleWikiLinkClick);
+    return () => dom.removeEventListener("click", handleWikiLinkClick);
   }, [editor]);
 
   useEffect(() => {
@@ -317,6 +354,7 @@ function PinnedNoteBody({
     >
       <h2 className="mb-3 break-words text-lg font-semibold text-[var(--color-text)]">{title}</h2>
       <EditorContent editor={editor} />
+      <WikiLinkMenu popup={wikiMenu.popup} setPopup={wikiMenu.setPopup} />
     </article>
   );
 }

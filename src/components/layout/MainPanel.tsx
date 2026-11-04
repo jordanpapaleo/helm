@@ -14,6 +14,13 @@ import { bindNotePdfExport, usePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { markdownIndexToTextOffset, textOffsetToMarkdownIndex } from "../../lib/cursor-position";
 import { notifyEditorDraft, registerEditorDraft } from "../../lib/editor-draft";
+import {
+  bindMarkdownShortcuts,
+  type EditorShortcutId,
+  isFormattingShortcut,
+  matchEditorShortcut,
+  wrapMarkdownSelection,
+} from "../../lib/editor-shortcuts";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent, serializeNote } from "../../lib/note-parser";
 import {
@@ -190,39 +197,39 @@ export const MarkdownTextarea = forwardRef<
     return () => unregisterSaveFlusher(flusherId);
   }, [flusherId, commitSave]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!e.metaKey && !e.ctrlKey) return;
-    const ta = e.currentTarget;
-    const { selectionStart: start, selectionEnd: end, value: val } = ta;
-
-    type Wrap = [string, string];
-    let wrap: Wrap | null = null;
-
-    if (!e.shiftKey) {
-      if (e.key === "b") wrap = ["**", "**"];
-      else if (e.key === "i") wrap = ["*", "*"];
-      else if (e.key === "e") wrap = ["`", "`"];
-      else if (e.key === "u") wrap = ["<u>", "</u>"];
-    } else {
-      if (e.key === "S") wrap = ["~~", "~~"];
-      else if (e.key === "H") wrap = ["==", "=="];
-    }
-
-    if (!wrap || locked) return;
-    e.preventDefault();
-
-    const [prefix, suffix] = wrap;
-    const selected = val.slice(start, end);
-    const next = val.slice(0, start) + prefix + selected + suffix + val.slice(end);
+  const applyFormatting = (id: EditorShortcutId) => {
+    if (!isFormattingShortcut(id) || lockedRef.current) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const wrapped = wrapMarkdownSelection(ta.value, ta.selectionStart, ta.selectionEnd, id);
+    if (!wrapped) return;
     dirtyRef.current = true;
-    setValue(next);
-    scheduleBodySave(next);
-
-    // Restore selection inside the wrapping characters
+    setValue(wrapped.value);
+    scheduleBodySave(wrapped.value);
     requestAnimationFrame(() => {
-      ta.selectionStart = start + prefix.length;
-      ta.selectionEnd = end + prefix.length;
+      const current = textareaRef.current;
+      if (!current) return;
+      current.selectionStart = wrapped.start;
+      current.selectionEnd = wrapped.end;
     });
+  };
+  const applyFormattingRef = useRef(applyFormatting);
+  applyFormattingRef.current = applyFormatting;
+
+  useEffect(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    return bindMarkdownShortcuts(element, (id) => applyFormattingRef.current(id));
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const id = matchEditorShortcut(e.nativeEvent);
+    if (!id || !isFormattingShortcut(id)) return;
+    // The window listener applies the chord first and marks it handled.
+    // Applying it again here would wrap the selection twice.
+    if (e.nativeEvent.defaultPrevented) return;
+    e.preventDefault();
+    applyFormatting(id);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

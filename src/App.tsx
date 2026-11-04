@@ -10,6 +10,7 @@ import { McpSetupModal } from "./components/McpSetupModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { addVault, useVault } from "./hooks/useVault";
 import { checkForUpdates, type UpdateCheckResult } from "./lib/check-for-updates";
+import { applyEditorShortcut, isEditorShortcutId } from "./lib/editor-shortcuts";
 import { flushPendingSaves } from "./lib/pending-saves";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { tauriCommands } from "./lib/tauri-commands";
@@ -68,6 +69,11 @@ export default function App() {
       const fns: Array<() => void> = [];
 
       fns.push(await listen("show-mcp-setup", () => setShowMcpSetup(true)));
+      fns.push(
+        await listen<string>("editor-shortcut", (event) => {
+          if (isEditorShortcutId(event.payload)) applyEditorShortcut(event.payload);
+        }),
+      );
       fns.push(await listen("new-note", () => useUIStore.getState().openNewNoteMenu()));
       fns.push(await listen("open-settings", () => useUIStore.getState().setSettingsOpen(true)));
       fns.push(await listen("quick-open", () => useUIStore.getState().setQuickOpenOpen(true)));

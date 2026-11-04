@@ -11,6 +11,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
+import { bindRichEditor } from "../../lib/editor-shortcuts";
 import { decideEditorSync } from "../../lib/git-sync";
 import { normalizeContent } from "../../lib/note-parser";
 import { forgetScheduledPath, rememberNotePath } from "../../lib/note-write-path";
@@ -156,6 +157,11 @@ function PinnedNoteBody({
     editor.setEditable(!locked);
     editor.view.dom.setAttribute("aria-label", `${title} content`);
   }, [editor, locked, title]);
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    return bindRichEditor(editor);
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;

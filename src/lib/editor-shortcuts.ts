@@ -180,7 +180,19 @@ function elementOf(target: EventTarget | null): Element | null {
   return null;
 }
 
+function isFormField(target: EventTarget | null): boolean {
+  const element = elementOf(target);
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement
+  );
+}
+
 function richFromTarget(target: EventTarget | null): Editor | null {
+  // A language input, and any other field, can sit inside the editor DOM.
+  // closest(".ProseMirror") would treat that keystroke as an editor chord.
+  if (isFormField(target)) return null;
   const element = elementOf(target);
   const dom = element?.closest(".ProseMirror");
   if (!(dom instanceof HTMLElement)) return null;
@@ -204,27 +216,15 @@ function rememberFocus(target: EventTarget | null) {
     lastSurface = surface;
     return;
   }
-  if (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement
-  ) {
-    lastSurface = null;
-  }
+  if (isFormField(target)) lastSurface = null;
 }
 
 function resolveSurface(): Surface | null {
   const active = document.activeElement;
   const current = surfaceFrom(active);
   if (current) return current;
-  // A title, search, or other field is focused. Do not format the note behind it.
-  if (
-    active instanceof HTMLInputElement ||
-    active instanceof HTMLTextAreaElement ||
-    active instanceof HTMLSelectElement
-  ) {
-    return null;
-  }
+  // A title, search box, or the code-block language field is focused.
+  if (isFormField(active)) return null;
   if (lastSurface?.kind === "rich") {
     if (lastSurface.editor.isDestroyed) return null;
     return lastSurface;

@@ -159,6 +159,34 @@ describe("editor keyboard shortcuts", () => {
     expect(editor.getHTML()).toBe("<p>hello <strong>vault</strong> world</p>");
   });
 
+  it("leaves a code block alone while its language input is focused", async () => {
+    const ref = createRef<NoteEditorHandle>();
+    const content = "```js\nconst x = 1;\n```";
+    render(<NoteEditor ref={ref} note={note(content)} onSave={vi.fn()} />);
+    const editor = ref.current?.getEditor();
+    if (!editor) throw new Error("main editor missing");
+    fireEvent.click(await screen.findByRole("button", { name: "js" }));
+    const input = screen.getByPlaceholderText("language");
+    expect(input.closest(".ProseMirror")).not.toBeNull();
+    act(() => {
+      input.focus();
+    });
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "k",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    act(() => {
+      input.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(false);
+    expect(editor.getText()).toContain("const x = 1");
+    applyEditorShortcut("delete-block");
+    expect(editor.getText()).toContain("const x = 1");
+  });
+
   it("refuses the chord when the main editor is locked", () => {
     const ref = createRef<NoteEditorHandle>();
     render(<NoteEditor ref={ref} note={note("hello vault", true)} onSave={vi.fn()} locked />);

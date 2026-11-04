@@ -165,6 +165,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Editor keyboard shortcuts** — `src/lib/editor-shortcuts.ts`, Help ▸ Editor Shortcuts in `src-tauri/src/lib.rs`
   - The same chords apply in the main rich editor and in a note pinned in the side panel. The focused surface gets the chord. After the surface blurs without moving into another field, the chord still applies there, so the Help menu can run it.
   - A locked or deleted note keeps the chords wired and refuses them. A read-only pinned pane does the same until it is editable.
+  - An input, textarea, or select keeps the keystroke, including the code-block language field, which sits inside the editor.
   - Formatting: ⌘B bold, ⌘I italic, ⌘E inline code, ⌘U underline, ⌘⇧S strikethrough, ⌘⇧H highlight. Ctrl replaces ⌘ on Windows and Linux. Markdown mode wraps the selection with `**`, `*`, backticks, `<u>`, `~~`, `==`.
   - Blocks, rich editors only: ⌘⇧D duplicate, ⌘⇧K delete, ⌥↑ / Alt+Up move up, ⌥↓ / Alt+Down move down. No-op in markdown mode and when the editor is not editable.
   - Help ▸ Editor Shortcuts lists this set, with those accelerators, for both the main note and the pinned side panel. A chord that also arrives in the page runs once.

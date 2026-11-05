@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "../../lib/projects";
 import { DEFAULT_SETTINGS } from "../../lib/settings";
@@ -82,6 +83,86 @@ describe("LeftColumn — New Subfolder (Bug A)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+  });
+
+  it("keeps the name field when opening it blurs the empty input", () => {
+    render(
+      <StrictMode>
+        <LeftColumn />
+      </StrictMode>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    const input = screen.getByPlaceholderText("folder name");
+    fireEvent.blur(input);
+
+    expect(input).toBeInTheDocument();
+    expect(tauriCommands.createFolder).not.toHaveBeenCalled();
+  });
+
+  it("closes the name field when New folder is clicked again", () => {
+    render(<LeftColumn />);
+
+    const button = screen.getByRole("button", { name: "New folder" });
+    fireEvent.click(button);
+    expect(screen.getByRole("textbox", { name: "Folder name" })).toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(screen.queryByRole("textbox", { name: "Folder name" })).not.toBeInTheDocument();
+    expect(tauriCommands.createFolder).not.toHaveBeenCalled();
+  });
+
+  it("creates a folder from the Folders header and shows it", async () => {
+    render(<LeftColumn />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    const input = screen.getByRole("textbox", { name: "Folder name" });
+    fireEvent.change(input, { target: { value: "recipes" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(tauriCommands.createFolder).toHaveBeenCalledWith("/vault/recipes"));
+    expect(useNoteStore.getState().knownFolderPaths).toContain("/vault/recipes");
+    expect(screen.getByText("recipes")).toBeInTheDocument();
+  });
+
+  it("creates a folder when the vault path has a trailing slash", async () => {
+    useNoteStore.setState({
+      vaults: [{ ...VAULT, path: "/vault/" }],
+      knownFolderPaths: ["/vault/parent"],
+    });
+    render(<LeftColumn />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    const input = screen.getByRole("textbox", { name: "Folder name" });
+    fireEvent.change(input, { target: { value: "recipes" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(tauriCommands.createFolder).toHaveBeenCalledWith("/vault/recipes"));
+    expect(screen.getByText("recipes")).toBeInTheDocument();
+  });
+
+  it("cancels an empty name on Escape without creating a folder", () => {
+    render(<LeftColumn />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Folder name" }), { key: "Escape" });
+
+    expect(screen.queryByRole("textbox", { name: "Folder name" })).not.toBeInTheDocument();
+    expect(tauriCommands.createFolder).not.toHaveBeenCalled();
+  });
+
+  it("creates a folder when the name field is left with text", async () => {
+    render(<LeftColumn />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    const input = screen.getByRole("textbox", { name: "Folder name" });
+    fireEvent.change(input, { target: { value: "  recipes  " } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(tauriCommands.createFolder).toHaveBeenCalledWith("/vault/recipes"));
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Folder name" })).not.toBeInTheDocument(),
+    );
   });
 
   it("renders an inline input under a non-root folder and creates the subfolder", async () => {

@@ -2,6 +2,7 @@ import { type EventCallback, listen, type UnlistenFn } from "@tauri-apps/api/eve
 import { useEffect, useState } from "react";
 import { ulid } from "ulid";
 import { noteVaultMutated, startupVault } from "../lib/git-sync-runtime";
+import { currentFolderListEpoch, nextKnownFolderPaths } from "../lib/known-folders";
 import { parseNote, serializeNote } from "../lib/note-parser";
 import { projectFromMetaFile } from "../lib/projects";
 import { tauriCommands } from "../lib/tauri-commands";
@@ -108,11 +109,12 @@ async function loadVault(vault: VaultConfig): Promise<void> {
  * Refresh the known folder list across all vaults in the store.
  */
 async function refreshFolders(vaults: VaultConfig[]): Promise<void> {
+  const started = currentFolderListEpoch();
   const results = await Promise.all(
-    vaults.map((v) => tauriCommands.listFolders(v.path).catch(() => [] as string[])),
+    vaults.map((vault) => tauriCommands.listFolders(vault.path).catch(() => null)),
   );
-  const allPaths = results.flat();
-  useNoteStore.getState().setKnownFolderPaths(allPaths);
+  const next = nextKnownFolderPaths(started, results);
+  if (next) useNoteStore.getState().setKnownFolderPaths(next);
 }
 
 /** Rediscover projects from helm-project.json. Missing or invalid files are skipped. */

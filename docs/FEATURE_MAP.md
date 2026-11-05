@@ -453,6 +453,9 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - API mode needs a chosen model; disabling Writer stops a running reply.
   - Writer is not shown in the right panel (`ToolHost` is not mounted).
 - **MCP setup** — `McpSetupModal.tsx` builds the Claude Desktop config with `HELM_VAULT` or `HELM_VAULTS` by vault count.
+- **GitHub repository** — Helm menu ▸ GitHub (`src/lib/helm-repository.ts`, `src/App.tsx`, `src-tauri/src/lib.rs`).
+  - Opens https://github.com/jordanpapaleo/helm in the browser with `openUrl` from the opener plugin.
+  - About Helm stays first in that menu, including its version, copyright, and website link. Check for Updates… stays directly under About Helm.
 - **Update check** — Helm menu ▸ Check for Updates… (`src/lib/check-for-updates.ts`, `src/App.tsx`).
   - The running version is compared with the latest GitHub release. When the app is current, the menu says so.
   - A newer signed release is downloaded and installed in place, then Helm relaunches. Pending saves flush before the download and again immediately before relaunch.

@@ -1,0 +1,11 @@
+{
+  "version": "1.11.1",
+  "notes": "Helm 1.11.1",
+  "pub_date": "2026-11-05T16:50:58Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScUtqRFU5M0lTYlo4ZWE4NTJPMmNoS1dQYmUxdG1UZnQ0Wi8vQkJDMmdPd3prOWpPSzJBTFpWR1kzK2lFOS9wN0w5bnJTNTdGNjR3WmNGZWJjZTc1Q3RKeHVuQ0FpNFFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODk3NDU4CWZpbGU6SGVsbS5hcHAudGFyLmd6CnZRUHE3VzdoakJ1eUpKMnVOUWNTeWluaW11WU5RZytYSEUvaXg1UHlxTTVMOXRrbGRDaldyL3ZWWEM5RkdObXhGaUN6ZzdLRmNVRkQ2eXM1ZExYckFBPT0K",
+      "url": "https://github.com/jordanpapaleo/helm/releases/download/v1.11.1/Helm.app.tar.gz"
+    }
+  }
+}

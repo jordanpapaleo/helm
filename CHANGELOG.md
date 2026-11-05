@@ -1,3 +1,9 @@
+## v1.11.0 — 2026-11-04
+
+- fix: keep the updater CLI out of the webview
+- feat: install a newer signed release from the Helm menu
+- chore: update version to 1.10.2 in package-lock.json and Cargo.lock
+
 ## v1.10.2 — 2026-11-04
 
 - Restore wiki links in the pinned side panel.

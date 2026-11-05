@@ -1,3 +1,10 @@
+## v1.11.1 — 2026-11-05
+
+- Commit a typed folder name and keep other vaults when a listing fails.
+- Restore creating a folder from the sidebar.
+- chore: update version to 1.11.0 in package-lock.json and Cargo.lock
+- Add a GitHub item to the Helm menu.
+
 ## v1.11.0 — 2026-11-04
 
 - fix: keep the updater CLI out of the webview

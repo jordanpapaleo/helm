@@ -21,6 +21,11 @@ use vault::*;
 /// Label of the primary window.
 const MAIN_WINDOW: &str = "main";
 
+/// Public source repository. The About dialog's website link and the Helm
+/// menu's GitHub item both use this URL.
+/// KEEP IN SYNC with HELM_REPOSITORY_URL in src/lib/helm-repository.ts
+const HELM_REPOSITORY_URL: &str = "https://github.com/jordanpapaleo/helm";
+
 /// How long the backend waits for the frontend to finish its close handshake
 /// (flush debounced saves → `exit_app`) before quitting on its own.
 ///
@@ -180,7 +185,7 @@ pub fn run() {
             let about_metadata = AboutMetadataBuilder::new()
                 .version(Some(app.package_info().version.to_string()))
                 .copyright(Some("© 2026 Jordan Papaleo".to_string()))
-                .website(Some("https://github.com/jordanpapaleo/helm".to_string()))
+                .website(Some(HELM_REPOSITORY_URL.to_string()))
                 .website_label(Some("GitHub".to_string()))
                 .build();
 
@@ -191,6 +196,11 @@ pub fn run() {
 
             let check_updates_item = MenuItemBuilder::new("Check for Updates…")
                 .id("check_for_updates")
+                .build(app)?;
+
+            // Stays in the Helm menu's About group, after Check for Updates.
+            let github_item = MenuItemBuilder::new("GitHub")
+                .id("open_repository")
                 .build(app)?;
 
             let quit_item = MenuItemBuilder::new("Quit Helm")
@@ -205,6 +215,7 @@ pub fn run() {
                     Some(about_metadata),
                 )?)
                 .item(&check_updates_item)
+                .item(&github_item)
                 .separator()
                 .item(&settings_item)
                 .item(&PredefinedMenuItem::services(app, None)?)
@@ -468,6 +479,9 @@ pub fn run() {
                     }
                     "check_for_updates" => {
                         let _ = app_handle.emit("check-for-updates", ());
+                    }
+                    "open_repository" => {
+                        let _ = app_handle.emit_to(MAIN_WINDOW, "open-repository", ());
                     }
                     "add_vault" => {
                         let _ = app_handle.emit("add-vault", ());

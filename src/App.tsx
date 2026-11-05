@@ -17,6 +17,7 @@ import {
   type UpdateFlowResult,
 } from "./lib/check-for-updates";
 import { applyEditorShortcut, isEditorShortcutId } from "./lib/editor-shortcuts";
+import { openHelmRepository } from "./lib/helm-repository";
 import { flushPendingSaves } from "./lib/pending-saves";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { tauriCommands } from "./lib/tauri-commands";
@@ -110,6 +111,13 @@ export default function App() {
       fns.push(
         await listen("check-for-updates", () => {
           void handleCheckForUpdates().catch((e) => reportError("Failed to check for updates", e));
+        }),
+      );
+      fns.push(
+        await listen("open-repository", () => {
+          void openHelmRepository().catch((e) =>
+            reportError("Failed to open the Helm repository", e),
+          );
         }),
       );
       fns.push(

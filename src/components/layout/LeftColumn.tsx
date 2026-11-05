@@ -1,12 +1,14 @@
 import { Icon } from "@iconify/react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import React, { useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { addVault, removeVault } from "../../hooks/useVault";
 import { isArchived, visibleNotes } from "../../lib/archive";
 import { createNote } from "../../lib/create-note";
-import { buildTree, type TreeNode } from "../../lib/file-tree";
+import { buildTree, folderPathsInVault, joinFolderPath, type TreeNode } from "../../lib/file-tree";
 import { syncPrefs } from "../../lib/git-sync";
 import { syncConnectedVaults } from "../../lib/git-sync-runtime";
+import { rememberCreatedFolder } from "../../lib/known-folders";
 import { folderDropId, tagDropId } from "../../lib/note-drag";
 import { addTagFromDrop, moveNoteToFolder } from "../../lib/note-drop";
 import { serializeNote } from "../../lib/note-parser";
@@ -33,7 +35,7 @@ import { type Grouping, useUIStore, type View } from "../../store/ui";
 import { CreateProjectDialog } from "../projects/CreateProjectDialog";
 import { ProjectsSidebar } from "../projects/ProjectsSidebar";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
-import { NewFolderRow } from "../sidebar/NewFolderRow";
+import { commitOpenFolderName, focusNewFolderInput, NewFolderRow } from "../sidebar/NewFolderRow";
 import { RenameInput } from "../sidebar/RenameInput";
 import { NoteDropSurface } from "./NoteDropSurface";
 import { VaultSyncButton } from "./VaultSyncButton";
@@ -359,8 +361,7 @@ export function LeftColumn() {
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? vaults[0];
 
   const vaultFolderPaths = useMemo(
-    () =>
-      activeVault ? knownFolderPaths.filter((fp) => fp.startsWith(`${activeVault.path}/`)) : [],
+    () => (activeVault ? folderPathsInVault(knownFolderPaths, activeVault.path) : []),
     [knownFolderPaths, activeVault],
   );
 
@@ -504,17 +505,31 @@ export function LeftColumn() {
     return !projects.some((project) => pathsOverlap(folderPath, project.rootPath));
   }
 
+  // Show the name field and put the caret in it before the click returns.
+  // WKWebView ignores a focus() that runs later, outside the user gesture.
+  function openNewFolder(parentPath: string) {
+    if (newFolderParent !== parentPath && commitOpenFolderName()) return;
+    flushSync(() => setNewFolderParent(parentPath));
+    focusNewFolderInput();
+  }
+
+  // The New folder button prevents the mousedown from blurring the field, so
+  // a second click has to commit a typed name itself. A blank field just closes.
+  function dismissNewFolder() {
+    if (commitOpenFolderName()) return;
+    setNewFolderParent(null);
+  }
+
   // Single create-folder path shared by the root "New folder" button and the
   // per-folder "New Subfolder" action. Optimistically registers the new path in
   // the store so an empty folder shows immediately instead of waiting on the
   // filesystem watcher. Folder names are used raw (no slugify).
   async function handleCreateFolder(parentPath: string, name: string) {
     if (name) {
-      const newPath = `${parentPath}/${name}`;
+      const newPath = joinFolderPath(parentPath, name);
       try {
         await tauriCommands.createFolder(newPath);
-        const { knownFolderPaths: known, setKnownFolderPaths } = useNoteStore.getState();
-        if (!known.includes(newPath)) setKnownFolderPaths([...known, newPath]);
+        rememberCreatedFolder(newPath);
       } catch (e) {
         reportError("Failed to create folder", e);
       }
@@ -753,9 +768,13 @@ export function LeftColumn() {
         kind: "action",
         label: "New Subfolder",
         onClick: () => {
-          setNewFolderParent(folderPath);
+          if (newFolderParent === folderPath) {
+            dismissNewFolder();
+            return;
+          }
           setSelectedGrouping({ type: "folder", id: folderPath });
           setView("notes");
+          openNewFolder(folderPath);
         },
       },
       {
@@ -902,8 +921,17 @@ export function LeftColumn() {
               </span>
               <button
                 type="button"
+                aria-label="New folder"
+                aria-expanded={newFolderParent === activeVault.path}
                 title="New folder"
-                onClick={() => setNewFolderParent(activeVault.path)}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  if (newFolderParent === activeVault.path) {
+                    dismissNewFolder();
+                    return;
+                  }
+                  openNewFolder(activeVault.path);
+                }}
                 className="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100"
               >
                 <Icon icon="uil:folder-plus" className="h-3.5 w-3.5" aria-hidden="true" />

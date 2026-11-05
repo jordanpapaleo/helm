@@ -119,3 +119,23 @@ export function getAllFolderPaths(
   collect(tree);
   return result;
 }
+
+/** Parent plus a raw folder name, with trailing slashes removed. */
+export function joinFolderPath(parent: string, name: string): string {
+  return `${parent.replace(/\/+$/, "")}/${name}`.replace(/\/+$/, "");
+}
+
+/** Folder paths inside the vault. A trailing slash on either path still matches. */
+export function folderPathsInVault(paths: string[], vaultPath: string): string[] {
+  const root = vaultPath.replace(/\/+$/, "");
+  const prefix = `${root}/`;
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const path of paths) {
+    const normalized = path.replace(/\/+$/, "");
+    if (!normalized.startsWith(prefix) || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}

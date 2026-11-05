@@ -5,7 +5,7 @@ import { requestNotePdfExport } from "../../hooks/usePdfExport";
 import { isArchived } from "../../lib/archive";
 import { UNMANAGED_CLEARED_FIELDS } from "../../lib/constants";
 import { createNote, creationTargetFromUI } from "../../lib/create-note";
-import { buildTree, getAllFolderPaths } from "../../lib/file-tree";
+import { buildTree, folderPathsInVault, getAllFolderPaths } from "../../lib/file-tree";
 import { writeNoteDrag } from "../../lib/note-drag";
 import { moveNoteToFolder } from "../../lib/note-drop";
 import { notesForList, trashForList } from "../../lib/note-list";
@@ -62,7 +62,7 @@ export function NoteListPanel() {
 
   const allFolders = useMemo(() => {
     if (!vault) return [];
-    const vaultFolderPaths = knownFolderPaths.filter((fp) => fp.startsWith(`${vault.path}/`));
+    const vaultFolderPaths = folderPathsInVault(knownFolderPaths, vault.path);
     const tree = buildTree(notes, vault.path, vaultFolderPaths);
     const folders = getAllFolderPaths(tree, vault.path);
     if (!enableProjects) return folders;

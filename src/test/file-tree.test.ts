@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTree, getAllFolderPaths } from "../lib/file-tree";
+import { buildTree, folderPathsInVault, getAllFolderPaths, joinFolderPath } from "../lib/file-tree";
 import type { Note } from "../types/note";
 
 function makeNote(id: string, title: string, filePath: string): Note {
@@ -185,5 +185,20 @@ describe("getAllFolderPaths", () => {
     const paths = folders.map((f) => f.path);
     expect(paths).toContain("/vault/work");
     expect(paths).toContain("/vault/personal");
+  });
+});
+
+describe("joinFolderPath", () => {
+  it("joins a parent and a raw name without doubling slashes", () => {
+    expect(joinFolderPath("/vault/", "recipes")).toBe("/vault/recipes");
+    expect(joinFolderPath("/vault", "recipes")).toBe("/vault/recipes");
+  });
+});
+
+describe("folderPathsInVault", () => {
+  it("keeps folders inside a vault path that has a trailing slash", () => {
+    expect(folderPathsInVault(["/vault/recipes", "/other/notes"], "/vault/")).toEqual([
+      "/vault/recipes",
+    ]);
   });
 });

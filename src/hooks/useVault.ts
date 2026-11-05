@@ -111,9 +111,12 @@ async function loadVault(vault: VaultConfig): Promise<void> {
 async function refreshFolders(vaults: VaultConfig[]): Promise<void> {
   const started = currentFolderListEpoch();
   const results = await Promise.all(
-    vaults.map((vault) => tauriCommands.listFolders(vault.path).catch(() => null)),
+    vaults.map(async (vault) => ({
+      path: vault.path,
+      listing: await tauriCommands.listFolders(vault.path).catch(() => null),
+    })),
   );
-  const next = nextKnownFolderPaths(started, results);
+  const next = nextKnownFolderPaths(started, useNoteStore.getState().knownFolderPaths, results);
   if (next) useNoteStore.getState().setKnownFolderPaths(next);
 }
 

@@ -35,7 +35,7 @@ import { type Grouping, useUIStore, type View } from "../../store/ui";
 import { CreateProjectDialog } from "../projects/CreateProjectDialog";
 import { ProjectsSidebar } from "../projects/ProjectsSidebar";
 import { ContextMenu, type ContextMenuItem } from "../sidebar/ContextMenu";
-import { focusNewFolderInput, NewFolderRow } from "../sidebar/NewFolderRow";
+import { commitOpenFolderName, focusNewFolderInput, NewFolderRow } from "../sidebar/NewFolderRow";
 import { RenameInput } from "../sidebar/RenameInput";
 import { NoteDropSurface } from "./NoteDropSurface";
 import { VaultSyncButton } from "./VaultSyncButton";
@@ -508,8 +508,16 @@ export function LeftColumn() {
   // Show the name field and put the caret in it before the click returns.
   // WKWebView ignores a focus() that runs later, outside the user gesture.
   function openNewFolder(parentPath: string) {
+    if (newFolderParent !== parentPath && commitOpenFolderName()) return;
     flushSync(() => setNewFolderParent(parentPath));
     focusNewFolderInput();
+  }
+
+  // The New folder button prevents the mousedown from blurring the field, so
+  // a second click has to commit a typed name itself. A blank field just closes.
+  function dismissNewFolder() {
+    if (commitOpenFolderName()) return;
+    setNewFolderParent(null);
   }
 
   // Single create-folder path shared by the root "New folder" button and the
@@ -761,7 +769,7 @@ export function LeftColumn() {
         label: "New Subfolder",
         onClick: () => {
           if (newFolderParent === folderPath) {
-            setNewFolderParent(null);
+            dismissNewFolder();
             return;
           }
           setSelectedGrouping({ type: "folder", id: folderPath });
@@ -919,7 +927,7 @@ export function LeftColumn() {
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   if (newFolderParent === activeVault.path) {
-                    setNewFolderParent(null);
+                    dismissNewFolder();
                     return;
                   }
                   openNewFolder(activeVault.path);

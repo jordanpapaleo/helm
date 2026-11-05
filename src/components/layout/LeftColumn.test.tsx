@@ -112,6 +112,20 @@ describe("LeftColumn — New Subfolder (Bug A)", () => {
     expect(tauriCommands.createFolder).not.toHaveBeenCalled();
   });
 
+  it("creates a typed name when New folder is clicked again", async () => {
+    render(<LeftColumn />);
+
+    const button = screen.getByRole("button", { name: "New folder" });
+    fireEvent.click(button);
+    fireEvent.change(screen.getByRole("textbox", { name: "Folder name" }), {
+      target: { value: "recipes" },
+    });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(tauriCommands.createFolder).toHaveBeenCalledWith("/vault/recipes"));
+    expect(useNoteStore.getState().knownFolderPaths).toContain("/vault/recipes");
+  });
+
   it("creates a folder from the Folders header and shows it", async () => {
     render(<LeftColumn />);
 

@@ -216,8 +216,8 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - **Sync all** shows only with more than one sync-enabled vault and none selected.
 - **Folders** — tree including empty folders; create, rename, delete, New Note Here, New Subfolder.
   - Folder names are used raw (no slug).
-  - The name field stays open if it blurs before a name is entered, so the click that opens it does not cancel the create. Escape cancels. Enter, or leaving the field with a name, creates the folder. Clicking New folder again closes an empty field.
-  - A trailing slash on the vault path still creates the folder and keeps it in the tree. A folder listing that fails, or one that started before the create finished, does not remove it.
+  - The name field stays open if it blurs before a name is entered, so the click that opens it does not cancel the create. Escape cancels. Enter, or leaving the field with a name, creates the folder. Clicking New folder again closes an empty field and creates a folder when a name is already typed.
+  - A trailing slash on the vault path still creates the folder and keeps it in the tree. A failed listing keeps that vault's folders and still applies the other vaults. A listing that started before the create finished does not remove the new folder.
   - Rename moves the selection with it; delete confirms and clears selection and contained projects.
   - **Convert to Project** appears only with projects enabled, not at the vault root, and not overlapping a project.
   - Project folders are left out of this tree when projects are enabled.

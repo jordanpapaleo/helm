@@ -32,6 +32,8 @@ describe("project files", () => {
     expect(fs.existsSync(path.join(created.project.rootPath, "context"))).toBe(true);
     expect(fs.existsSync(created.mainPagePath)).toBe(true);
     expect(created.project.repository).toBeNull();
+    expect(created.project.links).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(created.project.metaPath, "utf8")).links).toEqual([]);
 
     const found = readProjects([ref()]);
     expect(found.map((project) => project.id)).toEqual([created.project.id]);

@@ -220,13 +220,18 @@ Moving a note between those folders renames the file. Do not change its id, body
 
 `repository` in `helm-project.json` is optional. `null` is a complete project. It is not the vault's sync remote.
 
+`links` is a list of `{ "label", "url" }` shown on the project page. Omit it, or use `[]`, when there are none. Each URL is http or https. This list does not replace `repository`. Keep `repository` when you change `links`, and keep `links` when you change `repository`.
+
 ```json
 {
   "id": "01PROJECT0000000000000001",
   "name": "Kitchen",
   "mainPageId": "01MAINPAGE000000000000001",
   "status": "active",
-  "repository": null
+  "repository": null,
+  "links": [
+    { "label": "Designs", "url": "https://example.com/designs" }
+  ]
 }
 ```
 

@@ -421,6 +421,7 @@ PROJECTS
 • A project is a folder with helm-project.json at its root. The id in that file is the project identity — never the folder name.
 • Every project uses the same folders: thinking/, features/, bugs/, and context/ (shown in Helm as Context / Docs). The main page is an ordinary note referenced by mainPageId.
 • A repository is optional. Projects work with repository: null.
+• links is a list of { label, url } on the project. It does not replace repository. Missing links is an empty list. Keep repository when you change links, and keep links when you change repository.
 • Nested projects are rejected. A note belongs to a project only when its file is inside that project folder. Wiki links do not add membership.
 • Thinking and Context notes are created unmanaged (state cleared) so they stay off Kanban, Eisenhower, and the briefing until someone marks them managed.
 • Features and Bugs classify the note. Creating one does not set state to Doing. Moving a note between categories renames the file only — id, content, links, history, and workflow fields stay as they are.
@@ -733,13 +734,13 @@ Read get_rules for full merge semantics.`,
     {
       name: "list_projects",
       description:
-        "List Helm projects discovered from helm-project.json files. A project works without a repository.",
+        "List Helm projects discovered from helm-project.json files. A project works without a repository. Each project includes its repository and its links.",
       inputSchema: { type: "object", properties: {} },
     },
     {
       name: "get_project",
       description:
-        "Read one project: metadata, main page, category counts, and member note ids. Pass the project id, not the folder name.",
+        "Read one project: metadata (including repository and links), main page, category counts, and member note ids. Pass the project id, not the folder name.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1445,6 +1446,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               main_page_id: project.mainPageId,
               status: project.status,
               repository: project.repository,
+              links: project.links,
               vault: VAULTS.find((vault) => vault.path === project.vaultPath)?.name ?? null,
             })),
             null,
@@ -1475,6 +1477,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               root: project.rootPath,
               status: project.status,
               repository: project.repository,
+              links: project.links,
               main_page: main
                 ? {
                     id: main.frontmatter.id,

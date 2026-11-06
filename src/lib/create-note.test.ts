@@ -131,6 +131,7 @@ describe("createNote", () => {
       mainPageId: "01MAINPAGE000000000000001",
       status: "active",
       repository: null,
+      links: [],
       rootPath: "/work/kitchen",
       metaPath: "/work/kitchen/helm-project.json",
       vaultId: "v1",

@@ -79,7 +79,7 @@ Use `HELM_VAULTS` (comma-separated) instead of `HELM_VAULT`:
 
 | Tool | Description |
 |------|-------------|
-| `list_projects` | Discover projects from `helm-project.json`. The id in that file is the identity, not the folder name |
+| `list_projects` | Discover projects from `helm-project.json`, including `repository` and `links`. The id in that file is the identity, not the folder name |
 | `get_project` | One project's metadata, main page, and member notes |
 | `create_project` | Create thinking/, features/, bugs/, context/, a main page, and metadata. Repository is optional. Refuses a nested project |
 | `promote_folder` | Turn an existing folder into a project without moving or overwriting its notes |

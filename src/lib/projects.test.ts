@@ -527,6 +527,18 @@ describe("project links", () => {
       label: "Docs",
       url: "https://example.com/docs",
     });
+    expect(normalizeProjectLink("Preview", "example.com:8443/docs")).toEqual({
+      label: "Preview",
+      url: "https://example.com:8443/docs",
+    });
+    expect(normalizeProjectLink("Local", "localhost:3000")).toEqual({
+      label: "Local",
+      url: "https://localhost:3000/",
+    });
+    expect(normalizeProjectLink("App", "127.0.0.1:4173/app")).toEqual({
+      label: "App",
+      url: "https://127.0.0.1:4173/app",
+    });
     expect(normalizeProjectLink("Repo", "git@github.com:org/kitchen.git")).toEqual({
       label: "Repo",
       url: "https://github.com/org/kitchen",
@@ -539,8 +551,35 @@ describe("project links", () => {
     expect(normalizeProjectLink("Notes", "   ")).toBeNull();
     expect(normalizeProjectLink("Notes", "kitchen notes")).toBeNull();
     expect(normalizeProjectLink("Notes", "javascript:alert(1)")).toBeNull();
+    expect(normalizeProjectLink("Notes", "javascript:443")).toBeNull();
     expect(normalizeProjectLink("Notes", "file:///tmp/notes")).toBeNull();
+    expect(normalizeProjectLink("Notes", "file:8080")).toBeNull();
+    expect(normalizeProjectLink("Notes", "mailto:dev@example.com")).toBeNull();
     expect(projectLinkHref(null)).toBeNull();
+  });
+
+  it("keeps a schemeless host and port when the project file is loaded", () => {
+    expect(
+      parseProjectMeta(
+        JSON.stringify({
+          id: "01PROJECT0000000000000001",
+          name: "Kitchen",
+          mainPageId: "01MAINPAGE000000000000001",
+          repository: "git@github.com:org/kitchen.git",
+          links: [
+            { label: "Preview", url: "example.com:8443/docs" },
+            { label: "Local", url: "localhost:3000" },
+            { label: "Script", url: "javascript:alert(1)" },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      repository: "git@github.com:org/kitchen.git",
+      links: [
+        { label: "Preview", url: "https://example.com:8443/docs" },
+        { label: "Local", url: "https://localhost:3000/" },
+      ],
+    });
   });
 });
 

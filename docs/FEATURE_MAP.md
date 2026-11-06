@@ -328,7 +328,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Opt-in** — off until **Enable Projects**; turning it off hides navigation and scoped boards without touching files.
 - **Identity** — a folder with `helm-project.json` (`id`, `name`, `mainPageId`, `status`, `repository`, `links`); the folder name is only a label.
   - Invalid metadata is ignored; unknown status reads as `active`.
-  - Missing `links` reads as `[]`. A saved link needs a label and an http(s) URL; a value with no scheme is stored as https, and a git remote is stored as its https page. Entries that cannot be opened are dropped. `repository` is left as it was.
+  - Missing `links` reads as `[]`. A saved link needs a label and an http(s) URL. A value with no scheme, including `host:port`, is stored as https, and a git remote is stored as its https page. An unsupported scheme is dropped. `repository` is left as it was.
 - **Four categories** — Thinking, Features, Bugs, Context / Docs, created for every project.
   - New notes in Thinking and Context start unmanaged with empty state; Features and Bugs use the normal default and are never set to Doing.
 - **Main page** — an ordinary unmanaged note at the project root with purpose, plan, next action, where you left off, and blockers.
@@ -341,7 +341,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Move to category / Move to…** — renames the file only; id, body, links, history, and workflow fields stay; name collisions get a `-2` suffix.
 - **Sidebar** — Projects section with categories and custom child folders; section + opens Blank/template; rename, new subfolder, delete via context menu; renaming the root folder updates the stored name.
 - **Repository** — optional; http/https open as written; ssh/git/scp remotes open as https; anything else stays text with Edit. Custom links do not replace this field.
-- **Custom links** — on the project page, **Add link** shows Label and URL. Several links can be saved on the project (`links` in `helm-project.json`) and are still there after reload. Each saved link opens its URL. **Remove** drops that link and leaves the repository alone. A blank label, or a URL that is not http(s) or a git remote, is not saved.
+- **Custom links** — on the project page, **Add link** shows Label and URL. Several links can be saved on the project (`links` in `helm-project.json`) and are still there after reload. Each saved link opens its URL. **Remove** drops that link and leaves the repository alone. A blank label, or a URL that is not http(s), a git remote, or a schemeless address (including host and port), is not saved.
 - **Leave project** — returns to the vault-wide Dashboard and clears the scope.
 
 ## 12. Tags

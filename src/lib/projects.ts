@@ -286,10 +286,29 @@ export function repositoryHref(value: string | null | undefined): string | null 
   return openableHttpUrl(`https://${host}/${path}`);
 }
 
+/** Schemes that must not be saved as a project link, even before a numeric port. */
+const UNSUPPORTED_LINK_SCHEME =
+  /^(?:javascript|data|file|mailto|blob|vbscript|about|ws|wss|ftp|ssh|git|http|https)$/i;
+
+/**
+ * `host:port` with an optional path, query, or hash. A real scheme such as
+ * `javascript:` or `file:` does not match: the text after its colon is not a port.
+ */
+function isHostAndPort(value: string): boolean {
+  const match = /^(?<host>\[[0-9a-f:.]+\]|[^/?#\s:]+):(?<port>\d{1,5})(?:[/?#]|$)/i.exec(value);
+  if (!match?.groups) return false;
+  const port = Number(match.groups.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  const host = match.groups.host ?? "";
+  if (!host || UNSUPPORTED_LINK_SCHEME.test(host)) return false;
+  return true;
+}
+
 /**
  * Address that can be opened from a custom project link. http and https are
  * kept (credentials removed). A git remote becomes its https page. A value
- * with no scheme is treated as https. Anything else is refused.
+ * with no scheme, including `host:port`, is treated as https. Anything else
+ * is refused.
  */
 export function projectLinkHref(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
@@ -297,7 +316,7 @@ export function projectLinkHref(value: string | null | undefined): string | null
   if (!raw) return null;
   const direct = repositoryHref(raw);
   if (direct) return direct;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
+  if (!isHostAndPort(raw) && /^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
   return openableHttpUrl(`https://${raw.replace(/^\/+/, "")}`);
 }
 

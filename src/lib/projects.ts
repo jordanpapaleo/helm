@@ -32,12 +32,25 @@ export const PROJECT_OVERVIEW_FIELDS = [
 
 export type OverviewKey = (typeof PROJECT_OVERVIEW_FIELDS)[number]["key"];
 
+/** A labeled address on the project page. Separate from `repository`. */
+export interface ProjectLink {
+  label: string;
+  url: string;
+}
+
 export interface ProjectMeta {
   id: string;
   name: string;
   mainPageId: string;
   status: ProjectStatus;
   repository: string | null;
+  links: ProjectLink[];
+}
+
+export interface ProjectMetaPatch {
+  status?: ProjectStatus;
+  repository?: string | null;
+  links?: ProjectLink[];
 }
 
 export interface Project extends ProjectMeta {
@@ -274,6 +287,43 @@ export function repositoryHref(value: string | null | undefined): string | null 
 }
 
 /**
+ * Address that can be opened from a custom project link. http and https are
+ * kept (credentials removed). A git remote becomes its https page. A value
+ * with no scheme is treated as https. Anything else is refused.
+ */
+export function projectLinkHref(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const direct = repositoryHref(raw);
+  if (direct) return direct;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
+  return openableHttpUrl(`https://${raw.replace(/^\/+/, "")}`);
+}
+
+/** Label plus an openable URL, or null when either part cannot be saved. */
+export function normalizeProjectLink(label: string, url: string): ProjectLink | null {
+  const trimmedLabel = label.trim();
+  if (!trimmedLabel) return null;
+  const href = projectLinkHref(url);
+  if (!href) return null;
+  return { label: trimmedLabel, url: href };
+}
+
+function parseProjectLinks(value: unknown): ProjectLink[] {
+  if (!Array.isArray(value)) return [];
+  const links: ProjectLink[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record.label !== "string" || typeof record.url !== "string") continue;
+    const link = normalizeProjectLink(record.label, record.url);
+    if (link) links.push(link);
+  }
+  return links;
+}
+
+/**
  * Move-to destinations. Existing folders stay as they are. Each project is
  * added with its standard folders when those paths are not already listed.
  */
@@ -323,6 +373,7 @@ export function parseProjectMeta(raw: string): ProjectMeta | null {
     mainPageId: record.mainPageId.trim(),
     status,
     repository: emptyRepository(typeof record.repository === "string" ? record.repository : null),
+    links: parseProjectLinks(record.links),
   };
 }
 
@@ -334,6 +385,7 @@ export function serializeProjectMeta(meta: ProjectMeta): string {
       mainPageId: meta.mainPageId,
       status: meta.status,
       repository: meta.repository,
+      links: meta.links ?? [],
     },
     null,
     2,
@@ -431,6 +483,7 @@ function buildProject(
     mainPageId: input.mainPageId,
     status: "active",
     repository: emptyRepository(input.repository),
+    links: [],
     rootPath: root,
     metaPath: `${root}/${PROJECT_META_FILENAME}`,
     vaultId: input.vaultId,

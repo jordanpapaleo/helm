@@ -110,6 +110,7 @@ describe("moveNoteToCategory", () => {
       mainPageId: "01MAIN0000000000000000001",
       status: "active",
       repository: null,
+      links: [],
       rootPath: "/vault/renovation",
       metaPath: "/vault/renovation/helm-project.json",
       vaultId: "v1",

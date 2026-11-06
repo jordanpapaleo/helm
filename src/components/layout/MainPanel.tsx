@@ -34,7 +34,12 @@ import {
   registerSaveFlusher,
   unregisterSaveFlusher,
 } from "../../lib/pending-saves";
-import { isProjectMember, type Project, serializeProjectMeta } from "../../lib/projects";
+import {
+  isProjectMember,
+  type Project,
+  type ProjectMetaPatch,
+  serializeProjectMeta,
+} from "../../lib/projects";
 import { planTrashRestore, reportPathCollisions } from "../../lib/restore-trash";
 import { acknowledgeLocalBody, isLocalBodyEcho, saveNoteContent } from "../../lib/save-note";
 import { applyScrollFraction, getScrollFraction } from "../../lib/scroll-fraction";
@@ -731,10 +736,7 @@ export function MainPanel() {
         ) ?? null)
       : null;
 
-  async function handleProjectMeta(
-    project: Project,
-    patch: { status?: Project["status"]; repository?: string | null },
-  ) {
+  async function handleProjectMeta(project: Project, patch: ProjectMetaPatch) {
     const next = { ...project, ...patch };
     useProjectStore.getState().upsert(next);
     try {

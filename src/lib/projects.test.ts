@@ -9,6 +9,7 @@ import {
   creationDefaultsForFolder,
   customChildFolders,
   moveDestinations,
+  normalizeProjectLink,
   omitProjectFolders,
   type Project,
   parseProjectMeta,
@@ -16,6 +17,7 @@ import {
   planCreateProject,
   planPromoteFolder,
   projectForPath,
+  projectLinkHref,
   repositoryHref,
   retargetProject,
   serializeProjectMeta,
@@ -30,6 +32,7 @@ function project(overrides: Partial<Project> = {}): Project {
     mainPageId: "01MAINPAGE000000000000001",
     status: "active",
     repository: null,
+    links: [],
     rootPath: "/vault/kitchen",
     metaPath: "/vault/kitchen/helm-project.json",
     vaultId: "v1",
@@ -82,6 +85,7 @@ describe("project metadata", () => {
       mainPageId: "01MAINPAGE000000000000001",
       status: "paused",
       repository: "https://example.com/kitchen.git",
+      links: [],
     });
     expect(parseProjectMeta(raw)).toEqual({
       id: "01PROJECT0000000000000001",
@@ -89,6 +93,7 @@ describe("project metadata", () => {
       mainPageId: "01MAINPAGE000000000000001",
       status: "paused",
       repository: "https://example.com/kitchen.git",
+      links: [],
     });
   });
 
@@ -102,7 +107,59 @@ describe("project metadata", () => {
           repository: "  ",
         }),
       ),
-    ).toMatchObject({ status: "active", repository: null });
+    ).toMatchObject({ status: "active", repository: null, links: [] });
+  });
+
+  it("keeps the repository and saves several openable links", () => {
+    const raw = serializeProjectMeta({
+      id: "01PROJECT0000000000000001",
+      name: "Kitchen",
+      mainPageId: "01MAINPAGE000000000000001",
+      status: "active",
+      repository: "git@github.com:org/kitchen.git",
+      links: [
+        { label: "Designs", url: "https://figma.com/file/kitchen" },
+        { label: "Docs", url: "https://example.com/docs" },
+      ],
+    });
+    expect(parseProjectMeta(raw)).toEqual({
+      id: "01PROJECT0000000000000001",
+      name: "Kitchen",
+      mainPageId: "01MAINPAGE000000000000001",
+      status: "active",
+      repository: "git@github.com:org/kitchen.git",
+      links: [
+        { label: "Designs", url: "https://figma.com/file/kitchen" },
+        { label: "Docs", url: "https://example.com/docs" },
+      ],
+    });
+  });
+
+  it("drops links that cannot be opened and leaves the repository in place", () => {
+    expect(
+      parseProjectMeta(
+        JSON.stringify({
+          id: "01PROJECT0000000000000001",
+          name: "Kitchen",
+          mainPageId: "01MAINPAGE000000000000001",
+          repository: "kitchen notes",
+          links: [
+            { label: "Docs", url: "example.com/docs" },
+            { label: "  ", url: "https://example.com" },
+            { label: "Script", url: "javascript:alert(1)" },
+            { url: "https://example.com" },
+            "nope",
+            { label: "Repo", url: "git@github.com:org/kitchen.git" },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      repository: "kitchen notes",
+      links: [
+        { label: "Docs", url: "https://example.com/docs" },
+        { label: "Repo", url: "https://github.com/org/kitchen" },
+      ],
+    });
   });
 
   it("rejects a file that is not project metadata", () => {
@@ -119,6 +176,7 @@ describe("planCreateProject", () => {
     expect(plan.project.id).toBe(baseCreate.projectId);
     expect(plan.project.rootPath).toBe("/vault/kitchen");
     expect(plan.project.repository).toBeNull();
+    expect(plan.project.links).toEqual([]);
     expect(plan.folders).toEqual([
       "/vault/kitchen",
       "/vault/kitchen/thinking",
@@ -411,6 +469,19 @@ describe("identity survives a folder rename", () => {
     expect(next.rootPath).toBe("/vault/renovation");
     expect(next.metaPath).toBe("/vault/renovation/helm-project.json");
     expect(next.name).toBe("renovation");
+    expect(next.links).toEqual([]);
+    expect(next.repository).toBeNull();
+  });
+
+  it("keeps custom links when the folder is renamed", () => {
+    const links = [{ label: "Docs", url: "https://example.com/docs" }];
+    const next = retargetProject(
+      project({ repository: "https://github.com/org/kitchen", links }),
+      "/vault/kitchen",
+      "/vault/renovation",
+    );
+    expect(next.links).toEqual(links);
+    expect(next.repository).toBe("https://github.com/org/kitchen");
   });
 
   it("rewrites a nested project path when a parent folder is renamed", () => {
@@ -443,6 +514,33 @@ describe("repositoryHref", () => {
     expect(repositoryHref("kitchen notes")).toBeNull();
     expect(repositoryHref("javascript:alert(1)")).toBeNull();
     expect(repositoryHref("file:///tmp/repo")).toBeNull();
+  });
+});
+
+describe("project links", () => {
+  it("accepts http, https, a missing scheme, and a git remote", () => {
+    expect(normalizeProjectLink("  Designs  ", " https://figma.com/file/kitchen ")).toEqual({
+      label: "Designs",
+      url: "https://figma.com/file/kitchen",
+    });
+    expect(normalizeProjectLink("Docs", "example.com/docs")).toEqual({
+      label: "Docs",
+      url: "https://example.com/docs",
+    });
+    expect(normalizeProjectLink("Repo", "git@github.com:org/kitchen.git")).toEqual({
+      label: "Repo",
+      url: "https://github.com/org/kitchen",
+    });
+    expect(projectLinkHref("https://user:token@example.com/docs")).toBe("https://example.com/docs");
+  });
+
+  it("refuses an empty label or a URL that cannot be opened", () => {
+    expect(normalizeProjectLink("  ", "https://example.com")).toBeNull();
+    expect(normalizeProjectLink("Notes", "   ")).toBeNull();
+    expect(normalizeProjectLink("Notes", "kitchen notes")).toBeNull();
+    expect(normalizeProjectLink("Notes", "javascript:alert(1)")).toBeNull();
+    expect(normalizeProjectLink("Notes", "file:///tmp/notes")).toBeNull();
+    expect(projectLinkHref(null)).toBeNull();
   });
 });
 

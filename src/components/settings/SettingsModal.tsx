@@ -113,8 +113,8 @@ interface SliderRowProps {
 
 function SliderRow({ label, value, min, max, step, unit, onChange }: SliderRowProps) {
   return (
-    <div className="flex items-center gap-4">
-      <span className="shrink-0 text-right text-sm opacity-50" style={{ width: "9rem" }}>
+    <div className="flex w-full items-center justify-start gap-4">
+      <span className="shrink-0 text-left text-sm opacity-50" style={{ width: "9rem" }}>
         {label}
       </span>
       <input
@@ -164,11 +164,11 @@ function TypographyTab() {
   const { settings, updateSettings, resetSettings } = useSettingsStore();
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex items-center gap-4">
+    <div className="flex w-full flex-col items-stretch gap-5 text-left">
+      <div className="flex w-full items-center justify-start gap-4">
         <label
           htmlFor="note-font"
-          className="shrink-0 text-right text-sm opacity-50"
+          className="shrink-0 text-left text-sm opacity-50"
           style={{ width: "9rem" }}
         >
           Font
@@ -210,7 +210,7 @@ function TypographyTab() {
         onChange={(lineHeight) => updateSettings({ lineHeight })}
       />
       <p
-        className="rounded-lg border border-base-300 bg-base-100 px-4 py-3 text-[var(--color-text)]"
+        className="w-full rounded-lg border border-base-300 bg-base-100 px-4 py-3 text-left text-[var(--color-text)]"
         style={{
           fontFamily: "var(--editor-font-family)",
           fontSize: "var(--editor-font-size)",
@@ -220,7 +220,7 @@ function TypographyTab() {
         The quick brown fox jumps over the lazy dog.
       </p>
 
-      <div className="mt-2 border-t border-base-300 pt-4">
+      <div className="mt-2 w-full border-t border-base-300 pt-4 text-left">
         <button type="button" onClick={resetSettings} className="btn btn-ghost btn-sm">
           Restore Defaults
         </button>

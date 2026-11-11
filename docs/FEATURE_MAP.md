@@ -178,6 +178,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
   - Typing `[[` lists up to 8 title matches, excluding the current note; archived notes only when **Show archived notes** is on, labeled "(archived)".
   - Off when **Autocomplete wiki links** is off.
   - The main editor and a note pinned in the side panel both open this dropdown. Markdown mode does not.
+  - A finished `[[Title]]` does not open the dropdown. Placing the caret inside one, including by clicking it, leaves the menu closed. Typing `[[` still opens it while those brackets are unclosed, even when another finished link is already on the same line.
 - **Image paste** — saves to `<vault>/assets/` with a timestamp name and inserts the image; main editor only.
 - **Code blocks** — `CodeBlockView.tsx`, `extensions.ts`, `editor-keyboard.ts`
   - Language picker; paste inside a block is verbatim; Enter on a bare ```` ```lang ```` fence makes a block; arrow keys can escape a trapped block.
@@ -199,7 +200,7 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Pinned-note pane** — `src/components/layout/PinnedNoteView.tsx`
   - Edits a pinned note with the same save path but no header or image paste; follows the main editor's live draft when both show the same note.
   - Typing `[[` opens the note-link dropdown. It uses the same candidates, the 8-title limit, the archived label, and the **Autocomplete wiki links** switch as the main editor.
-  - Clicking a `[[Title]]` that `wikiLinkTargetId` resolves sets the main note to that note through `openNote`, including an archived target. A title that matches nothing leaves the main note unchanged. A locked pane still opens the link. Dragging to select the text does not.
+  - Clicking a `[[Title]]` that `wikiLinkTargetId` resolves sets the main note to that note through `openNote`, including an archived target. A title that matches nothing leaves the main note unchanged. A locked pane still opens the link. Dragging to select the text does not. The click does not open the note-link dropdown.
   - A side-panel edit of the note that is also open stays. The open editor shows that saved body when it has no newer keystrokes, and a later keystroke there does not drop the side-panel text.
   - Uses the same editor keyboard shortcuts as the main rich editor when the pane is editable, and keeps them wired when it is not.
   - A held draft is dropped only after that save writes. A failed write keeps the draft and retries next time.

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { TextSelection } from "@tiptap/pm/state";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readEditorDraft, subscribeEditorDrafts } from "../../lib/editor-draft";
@@ -423,5 +424,35 @@ describe("NoteEditor wiki-link dropdown", () => {
       await Promise.resolve();
     });
     expect(editor.getText()).toContain("[[Other Note]]");
+  });
+
+  it("does not open the note-link dropdown from a caret inside a finished link", async () => {
+    const note = makeNote({ content: "See [[Other Note]] today" });
+    const other = makeNote({
+      id: "other",
+      filePath: "/vault/other.md",
+      fileName: "other.md",
+      content: "elsewhere",
+      frontmatter: { ...note.frontmatter, id: "other", title: "Other Note" },
+    });
+    useNoteStore.setState({ notes: [note, other], selectedNoteId: note.id });
+    const ref = createRef<NoteEditorHandle>();
+    render(<NoteEditor ref={ref} note={note} onSave={vi.fn()} />);
+    const editor = ref.current?.getEditor();
+    if (!editor) throw new Error("editor missing");
+    let pos = -1;
+    editor.state.doc.descendants((node, nodePos) => {
+      if (pos === -1 && node.isText && node.text?.includes("[[Other Note]]")) {
+        pos = nodePos + node.text.indexOf("[[Other Note]]") + 4;
+      }
+    });
+    expect(pos).toBeGreaterThan(0);
+    await act(async () => {
+      editor.view.dispatch(
+        editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos)),
+      );
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("region", { name: "Note links" })).not.toBeInTheDocument();
   });
 });

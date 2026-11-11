@@ -1,3 +1,10 @@
+## v1.12.0 — 2026-11-11
+
+- Open a finished wiki link instead of the note menu.
+- Accept schemeless project links that include a port.
+- Add labeled links on the project page and keep the repository.
+- chore: update version to 1.11.1 in package-lock.json and Cargo.lock
+
 ## v1.11.1 — 2026-11-05
 
 - Commit a typed folder name and keep other vaults when a listing fails.

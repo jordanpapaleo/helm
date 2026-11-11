@@ -1,4 +1,31 @@
+import { tauriCommands } from "./tauri-commands";
 import { RELEASES_LATEST_API_URL, UPDATER_MANIFEST_URL } from "./updater-manifest.mjs";
+
+/**
+ * Read a GitHub update document from the app backend.
+ *
+ * The webview's `fetch` throws on the updater manifest. That URL redirects to
+ * `release-assets.githubusercontent.com`, which sends no CORS header, so the
+ * failure is neither an HTTP status nor a down network. The backend follows
+ * the redirect and returns the status. A failed connection still rejects, and
+ * the callers report that as a network error.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+export function createUpdateFetch(
+  read: (url: string) => Promise<{ status: number; body: string }>,
+): typeof fetch {
+  return async (input: RequestInfo | URL) => {
+    const document = await read(requestUrl(input));
+    return new Response(document.body, { status: document.status });
+  };
+}
+
+const appUpdateFetch = createUpdateFetch((url) => tauriCommands.fetchUpdateDocument(url));
 
 export type UpdateCheckResult =
   | { status: "up-to-date"; current: string; latest: string }
@@ -58,7 +85,7 @@ type LatestReleaseJson = {
 
 export async function checkForUpdates(
   getVersion: () => Promise<string>,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = appUpdateFetch,
 ): Promise<UpdateCheckResult> {
   let current: string;
   try {
@@ -75,7 +102,6 @@ export async function checkForUpdates(
     response = await fetchImpl(RELEASES_LATEST_API_URL, {
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": "Helm-Desktop-App",
       },
     });
   } catch {
@@ -139,7 +165,7 @@ function manifestVersion(data: unknown): string | null {
 export async function checkAndInstallUpdate(
   getVersion: () => Promise<string>,
   install: (available: { current: string; latest: string; htmlUrl: string }) => Promise<void>,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = appUpdateFetch,
 ): Promise<UpdateFlowResult> {
   const result = await checkForUpdates(getVersion, fetchImpl);
   if (result.status === "error" || result.status === "up-to-date") return result;
@@ -149,7 +175,6 @@ export async function checkAndInstallUpdate(
     response = await fetchImpl(UPDATER_MANIFEST_URL, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "Helm-Desktop-App",
       },
     });
   } catch {

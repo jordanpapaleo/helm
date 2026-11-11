@@ -1,13 +1,15 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   checkAndInstallUpdate,
   checkForUpdates,
   compareVersions,
   compareWithLatest,
+  createUpdateFetch,
   downloadInstallAndRelaunch,
   parseVersion,
 } from "./check-for-updates";
-import { UPDATER_MANIFEST_URL } from "./updater-manifest.mjs";
+import { RELEASES_LATEST_API_URL, UPDATER_MANIFEST_URL } from "./updater-manifest.mjs";
 
 describe("parseVersion", () => {
   it("parses plain and v-prefixed versions", () => {
@@ -222,6 +224,66 @@ describe("checkAndInstallUpdate", () => {
     );
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.message).toContain("signature rejected");
+  });
+});
+
+describe("createUpdateFetch", () => {
+  it("keeps a GitHub status instead of treating it as a network failure", async () => {
+    const fetchImpl = createUpdateFetch(async () => ({ status: 403, body: "" }));
+    const result = await checkForUpdates(async () => "1.0.0", fetchImpl);
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.message).toContain("403");
+      expect(result.message).not.toMatch(/network/i);
+    }
+  });
+
+  it("keeps the network dialog when the backend cannot connect", async () => {
+    const fetchImpl = createUpdateFetch(async () => {
+      throw new Error("connection refused");
+    });
+    const result = await checkForUpdates(async () => "1.0.0", fetchImpl);
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toMatch(/network/i);
+  });
+
+  it("reads the latest release and the updater manifest", async () => {
+    const urls: string[] = [];
+    const fetchImpl = createUpdateFetch(async (url) => {
+      urls.push(url);
+      if (url === RELEASES_LATEST_API_URL) {
+        return {
+          status: 200,
+          body: JSON.stringify({ tag_name: "v1.2.0", html_url: releasePage }),
+        };
+      }
+      return { status: 200, body: JSON.stringify({ version: "1.2.0" }) };
+    });
+    const install = vi.fn().mockResolvedValue(undefined);
+    const result = await checkAndInstallUpdate(async () => "1.0.0", install, fetchImpl);
+    expect(result).toEqual({ status: "installed", current: "1.0.0", latest: "1.2.0" });
+    expect(urls).toEqual([RELEASES_LATEST_API_URL, UPDATER_MANIFEST_URL]);
+  });
+
+  it("keeps the network dialog when the manifest read fails", async () => {
+    const fetchImpl = createUpdateFetch(async (url) => {
+      if (url === UPDATER_MANIFEST_URL) throw new Error("offline");
+      return {
+        status: 200,
+        body: JSON.stringify({ tag_name: "v1.2.0", html_url: releasePage }),
+      };
+    });
+    const install = vi.fn();
+    const result = await checkAndInstallUpdate(async () => "1.0.0", install, fetchImpl);
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toMatch(/network/i);
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("asks the backend for the same documents the updater publishes", () => {
+    const rust = readFileSync(`${process.cwd()}/src-tauri/src/update_check.rs`, "utf8");
+    expect(rust).toContain(RELEASES_LATEST_API_URL);
+    expect(rust).toContain(UPDATER_MANIFEST_URL);
   });
 });
 

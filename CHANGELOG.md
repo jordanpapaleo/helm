@@ -1,3 +1,9 @@
+## v1.12.1 — 2026-11-11
+
+- Read Check for Updates outside the webview.
+- Left-align the Typography settings controls.
+- chore: update version to 1.12.0 in package-lock.json and Cargo.lock
+
 ## v1.12.0 — 2026-11-11
 
 - Open a finished wiki link instead of the note menu.

@@ -173,7 +173,16 @@ export const tauriCommands = {
 
   gitSyncStartup: (vaultPath: string, autoPush: boolean): Promise<GitSyncOutcome> =>
     invoke("git_sync_startup", { vaultPath, autoPush }),
+
+  /** GitHub release or updater manifest. `status` is GitHub's HTTP status. */
+  fetchUpdateDocument: (url: string): Promise<UpdateDocumentResponse> =>
+    invoke("fetch_update_document", { url }),
 };
+
+export interface UpdateDocumentResponse {
+  status: number;
+  body: string;
+}
 
 export interface GitSyncOutcome {
   state: string;

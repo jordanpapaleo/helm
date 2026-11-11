@@ -1,5 +1,6 @@
 mod git_sync;
 mod pdf;
+mod update_check;
 mod vault;
 mod writer;
 mod writer_api;
@@ -561,6 +562,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             exit_app,
+            update_check::fetch_update_document,
             writer_api::writer_key_status,
             writer_api::writer_key_set,
             writer_api::writer_key_remove,

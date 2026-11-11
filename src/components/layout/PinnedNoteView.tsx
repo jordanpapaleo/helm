@@ -72,11 +72,11 @@ function handleWikiLinkClick(event: MouseEvent) {
  * Editable body for one pinned note.
  *
  * Keyboard shortcuts match the main editor. Typing [[ opens the same note-link
- * dropdown, and clicking a [[Title]] sets the main note to that note. The
- * property row, toolbar, and status line stay on the main note. This pane does
- * not register a draft reader: when the same note is open in the main editor,
- * that reader is the main editor's, and replacing it would hide those unsaved
- * keystrokes.
+ * dropdown. Clicking a finished [[Title]] sets the main note to that note and
+ * does not open the dropdown. The property row, toolbar, and status line stay
+ * on the main note. This pane does not register a draft reader: when the same
+ * note is open in the main editor, that reader is the main editor's, and
+ * replacing it would hide those unsaved keystrokes.
  */
 function PinnedNoteBody({
   note,

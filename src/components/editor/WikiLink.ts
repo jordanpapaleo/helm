@@ -4,10 +4,26 @@
  * Links are stored as ULIDs in the frontmatter on save.
  */
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import Suggestion, { type SuggestionOptions } from "@tiptap/suggestion";
 import type { Note } from "../../types/note";
+
+/**
+ * Typing `[[` opens the note menu. A caret inside a finished `[[Title]]`
+ * is not that gesture: the closing brackets are already there, so the menu
+ * stays shut and a click can open the note instead of completing a query.
+ *
+ * A later `[[` on the same line does not close the one being typed.
+ */
+export function wikiLinkSuggestionAllowed(state: EditorState, from: number): boolean {
+  const end = state.doc.resolve(from).end();
+  const after = state.doc.textBetween(from, end, "\n", "\0");
+  if (!after.startsWith("[[")) return true;
+  const boundary = after.slice(2).search(/\]\]|\[\[|\n|\0/);
+  if (boundary === -1) return true;
+  return after.slice(2 + boundary, 2 + boundary + 2) !== "]]";
+}
 
 /**
  * Configuration options for the wiki link extension.
@@ -73,6 +89,8 @@ export const WikiLinkExtension = Extension.create<WikiLinkOptions>({
           editor.chain().focus().deleteRange(range).insertContent(`[[${props.label}]] `).run();
         },
         ...this.options.suggestion,
+        // After the spread so a finished [[Title]] stays out of the menu.
+        allow: ({ state, range }) => wikiLinkSuggestionAllowed(state, range.from),
       }),
     ];
   },

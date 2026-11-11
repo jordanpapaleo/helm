@@ -582,6 +582,39 @@ it("clicking a wiki link in the pinned pane sets the main note to that note", ()
   expect(useUIStore.getState().activeView).toBe("notes");
 });
 
+it("still opens the note menu when [[ is typed after a finished link", async () => {
+  const ship = makeNote("ship", "Ship Log", "The log.");
+  pinLinked("See [[Ship Log]] today.", [ship]);
+  await typeAtEnd(pinnedEditor(), " [[");
+  expect(within(noteLinks()).getByRole("button", { name: "Ship Log" })).toBeInTheDocument();
+});
+
+it("clicking a wiki link does not open the note menu", async () => {
+  window.getSelection()?.removeAllRanges();
+  const ship = makeNote("ship", "Ship Log", "The log.");
+  const article = pinLinked("See [[Ship Log]] today.", [ship]);
+  const editor = pinnedEditor();
+  let pos = -1;
+  editor.state.doc.descendants((node, nodePos) => {
+    if (pos === -1 && node.isText && node.text?.includes("[[Ship Log]]")) {
+      const index = node.text.indexOf("[[Ship Log]]");
+      pos = nodePos + index + 4;
+    }
+  });
+  await act(async () => {
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos)));
+    await Promise.resolve();
+  });
+  expect(screen.queryByRole("region", { name: "Note links" })).not.toBeInTheDocument();
+
+  const link = article.querySelector(".wikilink-ref");
+  expect(link).not.toBeNull();
+  fireEvent.click(link as Element);
+  expect(useNoteStore.getState().selectedNoteId).toBe("ship");
+  expect(useUIStore.getState().activeView).toBe("notes");
+  expect(screen.queryByRole("region", { name: "Note links" })).not.toBeInTheDocument();
+});
+
 it("clicking a wiki link still sets the main note when the pinned pane is locked", () => {
   window.getSelection()?.removeAllRanges();
   const ship = makeNote("ship", "Ship Log", "The log.");

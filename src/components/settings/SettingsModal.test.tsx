@@ -46,6 +46,35 @@ describe("SettingsModal note font", () => {
   });
 });
 
+describe("SettingsModal typography alignment", () => {
+  it("keeps the dialog wide and left-aligns the typography controls", () => {
+    render(<SettingsModal onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Typography" }));
+
+    const dialog = screen.getByRole("heading", { name: "Settings" }).parentElement?.parentElement;
+    expect(dialog).toHaveStyle({ width: "760px" });
+
+    const preview = screen.getByText("The quick brown fox jumps over the lazy dog.");
+    const panel = preview.parentElement;
+    expect(panel).toHaveClass("w-full", "items-stretch", "text-left");
+    expect(panel?.className).not.toMatch(
+      /\bmx-auto\b|\bitems-center\b|\bjustify-center\b|\bw-fit\b|\bmax-w-/,
+    );
+
+    for (const name of ["Font", "Font Size", "Line Height"]) {
+      const label = screen.getByText(name);
+      expect(label).toHaveClass("text-left");
+      expect(label.className).not.toMatch(/\btext-right\b|\btext-center\b/);
+    }
+
+    expect(preview).toHaveClass("w-full", "text-left");
+    expect(screen.getByRole("button", { name: "Restore Defaults" }).parentElement).toHaveClass(
+      "w-full",
+      "text-left",
+    );
+  });
+});
+
 describe("SettingsModal General tab toggles", () => {
   it("renders each setting as a labeled DaisyUI toggle at its default", () => {
     openGeneralTab();

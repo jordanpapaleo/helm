@@ -404,6 +404,7 @@ describe("LeftColumn — projects", () => {
     mainPageId: "01MAINPAGE000000000000001",
     status: "active",
     repository: null,
+    links: [],
     rootPath: "/vault/kitchen",
     metaPath: "/vault/kitchen/helm-project.json",
     vaultId: "v1",

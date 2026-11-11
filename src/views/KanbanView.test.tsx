@@ -191,6 +191,7 @@ describe("KanbanView — project scope", () => {
       mainPageId: "01MAIN",
       status: "active",
       repository: null,
+      links: [],
       rootPath: "/vault/kitchen",
       metaPath: "/vault/kitchen/helm-project.json",
       vaultId: "v1",

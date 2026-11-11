@@ -1931,6 +1931,7 @@ describe("MainPanel — locked project overview", () => {
     mainPageId: "01JPMXYZ123",
     status: "active",
     repository: null,
+    links: [],
     rootPath: "/vault/kitchen",
     metaPath: "/vault/kitchen/helm-project.json",
     vaultId: "v1",

@@ -115,6 +115,7 @@ Areas:
   - Blocked has no header control; it is edited in [Properties](#3-properties).
 - **Flag toggles: Pinned, Locked, Template, Unmanaged** — icon switches (`uil:map-pin`, `uil:lock`/`uil:unlock`, `uil:clipboard-notes`, `uil:eye-slash`), always shown, managed or not.
   - Turning Unmanaged on clears `state`, `urgent`, `important`, `blocked` in the same write (`UNMANAGED_CLEARED_FIELDS` in `src/lib/constants.ts`); turning it off only flips the flag.
+  - Each toggle writes the note on screen. Opening another note does not leave the previous note's handler on the button.
 - **Header tags** — `HeaderTags`
   - Each tag has a remove button (`uil:times`); **+ Tag** (`uil:plus`) opens an input.
   - Enter or blur commits, Escape cancels; a leading `#` is stripped; an empty or duplicate tag is ignored.
@@ -135,10 +136,11 @@ The panel opened by the header's Properties toggle in `PropertyPanel.tsx`.
 - **Read-only rows** — Path, `id`, `created`, `updated` (`READ_ONLY_KEYS`); timestamps shown in local time with the raw value as a tooltip.
 - **Full value editor** — every other frontmatter key is an editable row (`editableKeys`, `FrontmatterValue`).
   - Known keys come first in a fixed order (`KNOWN_ORDER`: title, state, urgent, important, blocked, pinned, locked, template, unmanaged, archived, deadline, team, tags, links, `kanbanOrder`, `eisenhowerOrder`), then other keys in file order.
+  - **Unmanaged is always a row**, even when the file has no `unmanaged` key. Absent is shown off. Turning it on clears `state`, `urgent`, `important`, and `blocked` in the same write as the heading toggle; turning it off only sets `unmanaged: false`.
   - Editors by value: booleans toggle; `state` uses the state select; `deadline` and `YYYY-MM-DD` strings are dates and must be real calendar dates; timestamps are `YYYY-MM-DDTHH:mm:ssZ`; arrays are comma lists (numeric arrays stay numeric); numbers; objects as JSON or YAML; everything else as text.
   - An invalid value is rejected with a toast (`reportError`) and nothing is written.
   - Clearing a text, date, or timestamp field removes the key, unless it was already `""`.
-  - **Unmanaged note:** `state`, `urgent`, and `important` rows are hidden (`UNMANAGED_HIDDEN_KEYS`); `blocked` stays.
+  - **Unmanaged note:** `state`, `urgent`, and `important` rows are hidden (`UNMANAGED_HIDDEN_KEYS`); `blocked` stays. The unmanaged row stays.
 - **Links** — read-only titles from `resolveOutgoingLinks`, same as the graph and footer; empty shows "—".
 - **Disabled for locked and deleted notes** — the editable rows are a fieldset disabled when `readOnly` or `locked`; the read-only rows still show.
 

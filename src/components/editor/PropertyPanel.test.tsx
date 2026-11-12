@@ -237,6 +237,82 @@ describe("PropertyPanel unmanaged notes", () => {
     expect(onChange).toHaveBeenCalledWith({ unmanaged: false });
   });
 
+  it("marks the open note unmanaged from the heading and from properties when the key is absent", () => {
+    // A normal note has no `unmanaged` key. Opening it after another managed
+    // note used to leave the eye-slash button writing the previous note, and
+    // Properties never listed the field, so neither control could set it.
+    const previousChange = vi.fn();
+    const previous = makeFrontmatter({
+      id: "01JPREVIOUSNOTE000000000000",
+      title: "Other",
+      state: "Doing",
+    });
+    const { rerender } = render(
+      <PropertyPanel frontmatter={previous} filePath="/vault/other.md" onChange={previousChange} />,
+    );
+
+    const onChange = vi.fn();
+    const current = makeFrontmatter({
+      id: "01JNEWSERVICEPROCESSDOCS000",
+      title: "New Service Process Docs",
+      state: "Prepare",
+      pinned: false,
+      locked: false,
+      deadline: "2026-04-01",
+      team: ["Ada"],
+      tags: ["docs"],
+      links: [],
+    });
+    rerender(
+      <PropertyPanel
+        frontmatter={current}
+        filePath="/vault/new-service-process-docs.md"
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmanaged" }));
+
+    const marked = {
+      unmanaged: true,
+      state: "",
+      urgent: false,
+      important: false,
+      blocked: false,
+    };
+    expect(previousChange).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(marked);
+
+    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
+    const panel = screen.getByRole("region", { name: "Properties" });
+    expect(within(panel).getByText("Path").parentElement).toHaveTextContent(
+      "/vault/new-service-process-docs.md",
+    );
+    expect(within(panel).getByText("01JNEWSERVICEPROCESSDOCS000")).toBeInTheDocument();
+    for (const name of [
+      "title",
+      "state",
+      "urgent",
+      "important",
+      "blocked",
+      "pinned",
+      "locked",
+      "deadline",
+      "team",
+      "tags",
+      "links",
+    ]) {
+      expect(within(panel).getByLabelText(name)).toBeInTheDocument();
+    }
+    expect(within(panel).getByRole("combobox", { name: "state" })).toHaveValue("Prepare");
+
+    const unmanaged = within(panel).getByRole("checkbox", { name: "unmanaged" });
+    expect(unmanaged).not.toBeChecked();
+    fireEvent.click(unmanaged);
+    expect(onChange).toHaveBeenLastCalledWith(marked);
+  });
+
   it("renders state and urgency on row 2 when the note has no state", () => {
     render(
       <PropertyPanel

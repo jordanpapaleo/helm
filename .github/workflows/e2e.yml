@@ -1,0 +1,47 @@
+name: e2e
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+# Linux only. tauri-driver drives WebKitWebDriver here and Edge on Windows.
+# macOS has no WKWebView driver, so this job does not run there.
+# The unit job in ci.yml stays display-free and does not call this suite.
+jobs:
+  webdriver:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install WebKit and Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xvfb \
+            libssl-dev \
+            build-essential \
+            pkg-config
+          # Ubuntu 26.04 renamed webkit2gtk-driver to webkitgtk-webdriver.
+          sudo apt-get install -y webkitgtk-webdriver || sudo apt-get install -y webkit2gtk-driver
+      - run: npm ci
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+      - name: WebDriver tests
+        run: xvfb-run --auto-servernum npm run test:e2e

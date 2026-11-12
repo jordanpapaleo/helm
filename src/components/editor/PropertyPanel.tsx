@@ -38,6 +38,16 @@ const READ_ONLY_KEYS = new Set(["id", "created", "updated"]);
  */
 const UNMANAGED_HIDDEN_KEYS = new Set(["state", "urgent", "important"]);
 
+/**
+ * Edited even when the file has no such key. A normal note omits `unmanaged`,
+ * and without a row Properties cannot mark it. Absent means off.
+ */
+const ALWAYS_PRESENT_KEYS = ["unmanaged"];
+
+function unmanagedChange(on: boolean): Partial<NoteFrontmatter> {
+  return on ? { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS } : { unmanaged: false };
+}
+
 /** Known keys keep a stable order. Anything else follows in file order. */
 const KNOWN_ORDER = [
   "title",
@@ -100,11 +110,12 @@ function isCalendarDate(value: string): boolean {
 
 function editableKeys(frontmatter: NoteFrontmatter): string[] {
   const hideWorkflow = frontmatter.unmanaged === true;
-  const keys = Object.keys(frontmatter).filter(
+  const keys = new Set([...Object.keys(frontmatter), ...ALWAYS_PRESENT_KEYS]);
+  const visible = [...keys].filter(
     (key) => !READ_ONLY_KEYS.has(key) && !(hideWorkflow && UNMANAGED_HIDDEN_KEYS.has(key)),
   );
-  const known = KNOWN_ORDER.filter((key) => keys.includes(key));
-  const rest = keys.filter((key) => !KNOWN_ORDER.includes(key));
+  const known = KNOWN_ORDER.filter((key) => visible.includes(key));
+  const rest = visible.filter((key) => !KNOWN_ORDER.includes(key));
   return [...known, ...rest];
 }
 
@@ -331,7 +342,13 @@ function FrontmatterValue({
         aria-label={fieldKey}
         checked={value === true}
         disabled={disabled}
-        onChange={(event) => onChange({ [fieldKey]: event.target.checked })}
+        onChange={(event) =>
+          onChange(
+            fieldKey === "unmanaged"
+              ? unmanagedChange(event.target.checked)
+              : { [fieldKey]: event.target.checked },
+          )
+        }
       />
     );
   }
@@ -476,7 +493,11 @@ const FlagSwitch = memo(
       </button>
     );
   },
+  // `onToggle` has to be compared. Pressed often stays false when the open
+  // note changes, and skipping the new handler left the button writing the
+  // note that was open before — Unmanaged looked like a dead control.
   (prev, next) =>
+    prev.onToggle === next.onToggle &&
     prev.label === next.label &&
     prev.pressed === next.pressed &&
     prev.icon === next.icon &&
@@ -902,11 +923,7 @@ export const PropertyPanel = memo(function PropertyPanel({
             pressed={unmanaged}
             icon="uil:eye-slash"
             indicator="pressed"
-            onToggle={() =>
-              onChange(
-                unmanaged ? { unmanaged: false } : { unmanaged: true, ...UNMANAGED_CLEARED_FIELDS },
-              )
-            }
+            onToggle={() => onChange(unmanagedChange(!unmanaged))}
           />
           <HeadingDivider />
           <HeaderTags key={frontmatter.id} value={frontmatter.tags} onChange={onChange} />
@@ -943,7 +960,7 @@ export const PropertyPanel = memo(function PropertyPanel({
               <Row key={key} label={key}>
                 <FrontmatterValue
                   fieldKey={key}
-                  value={frontmatter[key]}
+                  value={key === "unmanaged" ? frontmatter.unmanaged === true : frontmatter[key]}
                   disabled={fieldsDisabled}
                   onChange={onChange}
                 />

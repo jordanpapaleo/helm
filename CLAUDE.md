@@ -7,7 +7,8 @@ Helm is a personal knowledge management desktop app. Tauri 2.x (Rust) for file I
 ```bash
 npm run tauri dev       # start the full app (Rust + React)
 npm run dev             # frontend only (no Tauri window)
-npm test                # run Vitest tests (includes mcp-server/*.test.ts)
+npm test                # Vitest in jsdom (includes mcp-server/*.test.ts). Does not open a window.
+npm run test:e2e        # WebDriver suite against the real Helm window (tauri-driver + WebdriverIO)
 npm run test:watch      # tests in watch mode
 npm run test:types      # tsc --noEmit
 npm run lint            # biome check (lint:fix to auto-fix)
@@ -16,6 +17,8 @@ npm run tauri build     # produce distributable .dmg — but see Releasing
 ```
 
 Before committing, all four must be green: `npm test`, `npm run test:types`, `npm run lint`, `cargo test`.
+
+`npm run test:e2e` is extra. It builds the debug app and drives that window, so it needs a display (or `xvfb`), `tauri-driver` (`cargo install tauri-driver --locked`), and `WebKitWebDriver` on Linux. `npm test` does not run it. A new case is `e2e/specs/<name>.e2e.js` plus `e2e/vaults/<name>.js` exporting `seed(vaultPath)`.
 
 ## Feature Map — required for every change
 

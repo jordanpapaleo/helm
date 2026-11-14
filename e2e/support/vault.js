@@ -51,6 +51,10 @@ export function prepareVault(seed) {
 
   const launcher = join(root, "launch-helm.sh");
   const binary = helmBinary();
+  // WebKitWebDriver does not pass the session bus through to the app. The
+  // confirm dialogs are only visible to the test when Helm uses this bus.
+  const bus = process.env.DBUS_SESSION_BUS_ADDRESS;
+  const busLine = bus ? `export DBUS_SESSION_BUS_ADDRESS='${bus.replaceAll("'", "")}'` : "";
   writeFileSync(
     launcher,
     [
@@ -59,13 +63,16 @@ export function prepareVault(seed) {
       `export XDG_CONFIG_HOME='${join(root, "config")}'`,
       `export XDG_CACHE_HOME='${join(root, "cache")}'`,
       `export XDG_STATE_HOME='${join(root, "state")}'`,
+      busLine,
       "export GDK_BACKEND=x11",
       "export GTK_MODULES=gail:atk-bridge",
       "export WEBKIT_DISABLE_DMABUF_RENDERER=1",
       "export WEBKIT_DISABLE_COMPOSITING_MODE=1",
       `exec '${binary}' "$@"`,
       "",
-    ].join("\n"),
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
   );
   chmodSync(launcher, 0o755);
   return { root, vaultPath, launcher };

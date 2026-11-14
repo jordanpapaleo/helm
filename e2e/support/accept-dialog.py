@@ -50,13 +50,6 @@ def walk(node, depth=0):
         yield from walk(child, depth + 1)
 
 
-def has_title(node):
-    for item in walk(node):
-        if role(item) == "label" and text(item) == title:
-            return True
-    return False
-
-
 def ok_button(node):
     for item in walk(node):
         if role(item) == "push button" and text(item).lower() == "ok":
@@ -64,19 +57,47 @@ def ok_button(node):
     return None
 
 
-Atspi.init()
-while time.time() < deadline:
+def ok_for_title():
     desktop = Atspi.get_desktop(0)
     for app in children(desktop):
         for node in walk(app):
-            if role(node) not in {"alert", "dialog", "window", "frame"}:
+            if role(node) != "label" or text(node) != title:
                 continue
-            if not has_title(node):
-                continue
-            button = ok_button(node)
-            if button is not None and Atspi.Action.do_action(button, 0):
-                sys.exit(0)
+            current = node
+            for _ in range(10):
+                button = ok_button(current)
+                if button is not None:
+                    return button
+                parent = current.get_parent()
+                if parent is None:
+                    break
+                current = parent
+    return None
+
+
+def visible_names():
+    lines = []
+    desktop = Atspi.get_desktop(0)
+    for app in children(desktop):
+        lines.append(f"app {text(app)}")
+        for node in walk(app):
+            kind = role(node)
+            name = text(node)
+            if name and kind in {"alert", "dialog", "window", "frame", "push button", "label"}:
+                lines.append(f"  {kind}: {name}")
+            if len(lines) >= 40:
+                return lines
+    return lines
+
+
+Atspi.init()
+while time.time() < deadline:
+    button = ok_for_title()
+    if button is not None and Atspi.Action.do_action(button, 0):
+        sys.exit(0)
     time.sleep(0.1)
 
 print(f'no Ok button on a dialog titled "{title}"', file=sys.stderr)
+for line in visible_names():
+    print(line, file=sys.stderr)
 sys.exit(1)

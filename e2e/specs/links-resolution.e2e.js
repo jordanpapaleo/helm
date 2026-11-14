@@ -1,6 +1,6 @@
 import { $, browser, expect } from "@wdio/globals";
 import { readNoteFile, waitForNoteFile } from "../support/files.js";
-import { openNote, openProperties, prepareWindow, setField } from "../support/ui.js";
+import { editTitle, openNote, openProperties, prepareWindow } from "../support/ui.js";
 
 describe("link resolution", () => {
   before(async () => {
@@ -18,15 +18,7 @@ describe("link resolution", () => {
     await browser.waitUntil(async () => (await $("h1").getText()) === "Beta");
 
     await openNote("Alpha");
-    await $('button[aria-label="Edit title"]').click();
-    await setField('input[aria-label="Note title"]', "Alpha Prime");
-    const saved = await browser.execute(() => {
-      const button = document.querySelector('button[aria-label="Save title"]');
-      if (!(button instanceof HTMLButtonElement)) return false;
-      button.click();
-      return true;
-    });
-    if (!saved) throw new Error("Save title was not clicked");
+    await editTitle("Alpha Prime", "Enter");
     await waitForNoteFile(
       "mention.md",
       (note) => note.content.includes("[[Alpha Prime]]"),

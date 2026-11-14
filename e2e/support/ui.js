@@ -116,6 +116,29 @@ function writeInput(selector, value) {
   );
 }
 
+/**
+ * Edit the note title, then commit or cancel.
+ * The check button cancels mousedown, so Webdriver's own click never fires.
+ * Escape cancels from the focused field.
+ */
+export async function editTitle(value, key) {
+  await $('button[aria-label="Edit title"]').click();
+  await setField('input[aria-label="Note title"]', value);
+  if (key === "Escape") {
+    const input = await $('input[aria-label="Note title"]');
+    await input.click();
+    await browser.keys("Escape");
+    return;
+  }
+  const clicked = await browser.execute(() => {
+    const button = document.querySelector('button[aria-label="Save title"]');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  });
+  if (!clicked) throw new Error("Save title was not clicked");
+}
+
 /** Set a controlled input and deliver the change to React. */
 export async function setField(selector, value) {
   await $(selector).waitForDisplayed();

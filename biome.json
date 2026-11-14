@@ -33,6 +33,14 @@
       "quoteStyle": "double"
     }
   },
+  "overrides": [
+    {
+      "includes": ["e2e/**"],
+      "javascript": {
+        "globals": ["describe", "it", "before", "after", "beforeEach", "afterEach"]
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

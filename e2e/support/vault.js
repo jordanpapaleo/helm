@@ -60,6 +60,7 @@ export function prepareVault(seed) {
       `export XDG_CACHE_HOME='${join(root, "cache")}'`,
       `export XDG_STATE_HOME='${join(root, "state")}'`,
       "export GDK_BACKEND=x11",
+      "export GTK_MODULES=gail:atk-bridge",
       "export WEBKIT_DISABLE_DMABUF_RENDERER=1",
       "export WEBKIT_DISABLE_COMPOSITING_MODE=1",
       `exec '${binary}' "$@"`,

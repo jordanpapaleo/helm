@@ -38,6 +38,8 @@ jobs:
             xdotool \
             python3-gi \
             gir1.2-atspi-2.0 \
+            at-spi2-core \
+            dbus-x11 \
             libssl-dev \
             build-essential \
             pkg-config
@@ -47,4 +49,11 @@ jobs:
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked
       - name: WebDriver tests
-        run: xvfb-run --auto-servernum npm run test:e2e
+        run: |
+          xvfb-run --auto-servernum bash -lc '
+            set -euo pipefail
+            eval "$(dbus-launch --sh-syntax)"
+            /usr/libexec/at-spi-bus-launcher --launch-immediately >/tmp/at-spi.log 2>&1 &
+            python3 e2e/support/wait-for-a11y.py
+            npm run test:e2e
+          '

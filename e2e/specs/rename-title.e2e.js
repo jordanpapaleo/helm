@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { $, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import { noteExists, readNoteFile, waitForFile } from "../support/files.js";
-import { commitInput, openNote, prepareWindow } from "../support/ui.js";
+import { openNote, prepareWindow, setField } from "../support/ui.js";
 
 describe("title edit", () => {
   before(async () => {
@@ -32,5 +32,22 @@ describe("title edit", () => {
 
 async function editTitle(value, key) {
   await $('button[aria-label="Edit title"]').click();
-  await commitInput('input[aria-label="Note title"]', value, key);
+  await setField('input[aria-label="Note title"]', value);
+  if (key === "Enter") {
+    await saveTitle();
+    return;
+  }
+  const input = await $('input[aria-label="Note title"]');
+  await input.click();
+  await browser.keys("Escape");
+}
+
+async function saveTitle() {
+  const clicked = await browser.execute(() => {
+    const button = document.querySelector('button[aria-label="Save title"]');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  });
+  if (!clicked) throw new Error("Save title was not clicked");
 }

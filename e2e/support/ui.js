@@ -99,9 +99,9 @@ export async function mainEditor() {
  * Set a controlled input. Webdriver's setValue can hit a stale node after
  * React replaces it, and it does not always deliver the input event.
  */
-function writeInput(selector, value, key) {
+function writeInput(selector, value) {
   return browser.execute(
-    (sel, next, keyName) => {
+    (sel, next) => {
       const input = document.querySelector(sel);
       if (!(input instanceof HTMLInputElement)) return false;
       const prototype = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
@@ -109,29 +109,17 @@ function writeInput(selector, value, key) {
       const tracker = input._valueTracker;
       if (tracker) tracker.setValue(next === "" ? " " : "");
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      if (keyName) {
-        input.dispatchEvent(
-          new KeyboardEvent("keydown", { key: keyName, bubbles: true, cancelable: true }),
-        );
-      }
       return input.value === next;
     },
     selector,
     value,
-    key,
   );
 }
 
 /** Set a controlled input and deliver the change to React. */
 export async function setField(selector, value) {
   await $(selector).waitForDisplayed();
-  if (!(await writeInput(selector, value, ""))) throw new Error(`could not set ${selector}`);
-}
-
-/** Set a controlled input, then Enter or Escape on that input. */
-export async function commitInput(selector, value, key) {
-  await $(selector).waitForDisplayed();
-  if (!(await writeInput(selector, value, key))) throw new Error(`could not edit ${selector}`);
+  if (!(await writeInput(selector, value))) throw new Error(`could not set ${selector}`);
 }
 
 /** WebKitWebDriver rejects an empty element/value call, so clear with the keyboard. */

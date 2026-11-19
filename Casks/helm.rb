@@ -1,6 +1,6 @@
 cask "helm" do
-  version "1.12.1"
-  sha256 "b9888e39e237d86a8f1f4df27faf7aebf024cef9a0316a98f647f97cfba7e57d"
+  version "1.12.2"
+  sha256 "428b328f3f6a76a26bfc9de69b78b6b90f1082fb5b13bec1c319889043808f2f"
 
   url "https://github.com/jordanpapaleo/helm/releases/download/v#{version}/Helm_aarch64.dmg"
   name "Helm"

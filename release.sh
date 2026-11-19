@@ -110,6 +110,19 @@ fi
 codesign --verify "$DMG_PATH"
 echo "✓ App is signed and notarized"
 
+# Tauri notarizes the .app but not the .dmg around it. Notarize and staple the
+# DMG too, so Gatekeeper accepts the downloaded disk image itself. Stapling
+# changes the file, so this must run before the cask checksum below.
+echo "→ Notarizing the DMG (a few more minutes)..."
+xcrun notarytool submit "$DMG_PATH" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD" --wait
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
+if ! spctl -a -t open --context context:primary-signature -vv "$DMG_PATH" 2>&1 | grep -q "Notarized Developer ID"; then
+  echo "✗ Gatekeeper does not accept the DMG as notarized — not committing artifacts."
+  exit 1
+fi
+echo "✓ DMG is notarized"
+
 # Copy DMG to releases/ and commit
 RELEASE_DIR="releases/v$NEW_VERSION"
 mkdir -p "$RELEASE_DIR"

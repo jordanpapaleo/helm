@@ -44,7 +44,12 @@ echo "→ Signing credentials OK ($APPLE_SIGNING_IDENTITY)"
 
 # The in-app updater checks this minisign signature. Keep the private key in
 # sign.sh. It must match plugins.updater.pubkey in src-tauri/tauri.conf.json.
-if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
+# SKIP_UPDATER_SIGNING=1 ships the DMG without Helm.app.tar.gz or latest.json,
+# so installed apps will not see this version through the in-app updater.
+SKIP_UPDATER_SIGNING=${SKIP_UPDATER_SIGNING:-}
+if [[ -n "$SKIP_UPDATER_SIGNING" ]]; then
+  echo "⚠ SKIP_UPDATER_SIGNING set — no updater archive or latest.json for this release"
+elif [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
   echo "✗ Updater signing key is not set — aborting."
   echo "  Export TAURI_SIGNING_PRIVATE_KEY (key contents) or TAURI_SIGNING_PRIVATE_KEY_PATH from sign.sh."
   echo "  See CONTRIBUTING.md § Releasing."
@@ -140,43 +145,51 @@ sed -i '' "s/^  sha256 \".*\"/  sha256 \"$DMG_SHA\"/" Casks/helm.rb
 
 # Tar the stapled .app (not the pre-notarization archive Tauri would make) and
 # sign that. COPYFILE_DISABLE keeps AppleDouble entries out of the archive.
-echo "→ Signing the updater archive..."
-UPDATER_ARCHIVE="$RELEASE_DIR/Helm.app.tar.gz"
-COPYFILE_DISABLE=1 tar -czf "$UPDATER_ARCHIVE" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+RELEASE_ASSETS=("$DMG_LATEST")
+if [[ -z "$SKIP_UPDATER_SIGNING" ]]; then
+  echo "→ Signing the updater archive..."
+  UPDATER_ARCHIVE="$RELEASE_DIR/Helm.app.tar.gz"
+  COPYFILE_DISABLE=1 tar -czf "$UPDATER_ARCHIVE" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
 
-SIGN_ARGS=(signer sign --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}")
-if [[ -n "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
-  SIGN_ARGS+=(--private-key-path "$TAURI_SIGNING_PRIVATE_KEY_PATH")
-elif [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" && -f "${TAURI_SIGNING_PRIVATE_KEY}" ]]; then
-  SIGN_ARGS+=(--private-key-path "$TAURI_SIGNING_PRIVATE_KEY")
+  SIGN_ARGS=(signer sign --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}")
+  if [[ -n "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
+    SIGN_ARGS+=(--private-key-path "$TAURI_SIGNING_PRIVATE_KEY_PATH")
+  elif [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" && -f "${TAURI_SIGNING_PRIVATE_KEY}" ]]; then
+    SIGN_ARGS+=(--private-key-path "$TAURI_SIGNING_PRIVATE_KEY")
+  fi
+  npm run tauri -- "${SIGN_ARGS[@]}" "$UPDATER_ARCHIVE"
+
+  PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  node scripts/write-updater-manifest.mjs \
+    --out "$RELEASE_DIR/latest.json" \
+    --version "$NEW_VERSION" \
+    --pub-date "$PUB_DATE" \
+    --notes "Helm $NEW_VERSION" \
+    --platform darwin-aarch64 \
+    --signature "$UPDATER_ARCHIVE.sig" \
+    --asset "Helm.app.tar.gz"
+
+  RELEASE_ASSETS+=("$UPDATER_ARCHIVE" "$RELEASE_DIR/latest.json")
+  git add "$RELEASE_DIR/latest.json"
 fi
-npm run tauri -- "${SIGN_ARGS[@]}" "$UPDATER_ARCHIVE"
 
-PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-node scripts/write-updater-manifest.mjs \
-  --out "$RELEASE_DIR/latest.json" \
-  --version "$NEW_VERSION" \
-  --pub-date "$PUB_DATE" \
-  --notes "Helm $NEW_VERSION" \
-  --platform darwin-aarch64 \
-  --signature "$UPDATER_ARCHIVE.sig" \
-  --asset "Helm.app.tar.gz"
-
-git add "$DMG_ASSET" "$RELEASE_DIR/latest.json" Casks/helm.rb
+git add "$DMG_ASSET" Casks/helm.rb
 git commit -m "release: add Helm_${NEW_VERSION}_aarch64.dmg"
 git tag "v$NEW_VERSION"
 
 echo ""
 echo "✓ v$NEW_VERSION released"
 echo "  Artifacts: $RELEASE_DIR"
-echo "  Updater: $UPDATER_ARCHIVE and $RELEASE_DIR/latest.json"
+if [[ -z "$SKIP_UPDATER_SIGNING" ]]; then
+  echo "  Updater: $UPDATER_ARCHIVE and $RELEASE_DIR/latest.json"
+fi
 
 if [[ -t 0 ]]; then
   read -r -p "Push and create a draft GitHub Release now? [y/N] " CREATE_DRAFT
   if [[ "$CREATE_DRAFT" =~ ^[Yy]$ ]]; then
     if ! command -v gh >/dev/null 2>&1; then
       echo "✗ gh not found — install GitHub CLI, then create the draft manually:"
-      echo "  gh release create \"v$NEW_VERSION\" --draft --title \"Helm v$NEW_VERSION\" --notes \"\" \"$DMG_LATEST\" \"$UPDATER_ARCHIVE\" \"$RELEASE_DIR/latest.json\""
+      echo "  gh release create \"v$NEW_VERSION\" --draft --title \"Helm v$NEW_VERSION\" --notes \"\" ${RELEASE_ASSETS[*]}"
       exit 1
     fi
     if ! gh auth status >/dev/null 2>&1; then
@@ -194,9 +207,7 @@ if [[ -t 0 ]]; then
     gh release create "v$NEW_VERSION" --draft \
       --title "Helm v$NEW_VERSION" \
       --notes "" \
-      "$DMG_LATEST" \
-      "$UPDATER_ARCHIVE" \
-      "$RELEASE_DIR/latest.json"
+      "${RELEASE_ASSETS[@]}"
 
     echo "✓ Draft v$NEW_VERSION created — Linux CI will upload packages and publish."
   fi

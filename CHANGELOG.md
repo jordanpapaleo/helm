@@ -1,3 +1,10 @@
+## v1.12.2 — 2026-11-19
+
+- fix(release): notarize and staple the DMG
+- feat: replace Helm app icon with geometric wheel
+- Restore marking the open note unmanaged.
+- chore: update version to 1.12.1 in package-lock.json and Cargo.lock
+
 ## v1.12.1 — 2026-11-11
 
 - Read Check for Updates outside the webview.
